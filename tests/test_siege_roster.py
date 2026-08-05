@@ -167,6 +167,9 @@ class TestTheHostHookRecordsTheCall(RosterBase):
 
     def setUp(self) -> None:
         super().setUp()
+        # 신원은 시험이 세운다 — 러너에는 전역 git 설정이 없어서 commit 이 exit 128 로 죽는다.
+        for pair in (("user.email", "t@t"), ("user.name", "t")):
+            subprocess.run(["git", "-C", self.root, "config", *pair], check=True)
         subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "seed"], cwd=self.root, check=True)
         self.src = os.path.realpath(os.path.join(os.path.dirname(__file__), "..", "src"))
         self.qid = "q-hook"

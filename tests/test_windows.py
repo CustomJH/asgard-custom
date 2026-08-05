@@ -186,11 +186,13 @@ class TestDoctorWindows(unittest.TestCase):
     def test_python_check_uses_hook_python(self):
         from asgard.commands import doctor
 
-        # `on_path` 를 두 번 씌우는 이유는 doctor 가 패키지라서다 — 임포트한 모듈마다 자기
-        # 바인딩을 든다. 파사드만 씌우면 engines 는 진짜 `on_path` 를 부르고, win32 로 가장한
-        # 호스트에서 `shutil.which` 가 Windows 분기로 들어가 터진다.
+        # `shutil.which` 를 자리에서 막는다. win32 로 가장한 호스트에서 진짜 which 를 부르면
+        # CPython 3.14.6 의 Windows 분기가 `_winapi` 를 만지는데, POSIX 에서 그 모듈은 None 이다.
+        # `on_path` 셋(파사드·engines·platform 내부의 raw 호출)을 각각 씌우는 대신 그 셋이
+        # 공통으로 닿는 한 자리를 막는다 — 새 호출부가 생겨도 여기서 같이 막힌다.
         with mock.patch.object(doctor.wiring, "hook_python_token", return_value="py"):
             with (
+                mock.patch("shutil.which", side_effect=lambda b, *a, **k: f"C:\\bin\\{b}.exe"),
                 mock.patch.object(doctor, "on_path", side_effect=lambda b: f"C:\\bin\\{b}.exe"),
                 mock.patch.object(doctor.engines, "on_path", side_effect=lambda b: f"C:\\bin\\{b}.exe"),
             ):

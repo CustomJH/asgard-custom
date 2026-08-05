@@ -28,8 +28,14 @@ UCTX = os.path.abspath(os.path.join(SRC, "unattended_context.py"))
 SUBGATE = os.path.abspath(os.path.join(SRC, "subagent_gate.py"))
 
 
+# 자식에게 안 물려주는 것 둘. `ASGARD_UNATTENDED` 는 `run_prompt(json_out=True)` 가 이 프로세스에
+# 세우는 Canon 8 헤드리스 신호라, 같은 xdist 워커에서 그 시험이 먼저 돌면 무인 판정이 켜진 채로
+# 여기 흘러든다 — 워커 배치가 기계마다 달라 로컬은 초록, 러너는 빨강이 된다.
+_NOT_INHERITED = ("CLAUDE_PROJECT_DIR", "ASGARD_UNATTENDED")
+
+
 def run(script, args=None, stdin="", cwd=None, env_extra=None):
-    env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
+    env = {k: v for k, v in os.environ.items() if k not in _NOT_INHERITED}
     env.update(env_extra or {})
     return subprocess.run(
         [sys.executable, script] + (args or []),

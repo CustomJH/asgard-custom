@@ -402,6 +402,9 @@ class TestBudgetSet(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = os.path.realpath(self.tmp.name)
+        # `.asgard` 를 먼저 만든다 — `_project_root` 는 조상으로 올라가며 이 폴더나 `.git` 을
+        # 찾으므로, 없으면 임시 폴더 위에 무엇이 있느냐에 따라 쓰는 자리가 달라진다.
+        os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
         self.cwd = os.getcwd()
         os.chdir(self.root)
         self.addCleanup(lambda: os.chdir(self.cwd))
