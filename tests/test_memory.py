@@ -1924,7 +1924,7 @@ class TestCCWiring(MemoryBase):
         fake = os.path.join(bindir, "asgard")
         open(fake, "w").write(
             "#!/bin/sh\n"
-            '[ "$1" = memory ] && printf \'%s\' \'{"status":"retained","proposal":{"preview":"중요 사건 사용자 승인 제안"}}\'\n'
+            '[ "$1" = memory ] && printf \'%s\' \'{"status":"retained","proposal":{"preview":"중요 사건 사용자 승인 제안"},"automation":"mental model 자동 유지보수 시작"}\'\n'
             "exit 0\n"
         )
         os.chmod(fake, 0o755)
@@ -1940,6 +1940,7 @@ class TestCCWiring(MemoryBase):
         )
         payload = j.loads(out)
         self.assertIn("중요 사건 사용자 승인 제안", payload["systemMessage"])
+        self.assertIn("mental model 자동 유지보수 시작", payload["systemMessage"])
         self.assertNotIn("탐색 발견 저장 후보", payload["systemMessage"])  # 넛지 침묵 = systemMessage에 미등장
 
     def test_cc_stop_surfaces_every_nudge_from_one_tick(self):

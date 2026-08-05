@@ -37,6 +37,37 @@ def _auto_retain_skip_reason(gate: str, cfg: dict) -> str:
     )
 
 
+def _completion_updates(root: str, cfg: dict, payload: dict, mode: str) -> dict:
+    """검증 완료 기록 제안과 파생 학습 wake를 같은 lifecycle 결과로 묶는다."""
+    output: dict[str, object] = {}
+    if cfg.get("auto_propose_completion", True) and payload.get("verified"):
+        proposal = propose_completion(
+            root,
+            cfg,
+            session_id=str(payload.get("session_id") or mode),
+            request=str(payload.get("user_text") or ""),
+            response=str(payload.get("assistant_text") or ""),
+            changed_files=list(payload.get("changed_files") or []),
+            evidence=list(payload.get("evidence") or []),
+            verified=True,
+        )
+        if proposal.status == "proposed":
+            output["proposal"] = {
+                "approval_id": proposal.approval_id,
+                "record_id": proposal.record_id,
+                "preview": proposal.preview,
+            }
+    # 실제 원격 작업은 분리 프로세스가 맡고, 연결·신뢰·주기 판정 실패는 현재 host turn에
+    # 영향을 주지 않는다.
+    with contextlib.suppress(Exception):
+        from ...project_memory.automation import wake
+
+        automation = wake(root)
+        if automation:
+            output["automation"] = automation
+    return output
+
+
 def run_sync_turn(mode: str) -> int:
     """hook 전용 JSON stdin 표면 — 자동 turn retain과 완료 proposal을 한 lifecycle 호출로 처리."""
     try:
@@ -100,23 +131,7 @@ def run_sync_turn(mode: str) -> int:
                 "document_id": "",
                 "reason": _auto_retain_skip_reason(gate, cfg),
             }
-        if cfg.get("auto_propose_completion", True) and payload.get("verified"):
-            proposal = propose_completion(
-                root,
-                cfg,
-                session_id=str(payload.get("session_id") or mode),
-                request=str(payload.get("user_text") or ""),
-                response=str(payload.get("assistant_text") or ""),
-                changed_files=list(payload.get("changed_files") or []),
-                evidence=list(payload.get("evidence") or []),
-                verified=True,
-            )
-            if proposal.status == "proposed":
-                output["proposal"] = {
-                    "approval_id": proposal.approval_id,
-                    "record_id": proposal.record_id,
-                    "preview": proposal.preview,
-                }
+        output.update(_completion_updates(root, cfg, payload, mode))
         print(_json.dumps(output, ensure_ascii=False))
         return 0
     except Exception as exc:

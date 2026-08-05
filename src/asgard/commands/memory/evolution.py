@@ -121,14 +121,54 @@ def run_norn_restore(slug: str, json_out: bool = False) -> int:
     return _guard(_do)
 
 
-def run_pattern(apply: bool = False, json_out: bool = False, due_only: bool = False) -> int:
-    """패턴 학습 — 대화 원문에서 오딘 관측을 뽑아 개인 위키로 승격 (기본 dry-run)."""
+def _pattern_auto(root: str, d: str, json_out: bool) -> int:
+    """자율 실행 본체 — 모드 자격분만 승격하고 잔류분은 제안으로 보고한다.
+
+    분리 스폰한 자식이 부르는 유일한 자리다. `run_pattern` 밖에 있는 이유는 화면이다 —
+    dry-run·넛지·자율은 각각 다른 것을 보여주는데, 한 함수에 겹쳐 두면 어느 줄이 어느
+    모드의 것인지 읽어서 알 수 없다."""
+    from ...memory import pattern
+    from ...memory.manager import ManagerUnavailable
+
+    try:
+        result = pattern.run_auto(root, d)
+    except Exception as exc:
+        reason = str(exc) if isinstance(exc, ManagerUnavailable) else f"{type(exc).__name__}: {exc}"
+        ui.warn(f"패턴 학습을 못 돌렸어요 — {reason}")
+        return 1
+    if json_out:
+        print(_json.dumps(result, ensure_ascii=False, indent=2, default=str))
+        return 0
+    ui.head(f"오딘 관측 학습 · 모드 {result['mode']}")
+    for row in result["applied"]:
+        ui.ok(f"{row['kind']} · [[{row['slug']}]] {row['text'][:70]} ({row['confidence']})")
+    for row in result["proposed"]:
+        ui.step(f"제안 잔류 · {row['kind']} {row['text'][:70]} — asgard memory pattern으로 검토")
+    if result["report"]:
+        ui.step(f"리포트 · {os.path.relpath(result['report'], d)}")
+    if not result["applied"] and not result["proposed"]:
+        ui.ok("새로 배울 관측이 없어요")
+    return 0 if not result["failed"] else 1
+
+
+def run_pattern(
+    apply: bool = False, json_out: bool = False, due_only: bool = False, auto: bool = False, wake: bool = False
+) -> int:
+    """패턴 학습 — 대화 원문에서 오딘 관측을 뽑아 개인 위키로 승격 (기본 dry-run).
+
+    자율 계층은 노른과 같다: --wake(훅)는 due 시 모드에 따라 백그라운드 --auto를 분리
+    스폰하거나(safe/full) 넛지만 남긴다(off). --auto는 자격 관측만 즉시 승격한다."""
 
     def _do() -> int:
         from ...memory import pattern
         from ...memory.manager import ManagerUnavailable
 
         root, d = os.getcwd(), memory.ensure_home()
+        if wake:  # 훅 소비 표면 — 판정·등급 분기·latch·스폰은 전부 pattern.wake 단일 출처
+            line = pattern.wake(root, d)
+            if line:
+                print(line)
+            return 0
         if due_only:  # 훅 소비 표면 — due + latch 통과 시 한 줄, 그 외 침묵
             if json_out:
                 due, why = pattern.pattern_due(root, d)
@@ -138,6 +178,8 @@ def run_pattern(apply: bool = False, json_out: bool = False, due_only: bool = Fa
             if line:
                 print(line)
             return 0
+        if auto:
+            return _pattern_auto(root, d, json_out)
         try:
             plan = pattern.plan_pattern(root, d)
         except Exception as exc:

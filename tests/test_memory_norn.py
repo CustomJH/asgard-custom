@@ -805,14 +805,14 @@ class TestWake(NornBase):
         norn._save_state(self.d, {})
 
     def test_not_due_is_silent_and_spawns_nothing(self):
-        with mock.patch.object(norn, "_spawn_auto", return_value=True) as spawn:
+        with mock.patch.object(norn, "spawn_pass", return_value=True) as spawn:
             self.assertIsNone(norn.wake(self.tmp, self.d))
         self.assertEqual(spawn.call_count, 0)
 
     def test_off_tier_nudges_without_spawning(self):
         self._due()
         with (
-            mock.patch.object(norn, "_spawn_auto", return_value=True) as spawn,
+            mock.patch.object(norn, "spawn_pass", return_value=True) as spawn,
             mock.patch.object(norn, "_memory_settings", return_value={"norn_auto": "off"}),
         ):
             line = norn.wake(self.tmp, self.d)
@@ -822,7 +822,7 @@ class TestWake(NornBase):
     def test_autonomous_tier_spawns_detached_and_latches(self):
         self._due()
         with (
-            mock.patch.object(norn, "_spawn_auto", return_value=True) as spawn,
+            mock.patch.object(norn, "spawn_pass", return_value=True) as spawn,
             mock.patch.object(norn, "_memory_settings", return_value={"norn_auto": "safe"}),
         ):
             first = norn.wake(self.tmp, self.d)
@@ -838,7 +838,7 @@ class TestWake(NornBase):
         """시작하지 않은 일을 시작했다고 말하면 사용자는 오지 않을 결과를 기다린다."""
         self._due()
         with (
-            mock.patch.object(norn, "_spawn_auto", return_value=False),
+            mock.patch.object(norn, "spawn_pass", return_value=False),
             mock.patch.object(norn, "_memory_settings", return_value={"norn_auto": "full"}),
         ):
             self.assertIsNone(norn.wake(self.tmp, self.d))
@@ -850,7 +850,7 @@ class TestWake(NornBase):
             mock.patch.dict(os.environ, {"ASGARD_MEMORY_NO_DOWNLOAD": "1", "PATH": os.environ.get("PATH", "")}),
             mock.patch("subprocess.Popen") as popen,
         ):
-            self.assertTrue(norn._spawn_auto(self.tmp))
+            self.assertTrue(norn.spawn_pass(self.tmp, "memory", "norn", "--auto"))
             self.assertEqual(os.environ.get("ASGARD_MEMORY_NO_DOWNLOAD"), "1")  # 부모 환경은 그대로다
         env = popen.call_args.kwargs["env"]
         self.assertNotIn("ASGARD_MEMORY_NO_DOWNLOAD", env)
@@ -861,7 +861,7 @@ class TestWake(NornBase):
         self._due()
         with (
             mock.patch.object(norn, "plan_norn", side_effect=AssertionError("wake 가 LLM 을 불렀다")),
-            mock.patch.object(norn, "_spawn_auto", return_value=True),
+            mock.patch.object(norn, "spawn_pass", return_value=True),
             mock.patch.object(norn, "_memory_settings", return_value={"norn_auto": "safe"}),
         ):
             self.assertTrue(norn.wake(self.tmp, self.d))

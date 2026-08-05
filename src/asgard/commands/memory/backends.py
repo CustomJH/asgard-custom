@@ -271,19 +271,23 @@ def _semantic_nudge_line(d: str) -> str:
 
 
 def run_tick(json_out: bool = False) -> int:
-    """턴 끝 넛지 넷을 한 프로세스에서 본다 — 진화·노른·패턴·시맨틱 준비.
+    """턴 끝 신호를 한 프로세스에서 본다 — 진화·노른·패턴·2차 진화·학습·시맨틱 준비.
 
     Stop 훅이 네 번 띄우던 자리다: `evolve nudge` · `memory norn --wake` ·
     `memory pattern --due` · `memory semantic nudge`. 넷이 하는 일은 "낼 말이 한 줄 있는가"
     판정이고 출력도 각각 한 줄인데, 값의 대부분은 인터프리터 부팅이었다 (26-08-04 실측:
     네 자식 합계 408~434ms, 그중 프로세스 바닥값 68ms × 4).
 
+    여섯 중 넷은 이제 말만 하지 않고 **패스를 띄운다** (norn·pattern·project_evolve·
+    project_memory.automation의 wake). 판정은 여전히 파일 몇 개를 읽을 뿐이고 — 손질 본체는
+    분리 스폰한 자식이 맡는다.
+
     판정·latch·스폰은 옮기지 않는다 — 각 모듈의 같은 함수를 그대로 부른다. 하나가 죽어도
     나머지는 낸다: 넛지는 편의지 계약이 아니라, 하나의 실패가 턴 종료를 막으면 안 된다."""
     d = memory.ensure_home()
     # 진화 넛지는 종전에 `asgard evolve nudge` 가 git toplevel 로 뿌리를 풀었다 (commands/evolve.py
     # 의 `_surface`). cwd 를 그대로 주면 하위 폴더에서 돌 때 `.asgard/evolution` latch 와
-    # `.asgard/quest` 를 엉뚱한 자리에서 읽어 매 턴 초기화된다 — 나머지 셋은 원래 cwd 였다.
+    # `.asgard/quest` 를 엉뚱한 자리에서 읽어 매 턴 초기화된다 — 나머지 패스는 원래 cwd였다.
     from ..evolve import _root as _git_toplevel
 
     root = _git_toplevel()
@@ -300,10 +304,14 @@ def run_tick(json_out: bool = False) -> int:
     from ... import evolution as evo
     from ...memory import norn as norn_mod
     from ...memory import pattern as pattern_mod
+    from ...project_memory import automation as project_automation
+    from ...project_memory import evolve as project_evolve
 
     _collect(lambda: evo.nudge_line(root))
     _collect(lambda: norn_mod.wake(root, d))
-    _collect(lambda: pattern_mod.nudge_line(root, d))
+    _collect(lambda: pattern_mod.wake(root, d))
+    _collect(lambda: project_evolve.wake(root))
+    _collect(lambda: project_automation.wake(root))
     _collect(lambda: _semantic_nudge_line(d))
 
     if json_out:

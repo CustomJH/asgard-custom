@@ -68,6 +68,9 @@ class FakeHindsight(BaseHTTPRequestHandler):
         store = self.server.documents
         if self.path == "/openapi.json":
             return self._send(200, self.server.openapi)
+        if self.path.endswith("/documents?limit=1&offset=0"):
+            items = [{"id": document_id} for document_id in list(store)[:1]]
+            return self._send(200, {"items": items, "limit": 1, "offset": 0, "total": len(store)})
         if self.path.endswith("/stats"):
             return self._send(200, {"total_documents": len(store)})
         if "/documents/" in self.path:
@@ -420,6 +423,50 @@ class EvolveTest(ProjectMemoryE2EBase):
         self.assertEqual(plan["ops"], [])
 
 
+class EvolveWakeTest(ProjectMemoryE2EBase):
+    """자율 — 이 패스에는 26-08-06 까지 부르는 손이 없었다 (evolve_note 는 호출자가 0이었다)."""
+
+    def setUp(self):
+        super().setUp()
+        from asgard.settings import save_project
+
+        save_project(self.root, "project_memory", dict(self.cfg))
+
+    def test_wake_spawns_the_pass_once_and_then_waits_out_the_interval(self):
+        with mock.patch("asgard.memory.norn.spawn_pass", return_value=True) as spawn:
+            first = evolve_mod.wake(self.root)
+            second = evolve_mod.wake(self.root)
+        self.assertIn("프로젝트 메모리 진화", first or "")
+        self.assertIsNone(second)  # 간격 안 — 매 턴 다시 띄우지 않는다
+        self.assertEqual(spawn.call_count, 1)
+        self.assertEqual(spawn.call_args.args[1:], ("memory", "project-evolve", "--apply"))
+
+    def test_wake_is_silent_where_project_memory_is_not_connected(self):
+        """안 붙인 사람에게 2차 진화는 존재하지 않는 기능이다 — 상기시키는 줄은 소음이다."""
+        loose = os.path.join(self.tmp, "unconnected")
+        os.makedirs(loose, exist_ok=True)
+        with mock.patch("asgard.memory.norn.spawn_pass", return_value=True) as spawn:
+            self.assertIsNone(evolve_mod.wake(loose))
+        self.assertEqual(spawn.call_count, 0)
+
+    def test_wake_never_pays_for_the_llm_itself(self):
+        """due 판정은 상태 파일 하나다 — 신호 수집도 LLM 왕복도 자식 몫이다."""
+        with (
+            mock.patch.object(evolve_mod, "signals", side_effect=AssertionError("wake 가 카탈로그를 훑었다")),
+            mock.patch.object(evolve_mod, "_complete", side_effect=AssertionError("wake 가 LLM 을 불렀다")),
+            mock.patch("asgard.memory.norn.spawn_pass", return_value=True),
+        ):
+            self.assertIsNotNone(evolve_mod.wake(self.root))
+
+    def test_the_switch_turns_it_off(self):
+        with (
+            mock.patch.object(evolve_mod, "auto_enabled", return_value=False),
+            mock.patch("asgard.memory.norn.spawn_pass", return_value=True) as spawn,
+        ):
+            self.assertIsNone(evolve_mod.wake(self.root))
+        self.assertEqual(spawn.call_count, 0)
+
+
 class InventoryCoverageTest(ProjectMemoryE2EBase):
     """전수 등록 — 점수 미달 파일도 backend에서 찾을 수 있어야 한다.
 
@@ -475,8 +522,8 @@ class InventoryCoverageTest(ProjectMemoryE2EBase):
         by_path = {c.path: c for c in scan_project(self.root, changed_paths=[], inventory=True)}
         digest = artifact_item(by_path["src/widget_helper.py"], "e2e-bank", "rev-1")
         self.assertIn("Path: src/widget_helper.py", digest["content"])
-        self.assertIn("Widget helper", digest["content"])  # 요약은 싣는다
-        self.assertNotIn("def format_widget", digest["content"])  # 본문은 안 싣는다
+        self.assertIn("Widget helper", digest["content"])  # 요약은 넣는다
+        self.assertNotIn("def format_widget", digest["content"])  # 본문은 안 넣는다
         self.assertEqual(digest["metadata"]["tier"], "digest")
         # 계층과 무관하게 결정론 검증의 근거는 실제 파일이다
         self.assertEqual(digest["metadata"]["source"], "src/widget_helper.py")

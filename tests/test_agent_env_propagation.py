@@ -40,7 +40,7 @@ class EnvPropagationTest(unittest.TestCase):
 
         with mock.patch("subprocess.Popen") as popen:
             with profiles.scoped("alpha"):
-                norn._spawn_auto(self._tmp.name)
+                norn.spawn_pass(self._tmp.name, "memory", "norn", "--auto")
         env = popen.call_args.kwargs["env"]
         self.assertEqual(env["ASGARD_PROFILE"], "alpha")
         self.assertEqual(env["ASGARD_HOME"], profiles.profile_dir("alpha"))
@@ -50,7 +50,7 @@ class EnvPropagationTest(unittest.TestCase):
         from asgard.memory import norn
 
         with mock.patch("subprocess.Popen") as popen:
-            norn._spawn_auto(self._tmp.name)
+            norn.spawn_pass(self._tmp.name, "memory", "norn", "--auto")
         self.assertEqual(popen.call_args.kwargs["env"]["ASGARD_PROFILE"], "beta")
 
     def test_an_explicit_home_survives(self) -> None:
@@ -61,7 +61,7 @@ class EnvPropagationTest(unittest.TestCase):
         os.makedirs(container, exist_ok=True)
         with mock.patch.dict(os.environ, {"ASGARD_HOME": container}):
             with mock.patch("subprocess.Popen") as popen:
-                norn._spawn_auto(self._tmp.name)
+                norn.spawn_pass(self._tmp.name, "memory", "norn", "--auto")
         self.assertEqual(popen.call_args.kwargs["env"]["ASGARD_HOME"], container)
 
     # ── 가드 훅 — 아스가르드 자신이라 전파한다 ──────────────────────────────────

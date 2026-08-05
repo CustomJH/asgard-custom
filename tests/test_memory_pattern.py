@@ -278,6 +278,192 @@ class NudgeTest(PatternBase):
         self.assertIsNone(pattern.nudge_line(self.root, self.d))
 
 
+class AutonomyTest(PatternBase):
+    """자율 계층 — 직접 진술은 스스로 승격하고, 추론은 사람에게 남는다."""
+
+    def setUp(self):
+        super().setUp()
+        self._turns(
+            "나는 항상 uv run pytest 로 테스트를 돌린다",
+            "커밋은 gitmoji 를 붙여서 남긴다",
+            "문서는 Linear 에 두고 저장소에는 두지 않는다",
+        )
+
+    def _observations(self) -> list[dict]:
+        return self._plan(
+            [
+                {"kind": "explicit", "text": "오딘은 uv run pytest 로 테스트를 돌린다", "evidence": [1]},
+                {
+                    "kind": "deductive",
+                    "text": "오딘은 커밋과 테스트에서 같은 규율을 지키는 편이다",
+                    "evidence": [1, 2],
+                },
+            ]
+        )["observations"]
+
+    def test_auto_mode_default_safe(self):
+        self.assertEqual(pattern.auto_mode(), "safe")
+
+    def test_safe_promotes_explicit_and_leaves_inference_as_a_proposal(self):
+        """귀납의 비약은 형상이 없다 — 근거 대조가 답할 수 있는 것만 자동이다."""
+        auto, proposed = pattern.partition_observations(self._observations(), "safe")
+        self.assertEqual([row["kind"] for row in auto], ["explicit"])
+        self.assertEqual([row["kind"] for row in proposed], ["deductive"])
+
+    def test_off_promotes_nothing(self):
+        auto, proposed = pattern.partition_observations(self._observations(), "off")
+        self.assertEqual(auto, [])
+        self.assertEqual(len(proposed), 2)
+
+    def test_full_still_asks_a_thick_ground_of_the_inference(self):
+        """모드만으로 자격이 생기지 않는다 — 근거가 옅은 추론은 full에서도 제안으로 남는다."""
+        rows = [
+            {"kind": "deductive", "text": "짙은 근거", "grounding": pattern.INSIGHT_AUTO_FLOOR},
+            {"kind": "deductive", "text": "옅은 근거", "grounding": pattern.INSIGHT_AUTO_FLOOR - 0.01},
+            {"kind": "deductive", "text": "점수 없음"},
+        ]
+        auto, proposed = pattern.partition_observations(rows, "full")
+        self.assertEqual([row["text"] for row in auto], ["짙은 근거"])
+        self.assertEqual([row["text"] for row in proposed], ["옅은 근거", "점수 없음"])
+
+    def test_run_auto_writes_only_the_eligible_kind_and_reports_the_rest(self):
+        raw = json.dumps(
+            {
+                "observations": [
+                    {"kind": "explicit", "text": "오딘은 uv run pytest 로 테스트를 돌린다", "evidence": [1]},
+                    {
+                        "kind": "deductive",
+                        "text": "오딘은 커밋과 테스트에서 같은 규율을 지키는 편이다",
+                        "evidence": [1, 2],
+                    },
+                ]
+            },
+            ensure_ascii=False,
+        )
+        with mock.patch.object(pattern, "_complete", return_value=raw):
+            result = pattern.run_auto(self.root, self.d)
+        self.assertEqual(result["mode"], "safe")
+        self.assertEqual([row["kind"] for row in result["applied"]], ["explicit"])
+        self.assertEqual([row["kind"] for row in result["proposed"]], ["deductive"])
+        kinds = {self._page(row["slug"])[0]["kind"] for row in result["applied"]}
+        self.assertEqual(kinds, {"user"})
+        with open(result["report"], encoding="utf-8") as handle:
+            self.assertIn("(제안)", handle.read())
+
+    def test_a_barren_pass_still_advances_the_state(self):
+        """무수확에도 상태가 전진해야 한다 — 안 그러면 같은 누적으로 매 턴 다시 돈다."""
+        with mock.patch.object(pattern, "_complete", return_value='{"observations": []}'):
+            pattern.run_auto(self.root, self.d)
+        due, why = pattern.pattern_due(self.root, self.d)
+        self.assertFalse(due, why)
+
+    def test_wake_spawns_a_detached_pass_once_per_accumulation(self):
+        self._turns(*[f"턴 {n}" for n in range(pattern.TURNS_THRESHOLD)])
+        with mock.patch.object(pattern, "spawn_pass", return_value=True) as spawn:
+            first = pattern.wake(self.root, self.d)
+            second = pattern.wake(self.root, self.d)  # 같은 누적 — 두 번 스폰하면 백그라운드가 겹친다
+            self._turns(*[f"추가 턴 {n}" for n in range(pattern.TURNS_THRESHOLD)])
+            third = pattern.wake(self.root, self.d)
+        self.assertIn("모드 safe", first or "")
+        self.assertIsNone(second)
+        self.assertIsNotNone(third)
+        self.assertEqual(spawn.call_count, 2)
+        self.assertEqual(spawn.call_args.args[1:], ("memory", "pattern", "--auto"))
+
+    def test_wake_reports_the_batch_it_reads_not_the_entire_backlog(self):
+        self._turns(*[f"밀린 턴 {n}" for n in range(pattern.MAX_TURNS + 17)])
+        with mock.patch.object(pattern, "spawn_pass", return_value=True):
+            line = pattern.wake(self.root, self.d)
+
+        self.assertIn(f"최근 {pattern.MAX_TURNS}턴", line or "")
+        self.assertNotIn("new turn", line or "")
+
+    def test_a_child_that_dies_before_writing_state_is_not_respawned_every_turn(self):
+        """스폰 표식을 턴 수 그대로 쓰면 죽은 자식의 값이 **턴당 한 번**이 된다.
+
+        자식이 상태를 못 쓰고 죽으면 due 는 계속 참이고 턴은 매 턴 늘어난다 — 표식이 턴 수면
+        매번 새 표식이라 매 턴 다시 띄운다. 재발화는 문턱만큼 쌓인 뒤라야 한다."""
+        self._turns(*[f"턴 {n}" for n in range(pattern.TURNS_THRESHOLD)])
+        with mock.patch.object(pattern, "spawn_pass", return_value=True) as spawn:
+            self.assertIsNotNone(pattern.wake(self.root, self.d))
+            for n in range(pattern.TURNS_THRESHOLD - 1):  # 자식은 죽었다 — 상태가 안 전진한다
+                self._turns(f"자식 죽은 뒤 턴 {n}")
+                self.assertIsNone(pattern.wake(self.root, self.d))
+        self.assertEqual(spawn.call_count, 1)
+
+    def test_wake_is_silent_and_spawns_nothing_before_the_threshold(self):
+        with mock.patch.object(pattern, "spawn_pass", return_value=True) as spawn:
+            self.assertIsNone(pattern.wake(self.root, self.d))
+        self.assertEqual(spawn.call_count, 0)
+
+    def test_off_tier_nudges_without_spawning(self):
+        self._turns(*[f"턴 {n}" for n in range(pattern.TURNS_THRESHOLD)])
+        with (
+            mock.patch.object(pattern, "spawn_pass", return_value=True) as spawn,
+            mock.patch.object(pattern, "auto_mode", return_value="off"),
+        ):
+            line = pattern.wake(self.root, self.d)
+        self.assertIn("패턴 학습 대기", line or "")
+        self.assertEqual(spawn.call_count, 0)
+
+    def test_a_failed_spawn_is_not_reported_as_started(self):
+        self._turns(*[f"턴 {n}" for n in range(pattern.TURNS_THRESHOLD)])
+        with mock.patch.object(pattern, "spawn_pass", return_value=False):
+            self.assertIsNone(pattern.wake(self.root, self.d))
+
+    def test_wake_never_pays_for_the_llm_itself(self):
+        """due 판정은 파일 두 개다 — 비싼 학습은 분리 스폰한 자식 몫이라야 턴이 안 늘어진다."""
+        self._turns(*[f"턴 {n}" for n in range(pattern.TURNS_THRESHOLD)])
+        with (
+            mock.patch.object(pattern, "plan_pattern", side_effect=AssertionError("wake 가 LLM 을 불렀다")),
+            mock.patch.object(pattern, "spawn_pass", return_value=True),
+        ):
+            self.assertIsNotNone(pattern.wake(self.root, self.d))
+
+
+class TickWiringTest(PatternBase):
+    """턴 끝 표면 하나가 세 패스를 전부 깨운다.
+
+    패스를 만들어 두고 부르는 자리를 안 만들면 없는 것과 같다 — 26-08-06 까지 패턴은 넛지만,
+    2차 진화는 아무 손도 없었다. 그래서 이 시험은 판정 내용이 아니라 **호출**을 고정한다."""
+
+    def test_one_tick_wakes_norn_pattern_and_project_evolve(self):
+        from asgard.commands.memory import run_tick
+        from asgard.memory import norn
+        from asgard.project_memory import evolve as project_evolve
+
+        with (
+            mock.patch.object(norn, "wake", return_value="노른 줄") as norn_wake,
+            mock.patch.object(pattern, "wake", return_value="패턴 줄") as pattern_wake,
+            mock.patch.object(project_evolve, "wake", return_value="2차 줄") as project_wake,
+            mock.patch("asgard.commands.memory.backends._semantic_nudge_line", return_value=""),
+        ):
+            with mock.patch("sys.stdout.write") as written:
+                run_tick()
+        for call in (norn_wake, pattern_wake, project_wake):
+            self.assertEqual(call.call_count, 1)
+        printed = "".join(str(args[0]) for args, _kw in written.call_args_list)
+        for line in ("노른 줄", "패턴 줄", "2차 줄"):
+            self.assertIn(line, printed)
+
+    def test_one_failing_pass_does_not_silence_the_others(self):
+        from asgard.commands.memory import run_tick
+        from asgard.memory import norn
+        from asgard.project_memory import evolve as project_evolve
+
+        with (
+            mock.patch.object(norn, "wake", side_effect=RuntimeError("노른이 깨졌다")),
+            mock.patch.object(pattern, "wake", return_value="패턴 줄"),
+            mock.patch.object(project_evolve, "wake", return_value="2차 줄"),
+            mock.patch("asgard.commands.memory.backends._semantic_nudge_line", return_value=""),
+            mock.patch("sys.stdout.write") as written,
+        ):
+            self.assertEqual(run_tick(), 0)
+        printed = "".join(str(args[0]) for args, _kw in written.call_args_list)
+        self.assertIn("패턴 줄", printed)
+        self.assertIn("2차 줄", printed)
+
+
 class DegradationTest(PatternBase):
     """provider가 없거나 호출이 깨져도 회수는 살아 있어야 한다 — LLM은 부가 계층이다."""
 

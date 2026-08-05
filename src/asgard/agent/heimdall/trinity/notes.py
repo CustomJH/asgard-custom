@@ -43,20 +43,25 @@ class _NotesMixin(_RunState):
         return ("\n" + "\n".join(lines)) if lines else ""
 
     def _tend_memory(self) -> None:
-        """위그드라실 손질 신호 — 노른(위키 통합)과 패턴(대화에서 오딘 관측 채굴).
+        """위그드라실 손질 신호 — 노른·패턴·2차 진화·프로젝트 mental model.
 
-        외부 클라이언트는 Stop 훅(memory-activate)이 같은 두 신호를 띄운다. 네이티브 루프에만
+        외부 클라이언트는 Stop 훅(memory-activate)이 같은 네 패스를 띄운다. 네이티브 루프에만
         없으면 같은 사용자의 같은 기억이 **어느 호스트로 들어왔느냐에 따라 다른 속도로 자란다** —
         개인 메모리가 호스트에 무관해야 한다는 원칙(policy.CLIENT_MODES)과 어긋나는 자리였다.
 
         위 자가발전 넛지와 결이 다른 이유: 저쪽은 에이전트의 **능력**을 바꾸는 일이라 언제나
-        사람 손이고, 이쪽은 advisory 지식의 손질이라 동의 경계를 `norn_auto` 등급이 쥔다
-        (기본 safe = 보고 전용). 판정도 스폰도 norn.wake 단일 출처가 한다.
+        사람 손이고, 이쪽은 advisory 지식의 손질이라 동의 경계를 등급이 쥔다 (`norn_auto`·
+        `pattern_auto`, 기본 safe). 판정도 스폰도 각 모듈의 wake 단일 출처가 한다.
 
         훅과 달리 subprocess를 거치지 않는다 — 여기는 이미 파이썬 프로세스이고, due 판정은
         파일 두 개를 읽을 뿐이라 인터프리터를 새로 세울 값이 아니다. 침묵이 정상이다."""
         hd = self._hd
-        for line in (self._norn_line(), self._pattern_line()):
+        for line in (
+            self._norn_line(),
+            self._pattern_line(),
+            self._project_evolve_line(),
+            self._project_learning_line(),
+        ):
             if line:
                 hd.on_text(f"  {ui.dim('│ ⠶ ' + line)}\n")
 
@@ -70,9 +75,25 @@ class _NotesMixin(_RunState):
 
     def _pattern_line(self) -> str | None:
         try:
-            from ....memory.pattern import nudge_line
+            from ....memory.pattern import wake
 
-            return nudge_line(self._hd.root)
+            return wake(self._hd.root)
+        except Exception:
+            return None
+
+    def _project_evolve_line(self) -> str | None:
+        try:
+            from ....project_memory.evolve import wake
+
+            return wake(self._hd.root)
+        except Exception:
+            return None
+
+    def _project_learning_line(self) -> str | None:
+        try:
+            from ....project_memory.automation import wake
+
+            return wake(self._hd.root)
         except Exception:
             return None
 

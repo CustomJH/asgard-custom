@@ -394,6 +394,103 @@ def apply_evolve(root: str, cfg: dict, plan: dict) -> dict:
     }
 
 
+# ── 자율 (스스로 도는 손 — 1차 노른·패턴과 같은 자리) ────────────────────────
+#
+# 이 패스에는 26-08-06 까지 부르는 손이 없었다. `evolve_note` 는 넛지 표면용으로 쓰였는데
+# 호출자가 하나도 없어서, 2차 메모리는 사람이 `memory project-evolve` 를 직접 칠 때만
+# 낡은 곳을 봤다. 1차에는 노른이 턴 끝마다 도는데 2차만 손으로 몬 셈이다.
+#
+# 자율의 경계는 이 모듈의 계약 그대로다 — 산출은 커밋이 아니라 **승인 대기 제안**이다.
+# 여기서 자동이 되는 것은 "보는 일"이지 "쓰는 일"이 아니다. 팀 공유 스코프의 쓰기는
+# 여전히 stage_retain → project-approve 를 지난다.
+
+STATE_FILE = "project-evolve.json"
+MIN_INTERVAL_DAYS = 7  # 2차는 1차보다 느리게 자란다 — config [memory].project_evolve_interval_days
+
+
+def _state_path(root: str) -> str:
+    """마지막 패스 표식 — 설정이 아니라 런타임 상태라 `.asgard/state/` 격리를 그대로 쓴다."""
+    from ..settings import state_path
+
+    return state_path(root, STATE_FILE)
+
+
+def _interval_days() -> int:
+    from ..memory.policy import _memory_settings
+
+    with contextlib.suppress(Exception):
+        value = (_memory_settings() or {}).get("project_evolve_interval_days")
+        if value is not None:
+            return max(1, int(value))
+    return MIN_INTERVAL_DAYS
+
+
+def auto_enabled() -> bool:
+    """2차 자율 패스 — config [memory].project_evolve_auto (기본 on)."""
+    from ..memory.policy import _memory_settings
+
+    with contextlib.suppress(Exception):
+        value = (_memory_settings() or {}).get("project_evolve_auto", True)
+        if isinstance(value, str):
+            return value.strip().lower() in ("1", "true", "yes", "on")
+        return bool(value)
+    return True
+
+
+def evolve_due(root: str) -> tuple[bool, str]:
+    """다음 패스 자격 — (due, 사유). 간격만 본다.
+
+    신호 수집(`signals`)은 여기서 안 한다: 카탈로그 전량과 파일 실존을 훑는 일이라
+    턴 끝 판정에 실을 값이 아니다. 비싼 일은 스폰된 자식이 한다 (노른과 같은 규율)."""
+    import datetime as _dt
+
+    from ..io_files import read_json
+
+    state = read_json(_state_path(root)) or {}
+    last = str(state.get("last_evolve") or "")
+    if not last:
+        return True, "first pass"
+    with contextlib.suppress(ValueError):
+        days = (_dt.date.today() - _dt.date.fromisoformat(last)).days
+        interval = _interval_days()
+        if days < interval:
+            return False, f"last pass {days}d ago (min {interval}d)"
+        return True, f"{days}d since the last pass"
+    return True, "state unreadable"
+
+
+def mark_evolved(root: str) -> None:
+    """패스 완료 표식 — 다음 due 판정의 기준점. 실패는 삼킨다 (표식이 패스를 막지 않는다)."""
+    import datetime as _dt
+
+    from ..io_files import write_json
+
+    with contextlib.suppress(Exception):
+        write_json(_state_path(root), {"last_evolve": _dt.date.today().isoformat()})
+
+
+def wake(root: str) -> str | None:
+    """턴이 끝난 자리에서 부르는 2차 손질 신호 — 한 줄 또는 None(침묵).
+
+    연결되지 않은 저장소에서는 아무 말도 안 한다. 프로젝트 메모리를 안 붙인 사람에게
+    2차 진화는 존재하지 않는 기능이고, 없는 기능을 상기시키는 줄은 소음이다."""
+    from ..memory.norn import spawn_pass
+    from ..memory_bridge import find_config
+
+    if not auto_enabled():
+        return None
+    with contextlib.suppress(Exception):
+        if not find_config(root):
+            return None
+    due, reason = evolve_due(root)
+    if not due:
+        return None
+    mark_evolved(root)  # 스폰 앞에 찍는다 — 자식이 실패해도 매 턴 다시 스폰하지 않는다
+    if not spawn_pass(root, "memory", "project-evolve", "--apply"):
+        return None
+    return f"프로젝트 메모리 진화 패스 시작 — {reason} (산출은 승인 대기 제안, 커밋 아님)"
+
+
 def evolve_note(root: str) -> str:
     """진화 신호 한 줄 요약 — 넛지·doctor 표면용. 신호가 없으면 빈 문자열."""
     with contextlib.suppress(Exception):
@@ -410,8 +507,12 @@ def evolve_note(root: str) -> str:
 __all__ = [
     "MERGE_FLOOR",
     "apply_evolve",
+    "auto_enabled",
+    "evolve_due",
     "evolve_note",
+    "mark_evolved",
     "plan_evolve",
     "signals",
     "validate_ops",
+    "wake",
 ]

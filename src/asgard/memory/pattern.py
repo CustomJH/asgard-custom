@@ -23,7 +23,7 @@ import json
 import os
 import re
 
-from .norn import _FORBIDDEN_INSIGHT, _confidence
+from .norn import _FORBIDDEN_INSIGHT, INSIGHT_AUTO_FLOOR, _confidence, spawn_pass
 from .pages import add, lint
 from .policy import scan_secrets, scan_threats
 from .recall import _containment, _content_words, _jaccard, _neutralize, _stem_hit, _stopword
@@ -460,12 +460,126 @@ def _write_report(d: str, plan: dict, applied: list[dict], failed: list[dict]) -
         )
     for row in failed:
         lines.append(f"- ✗ {row['kind']} 실패 — {row.get('error', '')}")
+    for row in plan.get("proposed") or []:
+        lines.append(f"- (제안) {row['kind']}: {row['text'][:80]} — 검토: asgard memory pattern")
     for row in plan.get("dropped") or []:
         text = str(row["observation"].get("text", ""))[:80]
         lines.append(f"- (기각) {text} — {row['reason']}")
     path = os.path.join(rdir, f"pattern-{stamp}.md")
     _atomic_write(path, "\n".join(lines) + "\n")
     return path
+
+
+# ── 자율 (등급 — 노른과 같은 경계) ────────────────────────────────────────────
+#
+# 이 패스는 오딘이 손으로 몰던 유일한 자리였다. due 판정과 넛지는 있었지만 실행하는 손이
+# 없어서, 넛지 한 줄을 놓치면 그 뒤로는 영영 조용했다 (latch는 같은 턴 수로 두 번 말하지
+# 않는다). 26-08-06 이 저장소 실측: 245턴이 due 상태로 쌓여 있었고 패스는 한 번도 돈 적이
+# 없었다 — pattern-state.json 에 last_pattern 이 없다.
+#
+# 등급의 경계는 노른에서 그대로 가져온다. 두 종류가 위험이 다르기 때문이다:
+#
+#   explicit  — 인용한 턴에 그 낱말이 실제로 있어야 통과한다 (GROUNDING_FLOOR). 근거 대조가
+#               답할 수 있는 물음이고, 페이지 추가는 순수 추가·완전 가역이다 → 자율.
+#   deductive — 여러 턴에 걸친 추론. 노른의 insight와 형상이 같다: "출처에서 왔고 뒤집지도
+#               않았는데 틀린 추론"은 결정론이 잡을 수 있는 모양이 아니다 → 기본 제안.
+#
+#   off  — 자율 없음: 전부 제안 (넛지만)
+#   safe — explicit만 자동, 기본값
+#   full — deductive까지 자동 (그래도 근거 점수 INSIGHT_AUTO_FLOOR 이상만)
+
+AUTO_MODES = ("off", "safe", "full")
+_AUTO_KINDS = {
+    "off": frozenset(),
+    "safe": frozenset({"explicit"}),
+    "full": frozenset({"explicit", "deductive"}),
+}
+
+
+def auto_mode() -> str:
+    """패턴 자율 모드 — config [memory].pattern_auto ∈ off|safe|full (기본 safe)."""
+    from .policy import _memory_settings
+
+    try:
+        value = str(_memory_settings().get("pattern_auto", "safe")).strip().lower()
+        return value if value in AUTO_MODES else "safe"
+    except Exception:
+        return "safe"
+
+
+def partition_observations(rows: list[dict], mode: str) -> tuple[list[dict], list[dict]]:
+    """검증 통과 관측을 (자동 승격분, 제안 잔류분)으로 가른다.
+
+    deductive는 모드만으로 자격을 얻지 못한다 — 근거가 짙어야 한다. 노른의 통찰과 같은
+    문턱을 쓰는 이유는 같은 물음이라서다: 귀납의 비약은 형상이 없으니, 자동으로 넘길 수
+    있는 것은 근거가 실제로 두툼한 쪽뿐이다."""
+    allowed = _AUTO_KINDS.get(mode, _AUTO_KINDS["safe"])
+
+    def _eligible(row: dict) -> bool:
+        if row["kind"] not in allowed:
+            return False
+        if row["kind"] != "deductive":
+            return True
+        with contextlib.suppress(TypeError, ValueError):
+            return float(row.get("grounding") or 0.0) >= INSIGHT_AUTO_FLOOR
+        return False
+
+    auto = [row for row in rows if _eligible(row)]
+    proposed = [row for row in rows if not _eligible(row)]
+    return auto, proposed
+
+
+def run_auto(root: str, d: str | None = None) -> dict:
+    """자율 패턴 패스 1회 — 계획 → 모드 자격분만 승격, 잔류분은 제안으로 보고."""
+    d = ensure_home(d)
+    mode = auto_mode()
+    plan = plan_pattern(root, d)
+    auto_rows, proposed = partition_observations(plan["observations"], mode)
+    if auto_rows or proposed or plan["dropped"]:
+        result = apply_pattern(root, {**plan, "observations": auto_rows, "proposed": proposed}, d)
+    else:
+        # 무수확 런도 상태는 전진한다 — 안 그러면 같은 턴 누적으로 매 턴 다시 발화한다
+        result = {"applied": [], "failed": [], "report": "", "peer_card": ""}
+        state = _load_state(d)
+        state.update({"last_pattern": _today(), "turns_seen": _turn_count(root)})
+        _save_state(d, state)
+    return {"mode": mode, "proposed": proposed, **result}
+
+
+def wake(root: str, d: str | None = None) -> str | None:
+    """턴이 끝난 자리에서 부르는 학습 신호 — 사람에게 보일 한 줄 또는 None(침묵).
+
+    노른의 wake와 같은 계약이다: due 판정은 파일 두 개만 읽고(LLM도 임베더도 안 뜬다),
+    실제 학습은 분리 스폰한 자식이 맡는다. 호출면이 하나여야 하는 이유도 같다 — 개인
+    기억은 소유자의 것이라 어느 호스트로 들어왔느냐에 따라 다른 속도로 자라면 안 된다.
+
+    **재발화 간격은 문턱만큼이다.** 스폰한 턴 수를 그대로 표식으로 쓰면 안 된다 — 턴은
+    매 턴 늘어나므로, 자식이 상태를 쓰기 전에 죽으면 그 다음 턴부터 매 턴 다시 띄운다
+    (노른의 표식은 위키 쓰기에서 나와 저절로 드물다). 그래서 여기서는 마지막 스폰 이후
+    **문턱만큼 새 턴이 더 쌓여야** 다시 띄운다: 죽은 자식의 값이 턴당 한 번이 아니라
+    문턱당 한 번이 된다."""
+    d = ensure_home(d)
+    due, _ = pattern_due(root, d)
+    if not due:
+        return None
+    mode = auto_mode()
+    if mode == "off":
+        return nudge_line(root, d)
+    state = _load_state(d)
+    total = _turn_count(root)
+    spawned_at = int(state.get("auto_spawn_turns") or 0)
+    if spawned_at and total - spawned_at < _settings_int("pattern_turns_threshold", TURNS_THRESHOLD):
+        return None  # 이미 띄운 패스 — 자식이 죽었어도 매 턴 다시 띄우지 않는다
+    state["auto_spawn_turns"] = total
+    _save_state(d, state)
+    if not spawn_pass(root, "memory", "pattern", "--auto"):
+        return None  # 스폰 못 했으면 말도 안 한다
+    # due 사유의 원시 누적값(예: 247 turns)은 이번 패스가 실제로 읽는 양이 아니다. 패스는 늘
+    # 최근 MAX_TURNS만 보므로, 큰 백로그를 작업량처럼 알리면 배경 유지보수가 사용자 과제로
+    # 보인다. 시작 신호에는 실제 배치만 적고 누적 진단은 pattern_due API에 남긴다.
+    seen = int(state.get("turns_seen") or 0)
+    batch = min(MAX_TURNS, max(0, total - seen))
+    return f"오딘 관측 학습 — 최근 {batch}턴을 백그라운드에서 정리해요 (모드 {mode}: 직접 진술은 자율, 추론은 제안)"
 
 
 # ── 되묻기 (dialectic) ────────────────────────────────────────────────────────
@@ -543,15 +657,20 @@ def lint_note(d: str | None = None) -> list[dict]:
 
 
 __all__ = [
+    "AUTO_MODES",
     "PEER_CARD_SLUG",
     "apply_pattern",
     "ask",
+    "auto_mode",
     "gather_evidence",
+    "partition_observations",
     "pattern_due",
     "peer_card_rows",
     "plan_pattern",
     "recent_turns",
+    "run_auto",
     "signals",
     "validate_observations",
+    "wake",
     "write_peer_card",
 ]

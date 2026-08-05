@@ -506,7 +506,7 @@ def _add_link(d: str, a: str, b: str) -> bool:
     회수(PPR)는 어차피 무향이지만 사람이 페이지를 열었을 때 한쪽에서만 보이면 관계가 반쪽으로
     읽힌다.
 
-    락을 잡는 이유: 이것은 읽고-고쳐-쓰기이고, 노른은 `_spawn_auto` 로 분리된 프로세스에서
+    락을 잡는 이유: 이것은 읽고-고쳐-쓰기이고, 노른은 `spawn_pass` 로 분리된 프로세스에서
     돈다 — 사용자의 대화형 ingest 와 진짜로 동시에 실행된다. 락이 없으면 읽은 뒤 남이 쓴
     본문 위에 옛 본문을 덮어써서 그 쓰기가 통째로 사라진다. 다른 쓰기 경로(add·ingest·
     remove·merge)가 전부 같은 락을 지나므로, 여기만 안 지나면 직렬화가 성립하지 않는다."""
@@ -1011,13 +1011,17 @@ def wake(root: str, d: str | None = None) -> str | None:
         return None  # 같은 누적 상태로 이미 스폰 — 중복 백그라운드 방지
     state["auto_spawn_digest"] = digest
     _save_state(d, state)
-    if not _spawn_auto(root):
+    if not spawn_pass(root, "memory", "norn", "--auto"):
         return None  # 스폰 못 했으면 말도 안 한다 — 시작하지 않은 일을 시작했다고 하지 않는다
     return f"위그드라실 노른 자동 통합 시작 — {reason} (모드 {mode}: 추가는 자율, 병합·보관은 제안)"
 
 
-def _spawn_auto(root: str) -> bool:
-    """`memory norn --auto`를 분리 스폰 — 호출자의 수명과 끊는다 (훅 타임아웃·턴 종료 무관).
+def spawn_pass(root: str, *args: str) -> bool:
+    """자율 패스 하나를 분리 스폰 — 호출자의 수명과 끊는다 (훅 타임아웃·턴 종료 무관).
+
+    노른만의 손잡이가 아니다. 자율 패스는 넷이고(노른·패턴·2차 진화·프로젝트 학습) 넷 다 같은 자리에서
+    같은 이유로 떨어져야 한다 — 표면마다 Popen을 다시 쓰면 아래 두 계약 중 하나가 조용히
+    빠진 사본이 생긴다.
 
     **에이전트를 env로 명시해서 넘긴다.** `profiles.scoped()`는 contextvar라 자식에게 안 따라간다
     — 안 넘기면 이 자식은 끈끈한 활성 에이전트로 떨어져, 에이전트 A로 돌던 세션의 기억을 B의
@@ -1037,7 +1041,7 @@ def _spawn_auto(root: str) -> bool:
     exe = _shutil.which("asgard") or sys.argv[0]
     try:
         subprocess.Popen(
-            [exe, "memory", "norn", "--auto"],
+            [exe, *args],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             stdin=subprocess.DEVNULL,
