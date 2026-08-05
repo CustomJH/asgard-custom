@@ -1,0 +1,31 @@
+# map: orchestrator
+
+- `src/asgard/agent/heimdall/` — 네이티브 Trinity 오케스트레이터 패키지 (구 heimdall.py 단일 모듈의 분해)
+- `src/asgard/agent/heimdall/__init__.py` — 파사드 — 구 단일 모듈 공개 표면(밑줄 이름 포함) 전부 재수출
+- `src/asgard/agent/heimdall/core/` — Heimdall 클래스 패키지 — 요청 하나의 생애(파사드) + 면별 믹스인 넷
+- `src/asgard/agent/heimdall/core/sessions.py` — 역할별 세션·모델 선택·턴 실행·소비량 집계
+- `src/asgard/agent/heimdall/core/recall.py` — 회수층 주입과 턴 뒤 기억 갈무리, 지도 준비
+- `src/asgard/agent/heimdall/core/routing.py` — 요청 분류와 레인 선택 (DIRECT/Trinity)
+- `src/asgard/agent/heimdall/core/closing.py` — 문체 게이트·최종 보고·봉인·되짚기·에스컬레이션
+- `src/asgard/agent/heimdall/trinity/` — TrinityRun 퀘스트 상태기계 패키지 — 순환(파사드) + 턴 믹스인 셋
+- `src/asgard/agent/heimdall/trinity/turns.py` — Thinker·Worker 턴과 조사·그래프·편대 배정
+- `src/asgard/agent/heimdall/trinity/verdict.py` — 베이스라인·craft·문체 게이트와 LLM 판정자 턴
+- `src/asgard/agent/heimdall/trinity/notes.py` — 배차 메모·기억 갈무리·의도 블록·궤적 요약
+- `src/asgard/agent/heimdall/waves.py` — WaveRunner — 배정 단위 wave 병렬 실행, 티켓 lease·격리 workspace·패치 병합
+- `src/asgard/agent/heimdall/delivery.py` — DeliveryDispatch — 딜리버리 위임, freyja/thor 편대 fan-out, 시각 게이트
+- `src/asgard/agent/heimdall/roles.py` — 역할 프롬프트 본문·모델 티어·스킬 리졸버·노트 주입 (순수 조회)
+- `src/asgard/agent/heimdall/classify.py` — 요청 휴리스틱 분류·API 오류 판정·게이트 시그니처 (순수 함수)
+- `src/asgard/agent/heimdall/planning.py` — Thinker 계획 units 파싱·wave 위상 정렬·재개 스냅샷
+- `src/asgard/agent/heimdall/toolspec.py` — 네이티브 세션 툴 스키마 선언 (verdict/dispatch/편대)
+- `src/asgard/agent/heimdall/journal.py` — .asgard/state 텔레메트리·write sentinel 기록 IO
+- `src/asgard/agent/runtime.py` — ExecutionSession과 transport-neutral 턴 결과·이벤트 계약
+- `src/asgard/agent/session.py` — AgentSession — provider 트랜스포트별 역할 세션 실행, ql/gate 서브프로세스 진입점
+- `src/asgard/agent/unit_workspace.py` — UnitWorkspace — Git 기반 단위 격리 공간, capture/apply 패치 왕복
+- `src/asgard/agent/repl/` — 네이티브 REPL 패키지 — 턴 루프(파사드) + 화면·입력·명령·출력
+- `src/asgard/agent/repl/chrome.py` — 배너·로고·상태줄·상자 글자
+- `src/asgard/agent/repl/editline.py` — 입력 한 줄 — prompt_toolkit 세션과 readline 폴백
+- `src/asgard/agent/repl/dock.py` — 하단 상주 입력 독과 커서 제어
+- `src/asgard/agent/repl/commands.py` — 슬래시 명령 (/trinity·/bridge·/manual·/lagom)
+- `src/asgard/agent/repl/catalog.py` — 슬래시 명령 차례표 — 완성 메뉴와 /help 공용
+- `src/asgard/agent/repl/render.py` — 스트리밍 렌더러·스피너·되짚기 한 줄
+- `tests/test_architecture.py` — 5계층(foundation→providers→domain→application→interface) 의존 규칙·훅 자립 계약 강제

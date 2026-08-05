@@ -1,23 +1,33 @@
 """리포 위생 불변식 — 이 저장소 한정 커밋 경계.
 
-`.asgard/asgard-setting-project.json`은 업스트림 기본에선 팀 공유(비밀 없음 전제)지만,
-이 저장소에선 중요정보라 커밋 금지다 (오딘 결정 26-07-18). 방어는 `.asgard/.gitignore`에서
-업스트림 예외(`!asgard-setting-project.json`)를 제거하는 것인데, `asgard setup` 재실행이
-그 파일을 무조건 덮어써(setup.py `_ASGARD_GITIGNORE`) 예외를 부활시킬 수 있다 —
-이 테스트가 재노출을 CI에서 잡는다.
+`.asgard/asgard-setting-project.json` 은 팀 공유 설정이다 (오딘 결정 26-08-05: "어차피 다
+나중에 넣어야 하니까 .asgard gitignore 풀어"). 26-07-18 에는 반대로 커밋 금지였고, 그때의
+방어는 `.asgard/.gitignore` 에서 업스트림 예외를 지우는 것이었다 — 그 결정이 뒤집혔으므로
+이 파일이 지키는 것도 바뀐다.
+
+**공유가 되면 지킬 것도 바뀐다.** 예전 질문은 "이 파일이 새어 나가는가"였고, 지금 질문은
+"새어 나가도 되는 것만 들어 있는가"다. 커밋되는 파일에 백엔드 자격증명이 하나 들어오는
+순간 그것은 곧바로 팀 저장소의 비밀이 된다 — 그래서 키 이름을 본다.
+
+값은 안 본다 (Canon 4). 이름만으로 판정하는 것이 요점이다: 값을 읽어 판정하는 검사는
+그 자체가 비밀을 로그로 옮긴다.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import unittest
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-SENSITIVE = ".asgard/asgard-setting-project.json"
+SETTINGS = ".asgard/asgard-setting-project.json"
+
+# 자격증명을 담는 이름들. 부분일치로 본다 — `api_key`·`authToken`·`db_password` 를 다 잡는다.
+SECRET_NAMES = ("secret", "token", "password", "passwd", "credential", "api_key", "apikey", "private_key")
 
 
-class TestRepoHygiene(unittest.TestCase):
+class TestSharedSettingsStayShareable(unittest.TestCase):
     def _git(self, *args: str) -> subprocess.CompletedProcess:
         return subprocess.run(["git", "-C", ROOT, *args], capture_output=True, text=True, timeout=30)
 
@@ -25,28 +35,51 @@ class TestRepoHygiene(unittest.TestCase):
         if self._git("rev-parse", "--git-dir").returncode != 0:
             self.skipTest("git 저장소 밖 (sdist 등) — 위생 검사는 저장소 문맥 전용")
 
-    def test_project_settings_json_is_git_ignored(self):
-        """중요정보 파일이 unignore로 재노출되면 실패 — `git add .` 한 번에 유출되는 상태다."""
-        p = self._git("check-ignore", "-q", SENSITIVE)
+    def test_project_settings_json_is_trackable(self):
+        """팀 공유 설정이 무시되면 팀이 같은 정책으로 못 돈다 — 26-08-05 결정의 반대 방향 감시."""
         self.assertEqual(
-            p.returncode,
-            0,
-            f"{SENSITIVE} 가 git 에 노출됨 — .asgard/.gitignore 의 업스트림 예외가 부활했는지 확인하라",
+            self._git("check-ignore", "-q", SETTINGS).returncode,
+            1,
+            f"{SETTINGS} 가 무시되고 있다 — `.asgard/.gitignore` 에서 예외가 다시 지워졌는지 확인하라",
         )
 
-    def test_project_settings_json_is_not_tracked(self):
-        """이미 인덱스에 들어간 경우도 잡는다 — ignore 규칙은 tracked 파일에 무력하다."""
-        p = self._git("ls-files", "--", SENSITIVE)
-        self.assertEqual(p.stdout.strip(), "", f"{SENSITIVE} 가 git 인덱스에 추적되고 있음 — git rm --cached 필요")
+    def test_shared_settings_carry_no_credential_shaped_keys(self):
+        """커밋되는 설정에 자격증명 이름이 들어오면 그 순간 팀 저장소의 비밀이 된다."""
+        path = os.path.join(ROOT, SETTINGS)
+        if not os.path.exists(path):
+            self.skipTest("설정 파일 없음 — 스캐폴드 전 저장소")
+        with open(path, encoding="utf-8") as handle:
+            payload = json.load(handle)
+
+        found: list[str] = []
+
+        def walk(node: object, path: str = "") -> None:
+            if isinstance(node, dict):
+                for key, value in node.items():
+                    here = f"{path}.{key}" if path else key
+                    if any(name in key.lower() for name in SECRET_NAMES):
+                        found.append(here)
+                    walk(value, here)
+            elif isinstance(node, list):
+                for index, value in enumerate(node):
+                    walk(value, f"{path}[{index}]")
+
+        walk(payload)
+        self.assertEqual(
+            found,
+            [],
+            f"공유 설정에 자격증명 이름이 있다: {found} — 그 값은 이 파일이 아니라 환경변수나 "
+            "`~/.asgard` 의 기계 로컬 설정에 둔다",
+        )
 
 
 class TestSetupLeavesANarrowedIgnoreAlone(unittest.TestCase):
-    """위 둘은 이 저장소가 **이미 망가진 뒤**에 잡는다 — 여기서 원인을 잡는다.
+    """셋업이 기존 `.asgard/.gitignore` 를 덮지 않는가.
 
-    셋업이 기존 `.asgard/.gitignore` 에 스캐폴드 negation 을 병합하던 동안, 일부러 좁혀 둔
-    목록이 재실행 한 번에 도로 넓어졌다 (26-08-04 실측: `asgard init --cc` 한 번에 map/·
-    binding.json·asgard-setting-project.json 셋이 추적 가능해졌고 그중 하나가 중요정보다).
-    전파는 쓰기가 아니라 말하기로 갚는다 — 파일은 한 바이트도 안 바뀌어야 한다."""
+    26-08-04 실측: `asgard init --cc` 한 번에 map/·binding.json·asgard-setting-project.json
+    셋이 추적 가능해졌다. 지금은 그 넓은 쪽이 이 저장소가 원하는 상태지만, 셋업이 **사용자가
+    손으로 좁혀 둔 파일을 덮어쓰는가**는 방향과 무관한 별개의 계약이다 — 좁히기로 한 저장소에서
+    재실행 한 번에 도로 넓어지면 그것은 스캐폴드가 결정을 뒤집은 것이다."""
 
     def test_preserved_ignore_is_not_rewritten(self):
         import tempfile
