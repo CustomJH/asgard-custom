@@ -157,7 +157,7 @@ def _auto_baseline_check(root: str, policy: dict, quest_log_mod) -> dict | None:
             "fix": "",
         }
     timeout = int(policy.get("baseline_timeout") or 120)
-    stalled = sorted({cmd for cmd in checks if _ever_timed_out(root, cmd, quest_log_mod)})
+    stalled = sorted({cmd for cmd in checks if _ever_timed_out(root, cmd)})
     listed = ", ".join(cmd[:60] for cmd in checks[:2])
     if not stalled:
         return {
@@ -180,10 +180,12 @@ def _auto_baseline_check(root: str, policy: dict, quest_log_mod) -> dict | None:
     }
 
 
-def _ever_timed_out(root: str, cmd: str, quest_log_mod) -> bool:
+def _ever_timed_out(root: str, cmd: str) -> bool:
     """이 명령이 퀘스트 기장에서 상한에 끊긴 적이 있는가 — 최근 기장만 훑는다 (판정용 관측)."""
     import glob
     import json as _json
+
+    from ...hooks.asgard_hooklib.baseline import _timed_out_row
 
     paths = sorted(glob.glob(os.path.join(root, ".asgard", "quest", "*.jsonl")), key=os.path.getmtime)[-20:]
     for path in reversed(paths):
@@ -195,7 +197,7 @@ def _ever_timed_out(root: str, cmd: str, quest_log_mod) -> bool:
                     except ValueError:
                         continue
                     rows = (event.get("baseline") or {}).get("results")
-                    if quest_log_mod._timed_out_row(rows, cmd, 120):
+                    if _timed_out_row(rows, cmd, 120):
                         return True
         except OSError:
             continue
@@ -211,10 +213,15 @@ def _baseline_checks_check(root: str) -> dict | None:
     try:
         from ...hooks import quest_log as quest_log_mod
 
+        # 안전 표 판정은 `asgard_hooklib.runners` 에 있다. `quest_log` 는 소비처가 쓰던 이름 일부만
+        # 다시 세워 두는 자리라 이 이름은 거기 없다 — 그쪽으로 부르면 AttributeError 가 아래 except
+        # 에 삼켜져 이 행이 통째로 사라진다.
+        from ...hooks.asgard_hooklib.runners import configured_checks
+
         policy = quest_log_mod.load_policy(root)
         if not policy.get("baseline_checks"):
             return _auto_baseline_check(root, policy, quest_log_mod)
-        accepted, rejected = quest_log_mod.configured_checks(policy)
+        accepted, rejected = configured_checks(policy)
     except Exception:
         return None
     if not rejected:
