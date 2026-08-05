@@ -79,10 +79,14 @@ def archive(root: str, rows: list[tuple[str, str]], *, session_id: str = "") -> 
     try:
         conn = _db(root)
         try:
-            top = conn.execute("SELECT max(seq) FROM ev").fetchone()[0] or 0
-            now = time.time()
+            # 읽고 나서 쓰는 블록이라 `io_sqlite.writing` 이다 — `with conn:` 은 이 자리에서
+            # 세션 절반을 조용히 잃었다 (그 이유는 그 함수의 독스트링에). `max(seq)` 를 락 안에서
+            # 읽는 것도 같은 몫이다: 밖에서 읽으면 두 세션이 같은 top 을 보고 같은 seq 를 쓴다
+            # (ev 는 fts5 라 그 중복을 막아 줄 제약이 없다).
             written = 0
-            with conn:
+            with io_sqlite.writing(conn):
+                top = conn.execute("SELECT max(seq) FROM ev").fetchone()[0] or 0
+                now = time.time()
                 for role, text in rows:
                     body = (text or "").strip()
                     if not body:

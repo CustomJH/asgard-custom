@@ -23,8 +23,10 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import sqlite3
+from collections.abc import Iterator
 
 # studio/db.py·orchestration/store.py 가 이미 쓰던 값. 세 자리가 서로 다르면 어느 쪽이 정본인지
 # 물어야 하고, 물어야 하는 값은 계약이 아니다.
@@ -51,6 +53,30 @@ def connect(path: str) -> sqlite3.Connection:
         conn.close()
         raise
     return conn
+
+
+@contextlib.contextmanager
+def writing(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
+    """쓰기 트랜잭션 하나. `with conn:` 대신 이것을 쓴다 — 읽고 나서 쓰는 블록이라면 특히.
+
+    `with conn:` 은 deferred 로 연다. 그러면 첫 SELECT 가 읽기 락으로 시작하고 첫 INSERT 에서
+    쓰기로 승격하는데, 그 승격은 다른 writer 가 이미 쓰고 있으면 `busy_timeout` 을 **쓰지 않고**
+    즉시 `database is locked` 다: 양쪽이 서로의 읽기 락을 붙든 채 기다리면 영영 안 풀리므로
+    SQLite 는 기다리는 대신 바로 포기한다. 처음부터 쓰기 락을 요청하면(`BEGIN IMMEDIATE`) 그
+    경합이 정상적인 대기가 되고 `busy_timeout` 이 덮는다.
+
+    26-08-06 실측(`agent/evicted.archive`): 4스레드가 25건씩 보관할 때 두 스레드가 승격에서
+    죽어 50건이 통째로 사라졌고, 호출부가 fail-open 이라 화면에는 아무것도 안 보였다. 같은
+    부하를 immediate 로 받으면 8스레드에서도 무손실이다.
+
+    읽기만 하는 블록에는 쓰지 않는다 — 그때는 쓰기 락이 남의 쓰기를 막을 뿐이다."""
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        yield conn
+    except BaseException:
+        conn.rollback()
+        raise
+    conn.commit()
 
 
 def remove(path: str) -> None:
