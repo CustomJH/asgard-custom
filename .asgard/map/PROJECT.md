@@ -7,8 +7,8 @@
 ## Orientation
 
 - Project root: `./`
-- Languages by observed source files: Python (558), JavaScript (6), Rust (2)
-- Evidence scan: 762 files; 36 landmarks
+- Languages by observed source files: Python (566), JavaScript (6), Rust (2)
+- Evidence scan: 778 files; 36 landmarks
 
 ## Landmarks
 
@@ -58,10 +58,14 @@
 
 ## Documents
 
+- `AGENTS.md` — doc: asgard-custom — Agent Guide · sections: Asgard — Identity (Worldview); Asgard — Canon (Common Laws); Asgard — Trinity Loop (Heimdall Orchestration); Asgard — Codebase Map (.asgard/map/); Asgard — Lagom (Minimalism Contract); Asgard — Bragi (Human Voice)
+- `MANUAL.md` — doc: MANUAL · sections: API; Database; Naming
 - `README.md` — doc: Asgard · sections: Install; Local or isolated execution; Tool Kernel; Skill and Plugin Registry; Documents (Sága); Project Map
 - `docker/README.md` — doc: 컨테이너 하나 = 에이전트 하나 · sections: 먼저 — 이 폴더에 이미지가 둘 있고, 서로 다른 것이에요; 가르는 것은 두 줄이에요; 1. 호스트의 에이전트를 그대로 컨테이너에 (_asgard start_); 2. 컨테이너 전용 에이전트 여럿 (compose); 자격증명은 기본으로 안 넘어가요; 알아둘 것
 - `studio-shell/README.md` — doc: Asgard Studio native shell · sections: Run; Build; Icons
 - `benchmarks/bragi-humanvoice/README.md` — doc: Bragi — human-voice bench · sections: Running; Part A — upstream labeled pairs; Part B — held-out human corpus; Part C — live A/B on a real model; Honest limits
+- `benchmarks/conductor/README.md` — doc: Conductor 대조 — arXiv 2512.04388 의 평가 축을 Asgard 에 적용 · sections: 두 층; 못 재는 것
+- `benchmarks/conductor/REPORT.md` — doc: Conductor 대조 + trinity-orchestrator.html §8 재검증 — 2026-08-06 · sections: 1. 정책 롤아웃 — 0-LLM (_policy_rollout.py_); 2. 결정론 마이크로벤치 — HEAD 재확인; 3. 라이브 대조 — 3아암 × 3과업 × 2반복 (18세션); 4. DIRECT 무세금 — §8 S5 재측정; 5. 하네스 레이턴시 — §8 표 재측정 (회귀); 6. 문서 §8 주장 대조표
 - `benchmarks/core-loop/README.md` — doc: Asgard core loop A/B · sections: What this harness cannot measure: system-prompt size
 - `benchmarks/grounding/REPORT.md` — doc: 근거 대조 벤치 — 어간 하한 __stem_floor_ · sections: 결과 (실측 26-08-01); 읽는 법; 권고; 이 벤치가 못 재는 것
 - `benchmarks/hybrid-search/REPORT.md` — doc: 하이브리드 검색 벤치 — 2경로 vs 3경로 · sections: 검색 품질 (hit@k · MRR); 지연 (query() 벽시계)
@@ -89,8 +93,9 @@
 
 ## Public surfaces
 
-- `src/asgard/agent/session.py` — public surface: class TurnCancelled; class ProviderRetriesExhausted; class SessionResult; def make_client(rp); class AgentSession
+- `src/asgard/providers.py` — public surface: class ProviderProfile; class ResolvedProvider; def cred_path(); def normalize_model_id(value); def is_agent_model_id(model_id)
 - `benchmarks/bragi-humanvoice/build_corpus.py` — public surface: def korean_skills(base); def blader(base); def vietnamese(base); def japanese(base); def main()
+- `benchmarks/conductor/aggregate.py` — public surface: def med(xs); def fmt(v, spec); def main()
 - `benchmarks/core-loop/harness.py` — public surface: def main()
 - `benchmarks/grounding/harness.py` — public surface: def floor_default(word); def floor_min(n); def floor_ratio(r); def floor_suffix(n); def floor_script(latin_suffix)
 - `benchmarks/hybrid-search/harness.py` — public surface: def build_wiki(d, extra_distractors); def score_mode(d, semantic_on); def latency_mode(d, semantic_on, iters); def main(); def print_summary(rec)
@@ -107,7 +112,7 @@
 - `tests/hookscaffold.py` — public surface: def deploy_library(hooks_dir); def deploy_cli(bin_dir); def until(predicate, timeout, step)
 - `tests/test_activity.py` — public surface: class ActivityEmitCase; class ActivityReadCase; class StudioAbsorbCase; class SessionEmitCase; class StudioLiveRunCase
 - `tests/test_adversarial_gate.py` — public surface: def run(script, args, stdin, cwd, env_extra); class AdversarialBase; class TestAdversarialVectors; class TestEncodingDisarm; class TestSessionIdentityDisarm
-- `tests/test_agent.py` — public surface: class Base; class TestEditor; class TestBash; class TestTruncation; class TestBashDestructiveGuard; uses `src/asgard/agent/session.py`
+- `tests/test_agent.py` — public surface: class Base; class TestEditor; class TestBash; class TestTruncation; class TestBashDestructiveGuard; uses `src/asgard/agent/quest_bridge.py`
 - `tests/test_agent_cli_config.py` — public surface: class AgentCliConfigTest
 - `tests/test_agent_env_propagation.py` — public surface: class EnvPropagationTest
 - `tests/test_agent_hook.py` — public surface: class AgentHookBase; class TestRenderIsSingleSource; class TestPlacementIsSingleSource; class TestContainerHome; class TestClientSchemas
@@ -136,7 +141,6 @@
 - `tests/test_doctor_shape.py` — public surface: class TestDoctorJsonShape; class TestTrinityRowNames; class TestPiecesStandAlone; class TestHookInterpreterIsExecuted; class TestConfigReading
 - `tests/test_document_tools.py` — public surface: class DocumentToolTest; class BundledDocumentSkillTest; uses `src/asgard/agent/tool_kernel.py`
 - `tests/test_eitri.py` — public surface: class TestScaffold; class TestSkillBodies; class TestSkillResolver; class TestWiring; uses `src/asgard/templates/eitri.py`
-- `tests/test_engines.py` — public surface: def test_api_catalog_and_fallback_are_distinct_reachability(monkeypatch, tmp_path); def test_anthropic_uses_its_existing_catalog_probe(monkeypatch, tmp_path); def test_unconfigured_engine_never_calls_catalog(monkeypatch, tmp_path); def test_cli_and_codex_use_their_native_readiness_checks(monkeypatch, tmp_path); def test_cache_ttl_boundary_and_cached_never_probe(monkeypatch, tmp_path); uses `src/asgard/providers.py`
 
 ## Navigation contract
 
