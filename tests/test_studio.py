@@ -134,7 +134,7 @@ class TestDispatch(StudioCase):
         status, ctype, body = studio.dispatch("GET", "/asset/logo")
         self.assertEqual((status, ctype), (200, "image/png"))
         self.assertTrue(body.startswith(b"\x89PNG"))
-        # 앱 아이콘 — 네이티브 창과 브라우저 폴백이 같은 얼굴을 든다
+        # 앱 아이콘 — 네이티브 창과 브라우저 폴백이 같은 얼굴을 쓴다
         for path in ("/asset/app-icon", "/favicon.ico"):
             status, ctype, body = studio.dispatch("GET", path)
             self.assertEqual((status, ctype), (200, "image/png"), path)
@@ -502,7 +502,7 @@ class TestProjectRegistry(StudioCase):
         return [row for row in rows if not row["scratch"]]
 
     def test_prune_drops_only_the_roots_that_are_gone(self):
-        """자리에 없는 등록만 걷어낸다 — 살아 있는 것과 현재 경계는 남는다."""
+        """자리에 없는 등록만 제거한다 — 살아 있는 것과 현재 경계는 남는다."""
         with tempfile.TemporaryDirectory() as alive, tempfile.TemporaryDirectory() as current:
             studio_store.add_project(alive)
             studio_store.add_project(current)
@@ -930,6 +930,66 @@ class TestNativeShell(unittest.TestCase):
         ):
             self.assertIn(expected, studio.server._native_candidates())
 
+    def test_windows_uses_the_dir_the_installer_recorded(self):
+        """추측 경로는 사람이 폴더를 바꿔 깔면 전부 빗나간다 — 설치본이 적어 둔 자리를 먼저 본다."""
+        recorded = "D:\\Apps\\Asgard Studio"
+        expected = os.path.join(recorded, "asgard-studio.exe")
+        with (
+            mock.patch.object(studio.server.os, "name", "nt"),
+            mock.patch.object(studio.server, "_windows_install_dirs", return_value=[recorded]),
+            mock.patch.dict(os.environ, {}, clear=True),
+            mock.patch.object(studio.server.shutil, "which", return_value=None),
+            mock.patch.object(studio.server.os.path, "isfile", side_effect=lambda path: path == expected),
+        ):
+            self.assertEqual(studio.server._native_candidates(), [expected])
+
+    def test_windows_install_downloads_the_release_setup_for_this_version(self):
+        """설치본은 릴리스마다 붙어 나갔는데 아무도 안 가져왔다 — 여기가 그 길이다."""
+        from asgard import __version__
+
+        with (
+            mock.patch.object(studio.server.os, "name", "nt"),
+            mock.patch.object(studio.server, "_native_candidates", side_effect=[[], ["C:\\app.exe"]]),
+            mock.patch("asgard.commands.update._download") as download,
+            mock.patch.object(studio.server.subprocess, "run", return_value=mock.Mock(returncode=0)) as run,
+        ):
+            self.assertEqual(studio.server.install_shell(), 0)
+        url, dest = download.call_args.args
+        self.assertEqual(
+            url,
+            f"https://github.com/CustomJH/asgard-custom/releases/download/v{__version__}/Asgard.Studio_{__version__}_x64-setup.exe",
+        )
+        self.assertEqual(run.call_args.args[0], [dest, "/S"])  # 무인 — 눌러 줄 사람이 그 자리에 없다
+
+    def test_install_is_refused_where_no_installer_ships(self):
+        with mock.patch.object(studio.server.os, "name", "posix"):
+            self.assertEqual(studio.server.install_shell(), 1)
+
+    def _launch(self, *, nt: bool, tty: bool, prefer_native: bool = True, opens: list | None = None):
+        """`_launch_window` 한 번 — 설치가 불렸는지와 무엇으로 열었는지를 돌려준다."""
+        with (
+            mock.patch.object(studio.server.os, "name", "nt" if nt else "posix"),
+            mock.patch.object(studio.server.sys, "stdout", mock.Mock(isatty=lambda: tty)),
+            mock.patch.object(studio.server, "_open_native", side_effect=opens or [False, False]),
+            mock.patch.object(studio.server, "install_shell", return_value=0) as install,
+            mock.patch.object(studio.server, "_open") as browser,
+        ):
+            native = studio.server._launch_window("http://127.0.0.1:8766/", "/p", "default", prefer_native, False)
+        return native, install.call_count, browser.call_count
+
+    def test_windows_first_run_installs_the_window_and_opens_it(self):
+        """설치본을 가져오는 길이 없어서 첫 실행이 늘 브라우저로 떨어졌다 — 여는 자리가 곧 까는 자리다."""
+        self.assertEqual(self._launch(nt=True, tty=True, opens=[False, True]), (True, 1, 0))
+
+    def test_an_unattended_run_does_not_open_an_installer_nobody_can_click(self):
+        self.assertEqual(self._launch(nt=True, tty=False), (False, 0, 1))
+
+    def test_asking_for_the_browser_installs_nothing(self):
+        self.assertEqual(self._launch(nt=True, tty=True, prefer_native=False), (False, 0, 1))
+
+    def test_the_installer_is_windows_only(self):
+        self.assertEqual(self._launch(nt=False, tty=True), (False, 0, 1))
+
     def test_native_app_receives_only_managed_loopback_context(self):
         with (
             mock.patch.object(studio.server, "_native_candidates", return_value=["/app/asgard-studio"]),
@@ -939,6 +999,31 @@ class TestNativeShell(unittest.TestCase):
             env = run.call_args.kwargs["env"]
             self.assertEqual(env["ASGARD_STUDIO_URL"], "http://127.0.0.1:8766/")
             self.assertEqual(env["ASGARD_STUDIO_ROOT"], "/project")
+
+
+class TestClosingTheWindowIsNotAnAccident(unittest.TestCase):
+    """Ctrl-C로 창을 닫으면 브라우저가 쥔 요청이 끊긴다 — 그것이 트레이스백으로 나가면 안 된다.
+
+    Windows 실측: `stopped` 바로 뒤에 `Exception occurred during processing of request from
+    ('127.0.0.1', 54046)`가 붙어 나와, 정상 종료가 화면에서 고장으로 보였다."""
+
+    def _handle(self, exc: BaseException) -> str:
+        import io
+
+        server = object.__new__(studio.server._RootServer)
+        stderr = io.StringIO()
+        try:
+            raise exc
+        except BaseException:
+            with mock.patch("sys.stderr", stderr):
+                server.handle_error(None, ("127.0.0.1", 54046))
+        return stderr.getvalue()
+
+    def test_a_severed_connection_is_silent(self):
+        self.assertEqual(self._handle(ConnectionAbortedError(10053, "closed by the host")), "")
+
+    def test_a_real_fault_still_speaks(self):
+        self.assertIn("127.0.0.1", self._handle(ValueError("nope")))
 
 
 class TestFailureReachesTheWindowIntact(StudioCase):

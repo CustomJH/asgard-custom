@@ -43,7 +43,16 @@ from .boundary import (
 )
 from .config import save_role, save_settings, save_skill
 from .routes import dispatch, dispatch_post, dispatch_put
-from .server import _bind, _Handler, _native_candidates, _open_native, _RootServer, render_html, run_studio
+from .server import (
+    _bind,
+    _Handler,
+    _native_candidates,
+    _open_native,
+    _RootServer,
+    install_shell,
+    render_html,
+    run_studio,
+)
 from .snapshot import settings_state, snapshot_data
 from .state import _ARTIFACT_CAP, _LOADED_ROOTS, _ROOT_LOCK, _SETTING_KEYS, _TASK_LOCK, _TASKS
 from .tasks import (
@@ -123,6 +132,7 @@ __all__ = [
     "follow_task",
     "forget_project",
     "host_allowed",
+    "install_shell",
     "load_project_tasks",
     "origin_allowed",
     "pause_task",

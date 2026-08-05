@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import json
 import os
-from http.server import ThreadingHTTPServer
 from importlib.resources import files as _files
 from urllib.parse import urlsplit
 
@@ -268,7 +267,7 @@ class _Handler(loopback.LoopbackHandler):
         self._route()
 
 
-class _RootServer(ThreadingHTTPServer):
+class _RootServer(loopback.LoopbackServer):
     root: str
 
 

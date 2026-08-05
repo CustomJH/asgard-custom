@@ -10,8 +10,11 @@ import json
 import os
 import shutil
 import subprocess
+import sys
+import tempfile
 import threading
-from http.server import ThreadingHTTPServer
+from importlib import import_module
+from typing import Any
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 from ... import ui
@@ -87,7 +90,7 @@ class _Handler(loopback.LoopbackHandler):
         self._mutate("PUT")
 
 
-class _RootServer(ThreadingHTTPServer):
+class _RootServer(loopback.LoopbackServer):
     root: str
     agent: str
     agent_explicit: str  # 사용자가 이름을 대고 연 경우에만 찬다 — 해석값(agent)과 다른 축이다
@@ -204,6 +207,28 @@ def _bind(
     return httpd
 
 
+def _windows_install_dirs() -> list[str]:
+    """설치본이 **적어 둔** 자리. 추측 경로는 사람이 폴더를 바꿔 깔면 통째로 빗나간다.
+
+    설치본은 제거 항목에 `InstallLocation`을 남긴다 — 사용자 설치는 HKCU, 기계 전체 설치는
+    HKLM이고 키 이름은 번들 식별자다. 옛 설치본은 같은 자리를 제품 이름으로 적었다."""
+    try:  # POSIX에 없는 모듈 — Any로 든다 (winterm의 msvcrt 선례)
+        winreg: Any = import_module("winreg")
+    except ImportError:
+        return []
+    found: list[str] = []
+    for hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+        for name in ("dev.asgard.studio", "Asgard Studio"):
+            try:
+                with winreg.OpenKey(hive, rf"Software\Microsoft\Windows\CurrentVersion\Uninstall\{name}") as handle:
+                    where = str(winreg.QueryValueEx(handle, "InstallLocation")[0] or "")
+            except OSError:
+                continue
+            if where:
+                found.append(where)
+    return found
+
+
 def _native_candidates() -> list[str]:
     """네이티브 셸을 어디서 찾을지 — 순서가 곧 정체성이다.
 
@@ -225,16 +250,13 @@ def _native_candidates() -> list[str]:
         os.path.join(repo, "studio-shell", "src-tauri", "target", "debug", binary),
     ]
     if os.name == "nt":
-        candidates = [
-            configured,
-            found,
-            *bare,
-            *(
-                os.path.join(base, "Asgard Studio", binary)
-                for base in (os.environ.get("LOCALAPPDATA"), os.environ.get("ProgramFiles"))
-                if base
-            ),
+        bases = [base for base in (os.environ.get("LOCALAPPDATA"), os.environ.get("ProgramFiles")) if base]
+        homes = [
+            *_windows_install_dirs(),
+            *(os.path.join(base, "Asgard Studio") for base in bases),
+            *(os.path.join(base, "Programs", "Asgard Studio") for base in bases),
         ]
+        candidates = [configured, found, *bare, *(os.path.join(home, binary) for home in homes)]
     else:
         bundles = [
             os.path.join(
@@ -270,6 +292,68 @@ def _open_native(url: str, root: str, agent: str = "") -> bool:
             return True
         except OSError:
             continue
+    return False
+
+
+def install_shell() -> int:
+    """네이티브 창을 이 기계에 깐다 — 릴리스에 붙어 있는 Windows 설치본을 받아 실행한다.
+
+    여태 Windows에는 창을 가져올 길이 없었다. 설치본(`Asgard.Studio_<판>_x64-setup.exe`)은
+    릴리스마다 붙어 나갔는데 `install.ps1`도 `asgard update`도 그것을 안 가져왔고, 화면에
+    나가던 말은 "아직 안 구웠다"였다 — 휠로 받은 사람에게 구울 것은 애초에 없다."""
+    from ... import __version__
+    from ..update import _REPO, _download
+
+    if os.name != "nt":
+        ui.fail("설치본은 Windows 것만 릴리스에 붙어요")
+        ui.step(ui.dim("다른 플랫폼은 studio-shell/README.md 를 따라 직접 구우세요"))
+        return 1
+    if _native_candidates():
+        ui.ok("네이티브 창이 이미 깔려 있어요")
+        return 0
+    name = f"Asgard.Studio_{__version__}_x64-setup.exe"
+    url = f"https://github.com/{_REPO}/releases/download/v{__version__}/{name}"
+    tmpd = tempfile.mkdtemp(prefix="asgard-studio-")
+    setup = os.path.join(tmpd, name)
+    ui.head("install the native window", 2)
+    ui.phase("download")
+    try:
+        _download(url, setup, label=name)
+    except Exception as exc:
+        shutil.rmtree(tmpd, ignore_errors=True)
+        ui.fail(f"내려받지 못했어요: {exc}")
+        ui.step(ui.dim(url))
+        return 1
+    ui.phase("install")
+    # `/S` — 무인 설치. 창을 여는 도중에 마법사를 띄우면 눌러 줄 사람이 그 자리에 없다.
+    # 사용자 설치(현재 사용자)라 권한 상승도 없다.
+    with ui.spin("installing the native window…"):
+        code = subprocess.run([setup, "/S"]).returncode
+    shutil.rmtree(tmpd, ignore_errors=True)  # 설치본이 아직 돌면 Windows가 못 지운다 — 무해하다
+    if _native_candidates():
+        ui.done("네이티브 창을 깔았어요")
+        return 0
+    ui.fail(f"설치본이 끝났는데도 창을 못 찾았어요 (종료 코드 {code})")
+    ui.step(ui.dim("직접 깔아 보세요: " + url))
+    return code or 1
+
+
+def _launch_window(url: str, root: str, agent: str, prefer_native: bool, json_out: bool) -> bool:
+    """창을 띄운다. 네이티브로 열었으면 True — 그 창이 닫힌 것이니 서버도 접어야 한다.
+
+    Windows에서는 **처음 여는 자리가 곧 까는 자리다**. 설치본은 릴리스마다 붙어 나가는데
+    가져오는 길이 없어서, 첫 실행이 늘 브라우저로 떨어지고 사람에게는 "앱이 안 켜진다"로
+    보였다. 사람이 보고 있을 때만(TTY) 깐다 — 무인 실행에서 말없이 프로그램을 내려받아
+    까는 것은 부른 적 없는 일이다. 그 자리에서는 예전처럼 브라우저로 연다."""
+    if prefer_native and _open_native(url, root, agent):
+        return True
+    installable = prefer_native and not json_out and os.name == "nt" and sys.stdout.isatty()
+    if installable and install_shell() == 0 and _open_native(url, root, agent):
+        return True
+    if prefer_native and not json_out:
+        ui.warn("네이티브 창이 아직 없어요 — 브라우저로 열게요")
+        ui.step(ui.dim("설치: asgard open studio --install" if os.name == "nt" else "빌드: studio-shell/README.md"))
+    _open(url)
     return False
 
 
@@ -318,12 +402,8 @@ def run_studio(
     if open_browser:
 
         def launch() -> None:
-            if prefer_native and _open_native(url, httpd.root, httpd.agent):
+            if _launch_window(url, httpd.root, httpd.agent, prefer_native, json_out):
                 httpd.shutdown()
-                return
-            if prefer_native and not json_out:
-                ui.warn("Tauri app not built yet — opening the browser fallback")
-            _open(url)
 
         threading.Timer(0.4, launch).start()
     try:

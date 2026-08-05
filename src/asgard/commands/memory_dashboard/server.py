@@ -5,7 +5,6 @@ from __future__ import annotations
 import json as _json
 import re
 import threading
-from http.server import ThreadingHTTPServer
 from importlib.resources import files as _files
 from urllib.parse import parse_qs, urlsplit
 
@@ -89,12 +88,12 @@ class _Handler(loopback.LoopbackHandler):
         self._route(head_only=True)
 
 
-def _bind(host: str, port: int) -> ThreadingHTTPServer:
+def _bind(host: str, port: int) -> loopback.LoopbackServer:
     """요청 포트를 먼저 시도하고, 점유돼 있으면 임시 포트(0)로 폴백한다."""
     try:
-        return ThreadingHTTPServer((host, port), _Handler)
+        return loopback.LoopbackServer((host, port), _Handler)
     except OSError:
-        return ThreadingHTTPServer((host, 0), _Handler)
+        return loopback.LoopbackServer((host, 0), _Handler)
 
 
 def run_dashboard(port: int = 8765, host: str = "127.0.0.1", open_browser: bool = True) -> int:

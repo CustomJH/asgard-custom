@@ -18,7 +18,8 @@
 from __future__ import annotations
 
 import json
-from http.server import BaseHTTPRequestHandler
+import sys
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "[::1]"})
@@ -144,3 +145,18 @@ class LoopbackHandler(BaseHTTPRequestHandler):
 
     def log_message(self, format: str, *args: object) -> None:
         return  # 요청 로그 억제 — 창은 서버 로그를 보여 주는 자리가 아니다
+
+
+class LoopbackServer(ThreadingHTTPServer):
+    """세 창이 같이 쓰는 소켓 — 끊긴 연결을 사고로 찍지 않는다.
+
+    Ctrl-C로 창을 닫으면 브라우저가 붙잡고 있던 요청이 그 자리에서 끊긴다. 기본
+    `handle_error`는 그것을 트레이스백으로 찍어서, 정상 종료가 화면에서 고장으로 보였다
+    (Windows 실측 — `Exception occurred during processing of request from ('127.0.0.1', …)`가
+    `stopped` 바로 뒤에 붙어 나왔다). 끊긴 연결만 삼킨다 — 나머지 예외는 그대로 올린다.
+    """
+
+    def handle_error(self, request: object, client_address: object) -> None:
+        if isinstance(sys.exc_info()[1], (ConnectionError, TimeoutError)):
+            return
+        super().handle_error(request, client_address)  # ty: ignore[invalid-argument-type]  (기반 별칭은 비공개다)

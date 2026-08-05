@@ -305,9 +305,17 @@ def open_studio(
     root: str = typer.Option("", "--root", help=t("hc_open_workspace")),
     agent: str = typer.Option("", "--agent", help="default agent for this window; overrides the global --agent option"),
     isolated: bool = typer.Option(False, "--isolated", help="start a dedicated server for this agent"),
+    install: bool = typer.Option(
+        False, "--install", help="install the native window before opening (a first run installs it on its own)"
+    ),
 ) -> None:
     """Open Asgard Studio. 프로젝트 안이 아니어도 열린다 — 작업 공간은 창에서 고른다."""
-    from ..commands.studio import run_studio
+    from ..commands.studio import install_shell, run_studio
+
+    if install:
+        code = install_shell()
+        if code:
+            raise typer.Exit(code)
 
     raise typer.Exit(
         run_studio(

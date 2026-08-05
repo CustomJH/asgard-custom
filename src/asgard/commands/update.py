@@ -43,10 +43,10 @@ def _wheel_url(v: str) -> str:
     return f"https://github.com/{_REPO}/releases/download/v{v}/asgard-{v}-py3-none-any.whl"
 
 
-def _download(url: str, dest: str) -> None:
+def _download(url: str, dest: str, label: str = "asgard wheel") -> None:
     with urllib.request.urlopen(urllib.request.Request(url), timeout=30) as resp:
         total = int(resp.headers.get("Content-Length") or 0)
-        with ui.bar("asgard wheel", total) as b, open(dest, "wb") as f:
+        with ui.bar(label, total) as b, open(dest, "wb") as f:
             while True:
                 chunk = resp.read(65536)
                 if not chunk:
