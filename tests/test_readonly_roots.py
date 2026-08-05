@@ -504,5 +504,47 @@ class TestTheMessageOperandIsNotAnEscapeHatch(Sandboxed):
                 self.assertEqual(self.bash(command)[0], 0)
 
 
+class TestStagingTheControlSurfaceIsNotWriting(Sandboxed):
+    """`.asgard` 를 커밋 경계 안으로 들이는 연산은 이 갈래가 막지 않는다.
+
+    표면이 닫혀 있는 이유는 거기 쓴 것이 판정의 물리 대조 밖에 남는다는 것이다. 색인에 담는
+    것은 그 이유를 지운다 — 담기고 나면 Odin 이 diff 로 본다. 무엇이 실제로 담기는지는
+    `.asgard` 자신의 무시 규칙이 정하므로 가드가 그 경계를 다시 적지 않는다."""
+
+    def test_staging_and_committing_the_shared_assets_passes(self) -> None:
+        for command in (
+            "git add -- .asgard",
+            "git add -- .asgard/map .asgard/memory/binding.json",
+            # 뿌리를 정하는 파일도 담을 수는 있다 — 담는 것은 고치는 것이 아니다.
+            "git add -- .asgard/asgard-setting-project.json",
+            'git add -- .asgard && git commit -m "chore: 팀 자산을 Git 안으로"',
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.bash(command)[0], 0)
+
+    def test_git_verbs_that_touch_the_working_tree_are_still_blocked(self) -> None:
+        """작업 트리를 바꾸는 git 은 그대로 막힌다 — 열린 것은 색인 하나다."""
+        for command in ("git checkout -- .asgard", "git restore .asgard", "git rm -r .asgard", "git stash -- .asgard"):
+            with self.subTest(command=command):
+                self.assertEqual(self.bash(command)[0], 2)
+
+    def test_plain_writes_to_the_control_surface_are_untouched(self) -> None:
+        for command in ("rm -rf .asgard/state", "echo x > .asgard/asgard-setting-project.json"):
+            with self.subTest(command=command):
+                self.assertEqual(self.bash(command)[0], 2)
+
+    def test_the_forgery_surface_is_not_stageable_either(self) -> None:
+        """기장·영수증·상태는 담는 것도 막는다 — 위조 갈래는 이 완화를 안 본다."""
+        for command in ("git add -- .asgard/quest", "git add -- .asgard/state/lagom-mode.json"):
+            with self.subTest(command=command):
+                self.assertEqual(self.bash(command)[0], 2)
+
+    def test_config_injection_does_not_ride_in_on_the_index_lane(self) -> None:
+        """`-c` 는 임의 헬퍼를 실행한다 — 읽기 레인에서 거르는 것을 여기서도 거른다."""
+        for command in ("git -c core.pager=sh add -- .asgard", "git --work-tree=/tmp add -- .asgard"):
+            with self.subTest(command=command):
+                self.assertEqual(self.bash(command)[0], 2)
+
+
 if __name__ == "__main__":
     unittest.main()

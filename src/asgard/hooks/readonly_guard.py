@@ -93,6 +93,12 @@ _SHELL_EXPANSION = re.compile(r"\$\{?[A-Za-z_]")
 _AWK_WRITE = re.compile(r">|\bsystem\s*\(|\bclose\s*\(|\bgetline\b|\bENVIRON\b|\|")
 _VERIFY = {"pytest", "mypy", "pyright", "ty"}
 _GIT_READ = {"diff", "status", "log", "show", "grep", "ls-files", "rev-parse"}
+# 색인에만 닿는 git 하위명령 — 작업 트리의 파일을 한 바이트도 안 바꾼다. 아래 통제 표면이
+# 닫혀 있는 이유는 "거기 쓴 것이 판정의 물리 대조에 안 잡힌다" 인데, 색인에 담는 것은 그
+# 반대다: 커밋 경계 안으로 들여 Odin 이 diff 로 보게 만든다. 무엇이 담기는지는 `.asgard`
+# 자신의 무시 규칙이 이미 정해서 (퀘스트 로그·상태·배차 DB 는 무시된 채 남는다) 가드가 그
+# 경계를 다시 적지 않는다. `rm` 은 뺐다 — `--cached` 없이 부르면 파일을 지운다.
+_GIT_INDEX_ONLY = {"add", "commit"}
 # 통제 표면 = **판정의 물리 대조가 못 보는 자리**. `diff_state` 의 diff 범위는
 # `[base, current, "--", ".", ":(exclude).asgard"]` 라 `.asgard/**` 에 쓴 것은 판정 해시에
 # 한 바이트도 안 들어간다 (영역 지도 `.asgard/map/*.md` 만 따로 다시 읽어 넣는다). 그 자리만
@@ -114,6 +120,27 @@ _PRIVATE_CONTROL_PATHS = (".asgard/quest", ".asgard/receipts", ".asgard/state")
 # 본다. 실수와 곧이곧대로의 쓰기를 막는 그물이지 적대 봉쇄가 아니다. 경로 모양으로 적어 두는
 # 것도 그래서다 — 맨 파일명만 보면 그 이름을 **설명하는** 문서 한 줄이 쓰기로 읽힌다.
 _BOUNDARY_FILES = (".asgard/asgard-setting-project.json", ".claude/settings.json", ".claude/settings.local.json")
+
+
+def _git_flags_safe(tokens: list[str], roots: tuple[str, ...]) -> bool:
+    """git 전역 플래그가 임의 실행이나 뿌리 이탈로 이어지지 않는가 — 읽기 레인과 색인 레인이 함께 쓴다.
+
+    이름만 읽기 전용인 git 명령도 설정으로 지정한 헬퍼를 실행할 수 있다. 실행 가능한 설정 키의
+    목록을 불완전하게 유지하느니 명령별 설정 자체를 거부한다."""
+    for index, token in enumerate(tokens[1:], 1):
+        if token == "-c" or token.startswith("-c") or token == "--config-env" or token.startswith("--config-env="):
+            return False
+        if token in {"--ext-diff", "--textconv", "--paginate", "-p", "--open-files-in-pager"} or token.startswith(
+            "--open-files-in-pager="
+        ):
+            return False
+        if token == "-C" and (index + 1 >= len(tokens) or not _path_token_within_root(roots, tokens[index + 1])):
+            return False
+        if token.startswith(("--git-dir=", "--work-tree=")) and not _path_token_within_root(
+            roots, token.split("=", 1)[1]
+        ):
+            return False
+    return True
 
 
 def _git_subcommand(tokens: list[str]) -> str:
@@ -632,23 +659,7 @@ def _safe_segment(segment: str, roots: tuple[str, ...] = ()) -> bool:
     if program == "tsc":
         return "--noEmit" in tokens[1:]
     if program == "git":
-        for index, token in enumerate(tokens[1:], 1):
-            # Nominally read-only Git commands can execute arbitrary configured helpers.
-            # Per-command config is unnecessary here, so reject it rather than maintaining
-            # an incomplete denylist of executable config keys.
-            if token == "-c" or token.startswith("-c") or token == "--config-env" or token.startswith("--config-env="):
-                return False
-            if token in {"--ext-diff", "--textconv", "--paginate", "-p", "--open-files-in-pager"} or token.startswith(
-                "--open-files-in-pager="
-            ):
-                return False
-            if token == "-C" and (index + 1 >= len(tokens) or not _path_token_within_root(roots, tokens[index + 1])):
-                return False
-            if token.startswith(("--git-dir=", "--work-tree=")) and not _path_token_within_root(
-                roots, token.split("=", 1)[1]
-            ):
-                return False
-        return _git_subcommand(tokens) in _GIT_READ
+        return _git_flags_safe(tokens, roots) and _git_subcommand(tokens) in _GIT_READ
     if (inner := _strip_runner(tokens)) is not None:
         return _safe_segment(shlex.join(inner), roots)
     if program in {"npm", "pnpm", "yarn"}:
@@ -856,6 +867,35 @@ def is_readonly_bash_safe(command: str, root: str | None = None, roots: tuple[st
     return all(_safe_asgard_hook(part, roots) or _safe_segment(shlex.join(part), roots) for part in parts)
 
 
+def is_index_only_git(command: str, roots: tuple[str, ...]) -> bool:
+    """모든 조각이 관측이거나 **색인에만 닿는 git 호출**인가 — 통제 표면 갈래에서만 쓴다.
+
+    통제 표면이 닫혀 있는 이유는 거기 쓴 것이 판정의 물리 대조 밖에 남는다는 것이다. 색인에
+    담는 연산은 그 반대다 — 그 자리를 커밋 경계 안으로 들여 Odin 이 diff 로 보게 만든다.
+    무엇이 실제로 담기는지는 `.asgard` 자신의 무시 규칙이 정하므로 (런타임은 무시된 채 남는다)
+    가드가 그 경계를 다시 적지 않는다.
+
+    읽기 전용 레인(`is_readonly_bash_safe`)에는 안 넣는다. 넣으면 판정자·로키가 색인을 건드릴
+    수 있게 되는데, 이 완화가 사려던 것은 그것이 아니다.
+
+    뿌리 이탈·임의 실행은 읽기 레인과 같은 `_git_flags_safe` 로 거른다. 경로 인자를 뿌리 안으로
+    다시 검사하지는 않는다 — git 이 작업 트리 밖 경로를 스스로 거부하고, 검사하면 커밋 메시지에
+    적힌 경로 한 줄이 봉인을 막는다."""
+    parts, valid = _shell_parts(command)
+    if not valid or not parts:
+        return False
+    for part in parts:
+        if not part:
+            return False
+        if _safe_segment(shlex.join(part), roots):
+            continue
+        if os.path.basename(part[0]) != "git" or not _git_flags_safe(part, roots):
+            return False
+        if _git_subcommand(part) not in _GIT_INDEX_ONLY:
+            return False
+    return True
+
+
 def _deny(protocol: str, message: str) -> None:
     """차단 응답 — Cursor는 permission JSON, Claude Code/Codex는 exit 2 + stderr (git-guard와 동일 규약)."""
     if protocol == "cursor":
@@ -893,7 +933,9 @@ def _refusal(reason: str, tool_name: str, command: str, path: str, roots: tuple[
             "that define this guard's work roots (.claude/settings.json, .claude/settings.local.json) "
             "are not work targets: the verdict's physical diff does not cover them, so a write there "
             "leaves no evidence. Change them through Asgard's own commands (asgard init/sync). "
-            "The rest of .claude/.cursor/.codex/.agents is an ordinary work target — edit it directly."
+            "Staging and committing them is allowed (git add / git commit) — that is what puts them "
+            "inside the diff. The rest of .claude/.cursor/.codex/.agents is an ordinary work target — "
+            "edit it directly."
         )
     if tool_name == "Bash":
         return f"Asgard read-only role policy blocked mutating or unclassified Bash: {target}\n{READONLY_BASH_HINT}"
@@ -966,6 +1008,11 @@ def refusal_reason(tool_name: str, command: str, path: str, roots: tuple[str, ..
         )
     )
     readonly_shell = tool_name == "Bash" and is_readonly_bash_safe(command, roots=roots)
+    # 색인에만 닿는 git 호출은 이 갈래에서 뺀다 — 담는 것은 쓰기가 아니라 그 반대이고, 팀이
+    # 함께 읽는 `.asgard` 자산은 커밋돼야 판정의 물리 대조가 덮는다. 뿌리를 정하는 파일도 같이
+    # 뺀다: 색인에 담는 것은 그 파일을 고치는 것이 아니다. 기장·영수증·상태는 그대로 막힌다
+    # (`_forgery_surface_access` 는 이 완화를 안 본다).
+    index_only_git = tool_name == "Bash" and not readonly_shell and is_index_only_git(command, roots)
     # 넓은 통제 표식은 **뿌리 기준으로 푼 경로 인자**로만 판정한다. 명령문 전체를 부분문자열로
     # 훑던 종전 갈래는 경로가 아닌 언급까지 잡았다: 저장소 밖 호스트 세션 디렉터리나 히어독
     # 본문에 스친 한 마디가 읽기 전용 조사를 통째로 막았다. 인용 안쪽에 숨긴 쓰기가 이 갈래를
@@ -975,6 +1022,7 @@ def refusal_reason(tool_name: str, command: str, path: str, roots: tuple[str, ..
     control_shell_write = (
         tool_name == "Bash"
         and not readonly_shell
+        and not index_only_git
         and (
             _command_targets_control(roots, command, _CONTROL_PATHS)
             or any(name in _without_workspace(_scannable_text(command).replace("\\", "/")) for name in _BOUNDARY_FILES)
