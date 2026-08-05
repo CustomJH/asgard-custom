@@ -83,6 +83,11 @@ class AdversarialBase(unittest.TestCase):
         p = self.qlog("open", qid, "--criteria", criteria)
         self.assertEqual(p.returncode, 0, p.stderr)
 
+    def policy(self, **kw):
+        os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
+        with open(os.path.join(self.root, ".asgard", "trinity-policy.json"), "w", encoding="utf-8") as f:
+            json.dump(kw, f)
+
     def gate(self, session="s1", env_extra=None):
         env = {"CLAUDE_PROJECT_DIR": self.root, **(env_extra or {})}
         return run(
@@ -162,7 +167,9 @@ class TestAdversarialVectors(AdversarialBase):
         self.assertEqual(got, "block", p.stdout + p.stderr)
 
     def test_v4_sensitive_path_micro_pass_blocked(self):
-        """V4. sensitive 경로 우회 — 훅 파일 변경을 micro PASS로 통과 시도 → full 강제 차단."""
+        """V4. sensitive 경로 우회 — 훅 파일 변경을 micro PASS로 통과 시도 → full 강제 차단.
+        위험 축 승격은 verify_level=high 부터다 (기본 low 는 micro 로 판정한다)."""
+        self.policy(verify_level="high")
         self.write(os.path.join(".claude", "hooks", "x.py"), "orig\n")
         self.commit_all("hooks")
         self.open_quest(criteria="edit hook")

@@ -128,11 +128,15 @@ def merge_gitignore(existing: str | None) -> str:
     return base + ("\n" if base else "") + _GITIGNORE_BLOCK
 
 
-# 판정 로직과 달리 이 두 키는 저장소마다 다른 환경 값이다 — 어떤 명령이 이 저장소의 행위
-# 베이스라인이고 그 명령이 몇 초를 쓰는가. 시드로 되돌리면 스위트가 baseline_timeout 보다 긴
-# 저장소는 결정론 레인이 꺼진 채 돌고(quest_log.run_baseline 은 timeout 을 skip 으로 처리한다)
-# 모든 쓰기 퀘스트가 LLM Verifier 로 간다 — quest_log.transition 의 checks_available 갈림길.
-PROJECT_OWNED_POLICY_KEYS = ("baseline_checks", "baseline_timeout")
+# 판정 로직과 달리 이 네 키는 저장소마다 다른 환경 값이다 — 어떤 명령이 이 저장소의 행위
+# 베이스라인이고, 그 명령이 몇 초를 쓰고, 그 스위트를 병렬로 돌릴 값이 나오는가. 시드로 되돌리면
+# 스위트가 baseline_timeout 보다 긴 저장소는 결정론 레인이 꺼진 채 돌고(quest_log.run_baseline 은
+# timeout 을 skip 으로 처리한다) 모든 쓰기 퀘스트가 LLM Verifier 로 간다 — quest_log.transition 의
+# checks_available 갈림길. baseline_parallel 을 되돌리면 병렬에서 자주 깨지는 스위트가 빨간 판정마다
+# 병렬 실행 한 번을 더 쓰고 버린다 (판정 자체는 안 바뀐다 — quest_log._run_check).
+# verify_level 은 저장소가 고른 검증 강도다 — 시드로 되돌리면 full 을 골라 둔 저장소가 sync 한 번에
+# 기본 low 로 내려앉는다 (설정 표면이 sync 마다 증발하면 그건 설정이 아니다).
+PROJECT_OWNED_POLICY_KEYS = ("baseline_checks", "baseline_timeout", "baseline_parallel", "verify_level")
 
 
 def _refreshed_policy(seed: dict, current: object) -> dict:

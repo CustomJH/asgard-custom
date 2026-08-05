@@ -88,7 +88,10 @@ DEFAULT_POLICY: dict[str, Any] = {
     # PASS 레코드에 quest-log가 기록한 결과만 읽는다 (Stop 지연 예산에 pytest를 얹지 않는다).
     "baseline_checks": [],
     "baseline_timeout": 120,
+    # 검증 강도 — low: 항상 micro / high: 위험 축이 걸릴 때만 full / full: 항상 full (quest_log.py와 동일 유지)
+    "verify_level": "low",
 }
+VERIFY_LEVELS = ("low", "high", "full")
 MAX_BLOCKS = 3  # Canon 9 정합 — 동일 세션 4번째 차단 대신 에스컬레이션
 UNSCOPED_DRIFT = "<unscoped>"  # quest_log.py와 동일 유지 — 귀속을 못 따진 fail-safe stale 표시
 UNATTENDED_MODES = {"bypassPermissions", "dontAsk"}  # unattended_context.py와 동일 유지
@@ -344,6 +347,19 @@ def symlink_map_state(path):
     """Hash only the link identity; never open or consume an external target as evidence."""
     target = os.readlink(path).encode(errors="surrogateescape")
     return b"<unsafe-symlink>\0" + target
+
+
+def verify_strength(policy):
+    """trinity_policy.verify_level — quest_log.py의 같은 함수와 동일 유지 (어긋나면 게이트↔전이 판정 분열).
+    모르는 값·빈 값은 기본값으로 (fail-open — 설정 오타가 게이트를 못 끈다)."""
+    level = str((policy or {}).get("verify_level") or "").strip().lower()
+    return level if level in VERIFY_LEVELS else "low"
+
+
+def full_verify_required(policy, risky):
+    """위험 축 판정에 설정 강도를 얹는다 — quest_log.full_verify_required와 동일 유지."""
+    level = verify_strength(policy)
+    return level == "full" or (level == "high" and bool(risky))
 
 
 def sensitive_path(path, needles):
@@ -1276,8 +1292,8 @@ def main():
         sensitive = [f for f in changed if sensitive_path(f, policy["sensitive_paths"])]
         dts = deleted_tests(root, base_ref)
         nt_files = [f for f in changed if not _testfile(f)]  # 테스트 추가 ≠ 리스크 질량
-        full_required = (
-            bool(sensitive) or bool(dts) or len(nt_files) > small["max_files"] or nt_lines > small["max_lines"]
+        full_required = full_verify_required(
+            policy, bool(sensitive) or bool(dts) or len(nt_files) > small["max_files"] or nt_lines > small["max_lines"]
         )
         if full_required and p.get("level") != "full":
             block(

@@ -958,13 +958,32 @@ class TestTransition(TrinityBase):
         self.assertEqual((out["next_role"], out["verify_level"]), ("WORKER", "micro"))
 
     def test_sensitive_write_starts_worker_but_keeps_full_verification(self):
+        self.policy(verify_level="high")  # 위험 축 승격 레인 — 기본 low 는 micro 로 고정한다
         self.open_quest()
         self.write("hooks/deploy.py", "x = 1\n")  # sensitive path
         out = self.next()
         self.assertEqual((out["next_role"], out["verify_level"]), ("WORKER", "full"))
 
+    def test_verify_level_setting_decides_the_escalation(self):
+        """설정 세 단계 — low 는 승격 없음, high 는 위험 축에서만, full 은 축과 무관하게 full."""
+        self.open_quest()
+        self.write("hooks/deploy.py", "x = 1\n")  # sensitive path
+        for level, expected in (("low", "micro"), ("high", "full"), ("full", "full"), ("nonsense", "micro")):
+            self.policy(verify_level=level)
+            self.assertEqual(self.next("--write-expected")["verify_level"], expected, level)
+
+    def test_verify_level_full_promotes_a_trivial_change(self):
+        """full 은 게이트-우선 레인도 닫는다 — 어차피 micro PASS 는 completion_decision 이 되돌린다."""
+        self.policy(verify_level="full", baseline_checks=["python3 -c pass"])
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.qlog("append", "--role", "worker", "--event", "work")
+        out = self.next()
+        self.assertEqual((out["next_role"], out["verify_level"]), ("VERIFIER", "full"))
+
     def test_micro_pass_on_sensitive_is_not_done(self):
         """전이·close는 gate와 같은 판정을 내야 한다 — micro PASS로 DONE 이면 Stop에서 차단당한다."""
+        self.policy(verify_level="high")
         self.open_quest()
         self.write("hooks/deploy.py", "x = 1\n")
         self.verify(level="micro")
@@ -1107,6 +1126,7 @@ class TestGate(TrinityBase):
         self.assertIn("criteria", reason)
 
     def test_sensitive_micro_pass_blocks_full_allows(self):
+        self.policy(verify_level="high")
         self.open_quest()
         self.write("hooks/deploy.py", "x = 1\n")
         self.verify(level="micro")
@@ -1118,11 +1138,20 @@ class TestGate(TrinityBase):
         self.assertFalse(b)
 
     def test_big_diff_requires_full(self):
+        self.policy(verify_level="high")
         self.open_quest()
         self.write("app.py", "x = 1\n" * 100)  # > 80 lines
         self.verify(level="micro")
         b, _ = self.blocked(self.gate())
         self.assertTrue(b)
+
+    def test_verify_level_low_lets_a_micro_pass_through_the_gate(self):
+        """게이트는 전이와 같은 식을 쓴다 — 설정이 승격을 껐는데 게이트만 막으면 세션이 인질이 된다."""
+        self.open_quest()  # 기본 low
+        self.write("hooks/deploy.py", "x = 1\n")
+        self.verify(level="micro")
+        b, _ = self.blocked(self.gate())
+        self.assertFalse(b)
 
     def test_block_cap_escalates_then_allows(self):
         self.open_quest()
@@ -1403,6 +1432,97 @@ class TestUnattended(TrinityBase):
         self.assertNotEqual(jout(self.gate_pm("bypassPermissions")).get("decision"), "block")
 
 
+class TestParallelPytest(unittest.TestCase):
+    """하네스가 도는 pytest 만 병렬로 — 선언 문자열은 결속 키라 그대로 남는다."""
+
+    def parallel(self, cmd):
+        from asgard.hooks.quest_log import _parallel_pytest
+
+        return _parallel_pytest(cmd)
+
+    def test_n_auto_lands_right_after_the_pytest_token(self):
+        # 끝에 붙이면 `&&` 뒤의 다른 명령이 인자를 받는다 — 붙이는 자리가 계약이다.
+        for cmd, want in (
+            ("uv run pytest -q tests/x.py", "uv run pytest -n auto -q tests/x.py"),
+            ("pytest -q", "pytest -n auto -q"),
+            ("python -m pytest -q", "python -m pytest -n auto -q"),
+            # AGENTS.md 가 계약 명령에 쓰는 형태 — 러너와 프로그램 사이의 긴 옵션은 건너뛴다.
+            ("uv run --no-project pytest -q", "uv run --no-project pytest -n auto -q"),
+            ("ruff check . && uv run pytest -q", "ruff check . && uv run pytest -n auto -q"),
+        ):
+            with self.subTest(cmd=cmd):
+                self.assertEqual(self.parallel(cmd), want)
+
+    def test_pytest_outside_the_program_slot_is_not_a_pytest_call(self):
+        # 토큰만 찾으면 인자·경로에 스친 한 마디까지 잡아 엉뚱한 명령에 `-n auto` 를 붙인다.
+        for cmd in ("echo pytest", "grep pytest README.md", "ls tests/pytest"):
+            with self.subTest(cmd=cmd):
+                self.assertIsNone(self.parallel(cmd))
+
+    def test_non_pytest_and_already_parallel_commands_are_left_alone(self):
+        for cmd in ("npm test", "just check", "uv run pytest -n 4 -q", "uv run pytest --numprocesses=2"):
+            with self.subTest(cmd=cmd):
+                self.assertIsNone(self.parallel(cmd))
+
+    def test_a_disabled_xdist_plugin_is_respected_in_either_spelling(self):
+        # `-p no:xdist` 와 `-pno:xdist` 는 같은 뜻이다. 토큰만 보면 붙여 쓴 쪽이 유일한 탈출구를
+        # 그냥 지나쳐, 병렬을 끈 저장소가 그래도 병렬로 돌아간다.
+        for cmd in ("uv run pytest -p no:xdist -q", "uv run pytest -pno:xdist -q"):
+            with self.subTest(cmd=cmd):
+                self.assertIsNone(self.parallel(cmd))
+
+
+class TestParallelCheckRun(TrinityBase):
+    """`_run_check` — 병렬 실행이 직렬과 다른 판정을 내지 않는가."""
+
+    def run_check(self, cmd, parallel_ok=True):
+        from asgard.hooks.quest_log import _run_check
+
+        return _run_check(cmd, self.root, 180, parallel_ok)
+
+    def test_every_non_green_outcome_is_classified_by_the_serial_run(self):
+        """불변식 하나: 초록이 아니면 판정하는 것은 직렬이다 — 코드 목록이 아니라 이것이 계약이다.
+
+        xdist 는 종료 코드를 자기 방식으로 다시 매긴다. 직렬 대 병렬로 사용법 오류 4 대 5,
+        `-x` 중단 1 대 2, `-k` 무매치 4 대 3 이다. `run_baseline` 은 2·3·4·5 를 skip 으로 접으므로
+        재사상 하나를 놓칠 때마다 빨간 게이트가 사유 없이 꺼진다 — 목록을 넓히는 수리를 두 번 했고
+        두 번 다 남은 코드가 있었다. 그래서 여기서 세는 것은 코드가 아니라 **누가 판정했는가**다:
+        비초록이면 `run_cmd` 가 None, 곧 직렬이 답을 냈다는 뜻이다."""
+        self.write("tests/test_red.py", "def test_red():\n    assert False\n")
+        self.write("tests/test_ok.py", "def test_ok():\n    assert True\n")
+        for cmd, serial_code in (
+            ("uv run pytest -q tests/does_not_exist.py", 4),  # 사용법 오류
+            ("uv run pytest -q -x tests/test_red.py", 1),  # 실패 중단
+            ("uv run pytest -q -k zzz_no_such_test tests/test_ok.py", 5),  # 수집 0건
+        ):
+            with self.subTest(cmd=cmd):
+                code, _, run_cmd = self.run_check(cmd)
+                self.assertEqual(code, serial_code)
+                self.assertIsNone(run_cmd, "비초록은 직렬이 판정해야 한다")
+
+    def test_a_suite_that_only_breaks_in_parallel_is_not_a_red(self):
+        """병렬에서만 깨지는 스위트는 직렬 재실행이 초록을 되돌려준다 — 거짓 red 가 안 난다."""
+        self.write("tests/test_ok.py", "def test_ok():\n    assert True\n")
+        code, _, _ = self.run_check("uv run pytest -q -p no:xdist tests/test_ok.py")
+        self.assertEqual(code, 0)
+
+    def test_a_green_suite_runs_in_parallel_and_records_what_it_ran(self):
+        self.write("tests/test_ok.py", "def test_ok():\n    assert True\n")
+        code, _, run_cmd = self.run_check("uv run pytest -q tests/test_ok.py")
+        self.assertEqual(code, 0)
+        self.assertEqual(run_cmd, "uv run pytest -n auto -q tests/test_ok.py")
+
+    def test_the_policy_key_turns_parallel_off(self):
+        """끄면 병렬을 아예 시도하지 않는다 — 판정이 아니라 값을 아끼는 손잡이다.
+
+        비초록이 직렬로 다시 판정되므로 병렬은 결과를 안 흔든다. 다만 병렬에서 자주 깨지는
+        스위트는 빨간 판정마다 병렬 실행 한 번을 더 쓰고 버리는데, 그 값이 아까운 저장소가 있다."""
+        self.write("tests/test_ok.py", "def test_ok():\n    assert True\n")
+        code, _, run_cmd = self.run_check("uv run pytest -q tests/test_ok.py", parallel_ok=False)
+        self.assertEqual(code, 0)
+        self.assertIsNone(run_cmd)
+
+
 class TestBaseline(TrinityBase):
     """하네스 소유 베이스라인 체크: 증거 '품질'의 결정론화 (verifier 재량 커맨드 불신)."""
 
@@ -1482,6 +1602,7 @@ class TestBaseline(TrinityBase):
         self.assertNotEqual(bl["state"], "red")  # uv spawn 실패(exit 2)여도 skip — fail-open
 
     def test_deleted_test_file_forces_full_verify(self):
+        self.policy(verify_level="high")
         self.write("tests/test_app.py", "def test_a(): pass\n")
         subprocess.run(["git", "-C", self.root, "add", "-A"], check=True)
         subprocess.run(["git", "-C", self.root, "commit", "-qm", "add test"], check=True)
@@ -2319,6 +2440,7 @@ class TestVerifyCostControls(TrinityBase):
 
         테스트를 지운 작은 diff 는 full_required 라서, 전이가 micro 를 배정하면 그 PASS 는
         completion_decision 이 micro-pass 로 되돌린다 — 판정 결과는 같고 Verifier 턴만 하나 늘었다."""
+        self.policy(verify_level="high")
         self.write("tests/test_app.py", "def test_x():\n    assert True\n")
         subprocess.run(["git", "-C", self.root, "add", "-A"], check=True)
         subprocess.run(["git", "-C", self.root, "commit", "-qm", "add test"], check=True)
@@ -2451,6 +2573,22 @@ class TestCriteriaContracts(TrinityBase):
         self.assertFalse(jout(self.qlog("state"))["contracts_unmet"])
         self.assertEqual(jout(self.qlog("next", "--write-expected"))["next_role"], "DONE")
         self.assertEqual(self.qlog("close").returncode, 0)
+
+    def test_a_pytest_contract_binds_on_the_declared_string_though_it_ran_in_parallel(self):
+        """병렬 실행이 결속을 흔들면 안 된다 — 계약 키는 선언 원문이고 `run_cmd` 가 실제 실행이다.
+
+        실행을 빠르게 하려고 명령을 바꾸면서 그 바뀐 문자열을 키로 적으면, 선언으로 조회하는
+        `unmet_contracts` 가 못 찾아 결함 2 와 같은 무한 재판정이 다시 난다."""
+        self.open_with("스위트 초록 | verify: uv run pytest -q --version")
+        self.write("app.py", "print('ok')\n")
+        self.qlog("append", "--role", "worker", "--event", "work")
+        self.verify("PASS", commands=[{"cmd": "git status", "exit_code": 0}])
+        with open(os.path.join(self.root, ".asgard", "quest", "q1.jsonl")) as handle:
+            ev = json.loads(handle.read().splitlines()[-1])
+        row = ev["criteria_checks"][0]
+        self.assertEqual(row["cmd"], "uv run pytest -q --version")  # 결속 키 = 선언 원문
+        self.assertEqual(row.get("run_cmd"), "uv run pytest -n auto -q --version")  # 실제 실행
+        self.assertFalse(jout(self.qlog("state"))["contracts_unmet"])
 
     def test_failing_contract_rejects_despite_irrelevant_exit0(self):
         # Codex 교차검증이 지적한 구멍: 무관한 nontrivial exit-0(git status)이 증거로 인정되던 경로 —

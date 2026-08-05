@@ -171,9 +171,18 @@ DEFAULT_POLICY: dict = {
         "which",
     ],
     "failure_threshold": 3,
+    # 검증 강도 — low: 항상 micro / high: 위험 축(민감 경로·테스트 삭제·큰 non-test diff·shared)이
+    # 걸릴 때만 full / full: 항상 full. 기본 low 는 속도 선택이다: full 판정은 상위 티어 모델을
+    # 쓰고(_assign_turn 의 bump), micro PASS 가 나오면 completion_decision 이 되돌려 같은 diff 를
+    # 두 번 판정한다. 민감 경로가 넓은 저장소는 사실상 모든 쓰기가 그 값을 치른다.
+    "verify_level": "low",
     # 하네스 소유 베이스라인 체크 — 비면 보수적 자동 감지 (pytest만)
     "baseline_checks": [],
     "baseline_timeout": 120,
+    # 하네스가 도는 pytest 를 xdist 로 돌린다 (`_run_check`). 판정은 안 바뀐다 — 초록만 병렬이
+    # 결정하고 비초록은 직렬이 다시 낸다. false 는 그 재실행 값이 아까운 저장소를 위한 것이다:
+    # 병렬에서 자주 깨지는 스위트는 빨간 판정마다 병렬 한 번을 더 쓰고 버린다.
+    "baseline_parallel": True,
     # 게이트-우선 적격 상한 — small_write(full-verify 기준)보다 훨씬 좁다:
     # 63라인 리라이트가 소형 판정돼 caller 미방어로 close 된 벤치 결함. 소형 diff 전용.
     "gate_first_max_lines": 25,
@@ -596,6 +605,22 @@ def symlink_map_state(path: str) -> bytes:
     """Hash only the link identity; never open or consume an external target as evidence."""
     target = os.readlink(path).encode(errors="surrogateescape")
     return b"<unsafe-symlink>\0" + target
+
+
+VERIFY_LEVELS = ("low", "high", "full")
+
+
+def verify_strength(policy) -> str:
+    """trinity_policy.verify_level — 모르는 값·빈 값은 기본값으로 (fail-open, 설정 오타가 게이트를 못 끈다).
+    verifier_gate.py의 같은 함수와 동일 유지 (단일 출처 원칙 — 어긋나면 게이트↔전이 판정 분열)."""
+    level = str((policy or {}).get("verify_level") or "").strip().lower()
+    return level if level in VERIFY_LEVELS else "low"
+
+
+def full_verify_required(policy, risky: bool) -> bool:
+    """위험 축 판정에 설정 강도를 얹는다 — 전이·요약·게이트가 모두 이 한 식만 쓴다."""
+    level = verify_strength(policy)
+    return level == "full" or (level == "high" and bool(risky))
 
 
 def sensitive_path(path: str, needles) -> bool:
@@ -1225,6 +1250,72 @@ def _contract_timed_out_before(events: list[dict], cmd: str) -> bool:
     return any(_timed_out_row(event.get("criteria_checks"), cmd) for event in events)
 
 
+# `pytest` 바로 앞에 설 수 있는 것들 — 러너 두 개와 셸 경계. 이 중 하나가 앞에 있거나 명령의 첫
+# 토큰일 때만 pytest 호출로 친다 (`_in_program_slot`).
+_RUNNER_LEADS = {"run", "-m", "&&", "||", ";", "|", "("}
+
+
+def _in_program_slot(tokens: list[str], at: int) -> bool:
+    """`tokens[at]` 이 실행되는 프로그램 자리인가 — 인자나 문자열에 스친 한 마디가 아니라.
+
+    러너와 프로그램 사이의 긴 옵션은 건너뛴다: `uv run --no-project pytest` 도 `uv run pytest` 와
+    같은 호출이고, AGENTS.md 가 계약 명령에 쓰는 형태가 그것이다. 짧은 옵션은 안 건너뛴다 —
+    `-m` 자체가 러너 표식이고, 값을 따로 받는 짧은 옵션(`-p no:xdist`)은 뒤 토큰이 프로그램 자리로
+    보이면 안 된다."""
+    while at > 0 and tokens[at - 1].startswith("--"):
+        at -= 1
+    return at == 0 or tokens[at - 1] in _RUNNER_LEADS
+
+
+def _parallel_pytest(cmd: str) -> str | None:
+    """이 명령을 xdist 로 돌린 형태 — pytest 호출이 아니거나 이미 병렬 인자가 있으면 None.
+
+    바꾸는 것은 스케줄뿐이고 무엇을 도는지는 그대로다. `-n auto` 는 `pytest` 토큰 바로 뒤에
+    끼운다 — 끝에 붙이면 `&&` 나 파이프 뒤의 다른 명령에 붙는다.
+    이 저장소 실측(26-08-05): `tests/test_trinity.py` 직렬 352초 → `-n 8` 68.6초(238건 전량 통과),
+    전체 스위트 836초 → `-n auto` 282초(4,941건 전량 통과)."""
+    tokens = cmd.split()
+    # `no:xdist` 는 토큰이 아니라 글자로 찾는다 — `-p no:xdist` 와 `-pno:xdist` 가 같은 뜻인데
+    # 토큰만 보면 붙여 쓴 쪽이 유일한 탈출구를 그냥 지나친다.
+    if "no:xdist" in cmd or any(t.startswith(("-n", "--numprocesses")) for t in tokens):
+        return None
+    # `pytest` 가 **프로그램 자리**에 있을 때만이다 — 판정은 `_in_program_slot`. 토큰만 찾으면
+    # `echo pytest` 나 경로에 스친 한 마디까지 잡아 인자를 엉뚱한 명령에 붙인다.
+    at = next((i for i, t in enumerate(tokens) if t == "pytest" and _in_program_slot(tokens, i)), None)
+    if at is None:
+        return None
+    return " ".join(tokens[: at + 1] + ["-n", "auto"] + tokens[at + 1 :])
+
+
+def _run_check(cmd: str, root: str, timeout: int, parallel_ok: bool = True):
+    """(exit_code, CompletedProcess, 선언과 다르게 실행했다면 그 명령 — 같으면 None).
+
+    pytest 는 xdist 로 먼저 돌리되 **초록만 병렬이 결정한다.** 초록이 아니면 무엇이 나왔든 선언
+    원문으로 다시 돌려 그 종료 코드를 판정에 쓴다.
+
+    코드별로 예외를 두지 않는 이유: xdist 는 종료 코드를 자기 방식으로 다시 매긴다. 같은 트리
+    같은 명령이 직렬 대 병렬로 사용법 오류 4 대 5, `-x` 중단 1 대 2, `-k` 무매치 4 대 3 을 낸다
+    (26-08-05 실측). `run_baseline` 의 분류는 2·3·4·5 를 skip 으로 접으므로, 재사상 하나를 놓칠
+    때마다 빨간 게이트가 사유 한 줄 없이 꺼진다 — 목록을 넓히는 수리를 두 번 했고 두 번 다 남은
+    코드가 있었다. 열거를 그만두고 규칙을 뒤집는다.
+
+    덤으로 병렬 안전하지 않은 스위트의 거짓 red 도 여기서 걸린다: 병렬에서 깨져도 직렬이 초록이면
+    기록되는 것은 직렬의 0 이다. `parallel_ok=False` (`trinity_policy.baseline_parallel: false`) 는
+    그 재실행 값마저 아까운 저장소를 위한 손잡이다.
+
+    값은 빨간 경우에만 든다 — 초록은 병렬 한 번으로 끝난다. 빨간 판정에는 어차피 사람이 손으로
+    재현할 직렬 명령과 `fails` 줄이 필요하다.
+    timeout 은 여기서 안 잡는다: 병렬이 상한을 넘었다면 직렬은 더 오래 걸려 재시도가 손해고,
+    호출부가 `TimeoutExpired` 를 그대로 기록한다."""
+    parallel = _parallel_pytest(cmd) if parallel_ok else None
+    if parallel:
+        p = subprocess.run(parallel, shell=True, cwd=root, capture_output=True, timeout=timeout)
+        if p.returncode == 0:
+            return 0, p, parallel
+    p = subprocess.run(cmd, shell=True, cwd=root, capture_output=True, timeout=timeout)
+    return p.returncode, p, None
+
+
 def run_baseline(root: str, policy: dict, events: list[dict], diff_hash: str) -> dict | None:
     """체크 전부 실행 → {"state": green|red|none, "results": [...]}. 체크 없음 → None (요건 면제).
     같은 diff_hash의 기존 verify 기록은 재사용 — 동일 트리에 pytest를 두 번 돌리지 않는다.
@@ -1250,14 +1341,18 @@ def run_baseline(root: str, policy: dict, events: list[dict], diff_hash: str) ->
         code: int | None
         p = None
         timed_out = False
+        run_cmd = None
         try:
-            p = subprocess.run(cmd, shell=True, cwd=root, capture_output=True, timeout=timeout)
-            code = p.returncode
+            code, p, run_cmd = _run_check(cmd, root, timeout, policy.get("baseline_parallel", True))
         except subprocess.TimeoutExpired:
             code, timed_out = None, True  # skip 취급 (fail-open) — 다음 append 는 memo 로 건너뛴다
         except Exception:
             code = None  # 그 밖의 실행 실패도 skip
         row: dict = {"cmd": cmd[:120], "exit_code": code, "secs": round(time.time() - t0, 1)}
+        if run_cmd:
+            # 자르지 않는다 — 잘린 명령은 온전해 보이면서 파일을 빠뜨리고, 붙여 넣으면 다른 답을 낸다
+            # (이 저장소 베이스라인은 선언 221자·병렬 229자라 200에서 경로 한가운데가 끊겼다).
+            row["run_cmd"] = run_cmd
         if timed_out:
             row["timed_out"] = True
         results.append(row)
@@ -1554,14 +1649,18 @@ def run_criteria_checks(
         t0 = time.time()
         code: int | None
         timed_out = False
+        run_cmd = None
         try:
-            p = subprocess.run(cmd, shell=True, cwd=root, capture_output=True, timeout=timeout)
-            code = p.returncode
+            code, _, run_cmd = _run_check(cmd, root, timeout, policy.get("baseline_parallel", True))
         except subprocess.TimeoutExpired:
             code, timed_out = None, True
         except Exception:
             code = None  # 미충족 취급 (계약은 명시 선언이라 skip 면제 없음)
+        # 결속 키는 선언 원문(`cmd`)이다 — 병렬로 돌렸다면 그 사실만 따로 적는다. 계약이 무엇을
+        # 검사했는지는 안 바뀌고, Odin 이 읽는 계약 문자열도 선언한 그대로 남는다.
         row: dict = {"cmd": cmd, "exit_code": code, "secs": round(time.time() - t0, 1)}
+        if run_cmd:
+            row["run_cmd"] = run_cmd
         if timed_out:
             row["timed_out"] = True
         results.append(row)
@@ -2272,6 +2371,7 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
     # (스모크 실측: 잠금 테스트 2파일 추가 → big 오판 → full 강제·게이트-우선 무력화). 삭제는 dts가 잡는다.
     nt_files = [f for f in changed if not _testfile(f)]
     small = policy["small_write"]
+    full_risk = bool(sens) or bool(dts) or len(nt_files) > small["max_files"] or nt_lines > small["max_lines"]
     _esc_i = [i for i, e in enumerate(events) if e.get("event") == "verify" and e.get("verdict") == "ESCALATE"]
     _plan_i = [i for i, e in enumerate(events) if e.get("event") == "plan"]
     _research_i = [i for i, e in enumerate(events) if e.get("event") == "work" and e.get("research_only")]
@@ -2323,7 +2423,11 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
         "nontest_files": len(nt_files),
         "nontest_lines": nt_lines,
         # gate의 full_required 판정과 동일 기준 — 전이(DONE)와 close가 gate와 어긋나면 안 된다.
-        "full_required": bool(sens) or bool(dts) or len(nt_files) > small["max_files"] or nt_lines > small["max_lines"],
+        # 위험 축(risk)과 그 축에 설정 강도를 얹은 결과를 함께 싣는다: 전이는 risk에 flags.shared를
+        # 더해 다시 계산하고, close·게이트는 결과만 본다.
+        "full_verify_risk": full_risk,
+        "full_required": full_verify_required(policy, full_risk),
+        "verify_level_policy": verify_strength(policy),
         "pass_hash_match": pass_fresh,
         "verification_identity_match": verification_valid,
         "drift_out_of_scope": drift_out[:10],  # 범위 밖 드리프트 — 관측용 (판정 아님)
@@ -2422,7 +2526,9 @@ def _transition_axes(s: dict, policy: dict, flags) -> dict:
     # 어긋나 있었다: level이 deleted_tests를 안 봐서 테스트를 지운 작은 diff가 micro를 배정받고,
     # Verifier가 micro로 PASS를 내면 completion_decision이 그 PASS를 micro-pass로 거부해
     # 같은 diff에 full Verifier 턴이 한 번 더 붙었다 (판정은 그대로, 대기시간만 두 배).
-    full_required = s["full_required"] or flags.shared
+    # 위험 축은 요약이 계산한 raw(full_verify_risk)에 이 턴의 shared 신고를 더한 것이고, 설정
+    # 강도가 그 축을 승격으로 바꿀지 정한다. 구 요약(축이 없는 로그)은 결과값으로 폴백한다.
+    full_required = full_verify_required(policy, s.get("full_verify_risk", s["full_required"]) or flags.shared)
     return {
         "features": {
             "has_write": has_write,
@@ -2441,7 +2547,8 @@ def _transition_axes(s: dict, policy: dict, flags) -> dict:
         "full_required": full_required,
         "level": "full" if full_required else "micro",
         "standard_ok": (
-            not sensitive
+            verify_strength(policy) != "full"  # 항상 full 설정이면 게이트-우선 micro PASS는 어차피 되돌려진다
+            and not sensitive
             and not big
             and gf_small
             and not s.get("deleted_tests")

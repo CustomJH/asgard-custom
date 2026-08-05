@@ -96,8 +96,10 @@ immediately instead of retrying variants, which only burns the turn.
 agent is forbidden — a verifier that calls a write-capable agent ends up fixing the diff and then
 judging it.
 
-**Recording.** The log entry is the verdict; a natural-language "PASS" is void. Sensitive paths
-(hooks/policy/install/security/CI) and large diffs require `--level full`. Give a FAIL a kebab-case
+**Recording.** The log entry is the verdict; a natural-language "PASS" is void. Record the level the
+turn was assigned — `trinity_policy.verify_level` (low|high|full, default low) decides whether a
+sensitive path (hooks/policy/install/security/CI) or a large diff requires `--level full`, and the
+gate rejects a micro PASS wherever full was required. Give a FAIL a kebab-case
 `failure_sig` (`missing-null-check`) and reuse the same slug for the same root cause, so the
 three-strikes rule (Canon 9) can see a repeat. If the flaw is in the approach itself, mark it
 structural (Mode B `next --structural`, native `structural: true`). Native submits through the

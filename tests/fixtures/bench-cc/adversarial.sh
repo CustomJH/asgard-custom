@@ -59,7 +59,8 @@ echo "z=3" >> "$D/app.py"
 gate_expect "$D" v3 block "신규 quest 에 verify 레코드 없음 → 차단 (이전 증거 무효)"
 
 echo "V4. sensitive 경로 우회 — 훅 파일 변경을 micro PASS 로 통과 시도"
-D="$TMP/v4"; mkrepo "$D"; mkdir -p "$D/.claude/hooks"; echo "orig" > "$D/.claude/hooks/x.py"
+D="$TMP/v4"; mkrepo "$D"; mkdir -p "$D/.claude/hooks" "$D/.asgard"; echo "orig" > "$D/.claude/hooks/x.py"
+echo '{"verify_level":"high"}' > "$D/.asgard/trinity-policy.json"  # 위험 축 승격 레인 (기본 low 는 micro 판정)
 ( cd "$D" && git add -A && git commit -qm hooks )
 ql "$D" open q --criteria "edit hook" >/dev/null
 echo "tampered" > "$D/.claude/hooks/x.py"
