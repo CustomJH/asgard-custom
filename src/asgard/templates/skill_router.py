@@ -46,13 +46,18 @@ def direct_skill(skill_md: str, *, implicit: bool = True) -> str:
     # 인자 힌트는 사용자 표면이다 — 상류가 적어 뒀으면 어댑터에서도 살려야 `/name <args>` 안내가 제대로 나온다.
     hint = _field(skill_md, "argument-hint")
     hint_line = f"argument-hint: {hint}\n" if hint else ""
+    # 모델 선언은 어댑터에만 효력이 있다 — 호스트가 읽는 프론트매터는 이 파일이고, `asgard skills
+    # show` 로 받는 상류 본문은 그 턴이 이미 어느 모델에서 도는지 정해진 뒤에 온다. 절차가 정해진
+    # 스킬(seal 처럼 git 만 부르는 것)이 상위 티어를 쓸 이유가 없어 상류가 티어를 적어 둔다.
+    model = _field(skill_md, "model")
+    model_line = f"model: {model}\n" if model else ""
     # 쉼표로 잇는다 — 공백으로 이으면 상류 목록의 마지막 항목이 `WebSearch Bash(asgard skills *)`
     # 한 덩어리가 돼 그 도구와 우리 통로가 함께 사라진다 (allowed-tools는 쉼표 구분 목록).
     tools = ", ".join(part for part in (allowed, "Bash(asgard skills *)") if part)
     return f"""---
 name: {name}
 description: {description}
-{hint_line}{explicit_line}allowed-tools: {tools}
+{model_line}{hint_line}{explicit_line}allowed-tools: {tools}
 ---
 
 # Asgard central skill adapter

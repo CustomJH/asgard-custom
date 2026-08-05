@@ -5,6 +5,7 @@ SEAL_SKILL_MD = """\
 name: asgard-seal
 description: Commit current working-tree changes with a required gitmoji and Conventional Commit type in one session. NEVER add author, signature, or AI attribution footers.
 allowed-tools: Bash(git status *), Bash(git diff *), Bash(git add *), Bash(git commit *)
+model: sonnet
 lane: vcs
 ---
 

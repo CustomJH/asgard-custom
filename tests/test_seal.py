@@ -59,6 +59,17 @@ class TestSkillBody(unittest.TestCase):
             self.assertEqual(rule.count("Bash("), 1, f"한 항목에 규칙이 여럿 뭉쳤어요: {rule}")
             self.assertRegex(rule, r"^Bash\([^()]+\)$", f"규칙 형태가 아님: {rule}")
 
+    def test_model_tier_is_declared_and_reaches_the_adapter(self):
+        """절차가 정해진 스킬은 티어를 스스로 적는다 — 호스트가 읽는 자리는 어댑터 프론트매터다.
+
+        `asgard skills show` 로 받는 본문은 그 턴의 모델이 정해진 뒤에 도착하므로, 상류에만
+        적으면 아무 효력이 없다."""
+        from asgard.templates.skill_router import direct_skill
+
+        self.assertIn("\nmodel: sonnet\n", SEAL_SKILL_MD)
+        adapter = direct_skill(SEAL_SKILL_MD)
+        self.assertIn("\nmodel: sonnet\n", adapter.split("---", 2)[1])
+
     def test_no_attribution_footer_rule(self):
         self.assertIn("Co-Authored-By", SEAL_SKILL_MD)
         self.assertIn("Signed-off-by", SEAL_SKILL_MD)
