@@ -40,6 +40,7 @@ import os
 import re
 import secrets
 import shlex
+import shutil
 import stat
 import subprocess
 import sys
@@ -369,7 +370,7 @@ def snapshot_ref(root: str) -> str | None:
         if run("add", "-A", "--", ".").returncode:
             return None
         if os.path.isdir(os.path.join(root, ".asgard", "map")):
-            if run("add", "-A", "-f", "--", ".asgard/map").returncode:
+            if run(*_STAT_NEUTRAL, "add", "-A", "-f", "--", ".asgard/map").returncode:
                 return None
         if run("rm", "--cached", "-r", "-q", "--ignore-unmatch", "--", ".asgard", ":(exclude).asgard/map").returncode:
             return None
@@ -383,6 +384,61 @@ def snapshot_ref(root: str) -> str | None:
     finally:
         with contextlib.suppress(OSError):
             os.unlink(index_path)
+
+
+# 임시 인덱스 위의 `add -A` 에서 stat 캐시 밖의 지름길을 끈다. 인덱스 사본은 fsmonitor 표식과
+# untracked 캐시를 함께 들고 오는데, 새로 세운 인덱스에는 둘 다 없다 — 켜 둔 채로 두면 씨앗에
+# 따라 훑는 범위가 달라져 같은 워킹트리가 다른 트리를 낸다. `assume-unchanged` 를 거르는 것과
+# 같은 이유다 (26-08-05 2차 교차검토).
+_STAT_NEUTRAL = ("-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false")
+
+
+def seed_index(root: str, head: str, index_path: str, run) -> bool:
+    """임시 인덱스를 HEAD 트리 내용으로 채운다 — 가능하면 저장소 인덱스를 복사해서.
+
+    `read-tree HEAD` 는 stat 정보가 없는 인덱스를 만든다. 그러면 뒤따르는 `git add -A` 가 추적
+    파일을 전부 다시 읽고 해시한다: 26-08-05 콜드 실측에서 스냅샷 500ms 중 `add -A` 가 382ms
+    였고, 그 값을 Stop 게이트가 매 턴 문다. 저장소 인덱스는 그 stat 캐시를 이미 갖고 있어 같은
+    `add -A` 가 56ms 다.
+
+    복사는 **인덱스가 HEAD 와 한 글자도 다르지 않을 때만** 쓴다 (`diff-index --cached --quiet`).
+    스테이지된 변경이 있으면 두 씨앗의 트리가 갈리기 때문이다: `add -A` 는 `.asgard` 를 안
+    덮으므로 그 구역은 씨앗이 넣은 내용 그대로 실리고, 인덱스에서 지워진 뒤 gitignore 에 걸린
+    추적 파일은 `add -A` 가 다시 안 넣는다. 샌드박스 실측에서 `.asgard/policy.json` 을
+    스테이지하자 `read-tree` 는 HEAD 판을, 사본은 스테이지 판을 실었다 — `read-tree -m` 도
+    그것을 지역 변경으로 보고 그대로 뒀다. 스테이지가 비어 있으면 인덱스 내용이 곧 HEAD 트리라
+    그 갈림이 성립할 수 없다. 그때 두 씨앗의 트리는 같다 (이 저장소 실측: 세 상태 전부
+    `d3b32f6d…` 동일).
+
+    같은 이유로 `assume-unchanged`·`skip-worktree` 표가 붙은 항목이 하나라도 있으면 사본을 안
+    쓴다. `add -A` 는 그 표를 존중해 항목을 건너뛰는데 새로 세운 인덱스에는 표가 없어 같은
+    `add -A` 가 다시 해시한다 — 사본을 쓰면 그 파일의 편집이 스냅샷에서 사라지고 게이트가
+    증거를 못 본다 (26-08-05 재현: 한 파일에 표를 붙이고 고치자 두 트리가 갈렸다).
+    `GIT_INDEX_FILE` 이 이미 환경에 서 있으면 검사와 복사가 서로 다른 인덱스를 보므로 그때도
+    느린 길로 간다.
+
+    검사 둘이 이 저장소에서 약 100ms 다 (`ls-files -v` 가 추적 파일 3,900건을 나열한다). 그래도
+    남는 값이 크다: 스냅샷 556ms → 250ms, Stop 게이트 742ms → 402ms (26-08-05 콜드 실측).
+
+    검사와 복사 사이에 다른 프로세스가 스테이지하면 그 틈으로 스테이지된 `.asgard` 판이 실릴
+    수 있다. 그 구역은 diff 에서 빠져 있어 (`-- . :(exclude).asgard`) PASS 판정을 못 뒤집고,
+    `tree_ref` 대조에서는 귀속 밖 드리프트로 잡혀 재검증 쪽으로 기운다.
+
+    돌려주는 값은 씨앗을 세웠는가다 — 실패면 호출자가 스냅샷을 포기한다."""
+    if not any(os.environ.get(name) for name in ("GIT_INDEX_FILE", "GIT_DIR", "GIT_WORK_TREE")) and (
+        git(root, "diff-index", "--cached", "--quiet", head)[0] == 0
+    ):
+        rc, listing = git(root, "ls-files", "-v")
+        listing = listing.decode("utf-8", "replace") if isinstance(listing, bytes) else listing
+        # `ls-files -v` 의 머리글자: 소문자 = assume-unchanged, `S` = skip-worktree.
+        flagged = rc != 0 or any(row[:1].islower() or row[:1] == "S" for row in listing.splitlines() if row)
+        if not flagged:
+            try:
+                shutil.copy2(os.path.join(root, ".git", "index"), index_path)
+                return True
+            except OSError:
+                pass  # 인덱스가 없는 저장소(첫 커밋 직후)·읽기 실패 — 느린 길이 남아 있다
+    return run("read-tree", head).returncode == 0
 
 
 def current_tree_ref(root: str) -> str | None:
@@ -402,9 +458,9 @@ def current_tree_ref(root: str) -> str | None:
         )
 
     try:
-        if run("read-tree", head.strip()).returncode:
+        if not seed_index(root, head.strip(), index_path, run):
             return None
-        if run("add", "-A", "--", ".", ":(exclude).asgard").returncode:
+        if run(*_STAT_NEUTRAL, "add", "-A", "--", ".", ":(exclude).asgard").returncode:
             return None
         _, raw_untracked = git(
             root, "ls-files", "--others", "--exclude-standard", "-z", "--", ".", ":(exclude).asgard", binary=True
@@ -418,7 +474,7 @@ def current_tree_ref(root: str) -> str | None:
         ):
             return None
         if os.path.isdir(os.path.join(root, ".asgard", "map")):
-            if run("add", "-A", "-f", "--", ".asgard/map").returncode:
+            if run(*_STAT_NEUTRAL, "add", "-A", "-f", "--", ".asgard/map").returncode:
                 return None
         tree = run("write-tree")
         return tree.stdout.decode().strip() if tree.returncode == 0 and tree.stdout.strip() else None
@@ -476,7 +532,7 @@ def artifact_scope(criteria) -> tuple[str, ...]:
             # 절대 경로는 앞의 `/` 를 떼어 저장소 상대로 바꾸지 않는다: 그러면 결속은 있지도 않은
             # `tmp/run/x.json` 에 걸리는데 `unmet_contracts` 는 원문을 그대로 이어 붙여 저장소
             # **밖** 파일로 계약을 충족시킨다 — 한 선언을 두 소비처가 다른 파일로 읽는다.
-            if path and path not in (".", "..") and not path.startswith(("../", "/")):
+            if path and path not in (".", "..") and not path.startswith(("../", "/")) and not os.path.isabs(raw):
                 out.add(path)
     return tuple(sorted(out))
 
@@ -557,6 +613,11 @@ def sensitive_path(path: str, needles) -> bool:
     return False
 
 
+# 결속 불가 표식 — 이 접두사가 붙은 값은 "지금 이 상태"는 적지만 **내용 변화를 안 따라간다**.
+# verifier_gate.py 의 같은 상수와 동일 유지 (단일 출처 원칙 — 어긋나면 영구 stale).
+UNBOUND = "<unbound:"
+
+
 def ignored_state(root: str, scope=()) -> dict[str, str]:
     """Hash ignored non-generated files under `scope` without following symlinks, so declared
     artifacts cannot evade quest binding. 빈 scope는 결속 대상이 없다는 뜻이라 git도 안 부른다 —
@@ -595,8 +656,12 @@ def ignored_state(root: str, scope=()) -> dict[str, str]:
         try:
             info = os.lstat(full)
             if stat.S_ISLNK(info.st_mode):
+                # 링크는 따라가지 않는다 — 저장소 밖 자격 증명을 증거로 열지 않기 위해서다.
+                # 그래서 이 값은 링크가 가리키는 파일의 내용을 안 담는다: 대상을 고쳐도 값이
+                # 그대로라, 선언은 결속을 약속하는데 해시는 안 따라간다. 표식을 붙여 두면
+                # `unbound_artifacts` 가 그것을 미충족으로 돌려준다.
                 body = b"<symlink>\0" + os.readlink(full).encode("utf-8", "surrogateescape")
-                out[path] = hashlib.sha256(body).hexdigest()
+                out[path] = UNBOUND + "symlink:" + hashlib.sha256(body).hexdigest()[:16]
             elif stat.S_ISREG(info.st_mode):
                 digest = hashlib.sha256()
                 with open(full, "rb") as handle:
@@ -604,10 +669,83 @@ def ignored_state(root: str, scope=()) -> dict[str, str]:
                         digest.update(chunk)
                 out[path] = digest.hexdigest()
             else:
-                out[path] = f"<nonregular:{stat.S_IFMT(info.st_mode):o}>"
+                # `git ls-files` 는 중첩 저장소 안으로 안 내려가고 `sub/` 한 줄만 낸다.
+                # 디렉터리의 lstat 값은 그 안에서 무엇이 바뀌어도 그대로다 — 같은 부류다.
+                out[path] = UNBOUND + f"nonregular:{stat.S_IFMT(info.st_mode):o}"
         except OSError:
             out[path] = "<missing>"
     return out
+
+
+def _symlink_on_the_way(root: str, entry: str) -> str:
+    """선언한 경로에 닿기까지 거치는 칸 중 첫 심링크 — 없으면 빈 문자열."""
+    parts = entry.split("/")
+    for depth in range(1, len(parts) + 1):
+        branch = "/".join(parts[:depth])
+        if os.path.islink(os.path.join(root, branch)):
+            return branch
+    return ""
+
+
+def _symlinks_under(root: str, entry: str) -> list[str]:
+    """선언한 자리 아래의 심링크 경로들 (저장소 상대). 파일 선언이면 빈 목록."""
+    out = []
+    for parent, dirs, files in os.walk(os.path.join(root, entry), followlinks=False):
+        for name in dirs + files:
+            full = os.path.join(parent, name)
+            if os.path.islink(full):
+                out.append(os.path.relpath(full, root).replace("\\", "/"))
+    return out
+
+
+def _bound_map_page(path: str) -> bool:
+    """`.asgard` 아래에서 판정 해시가 유일하게 다시 읽는 자리인가 — 지도 바로 아래의 `*.md`.
+    `diff_state` 의 지도 대조와 같은 폭이다 (readonly_guard 의 `_within_managed_map` 도 같다)."""
+    return path.startswith(".asgard/map/") and path.endswith(".md") and path.count("/") == 2
+
+
+def unbound_artifacts(root: str, scope) -> list[str]:
+    """선언은 결속을 약속하는데 해시가 못 따라가는 산출물 — 사유를 붙여 돌려준다.
+
+    두 형상이 여기 걸린다 (26-08-05 실행 확인). 심링크는 링크 신원만 해시되므로 대상 파일을
+    고쳐도 값이 안 움직이고, 중첩 저장소는 `git ls-files` 가 안으로 안 내려가 디렉터리 한 줄만
+    나오며 그 lstat 값은 안 바뀐다. 둘 다 링크를 안 따라가는 것 자체는 옳다 — 문제는 안 묶이는
+    선언이 조용히 통과하는 것이다. 그래서 미충족으로 돌려주고 PASS 를 막는다.
+
+    추적 파일도 첫 고리에서 본다: 추적된 심링크는 `ignored_state` 의 열거에 안 들어오지만
+    링크 뒤 파일의 내용이 안 묶이는 것은 똑같다. verifier_gate.py 의 같은 이름 함수와 동일 유지.
+
+    lagom: 열거를 `diff_state` 와 나눠 쓰지 않고 한 번 더 돈다. 두 호출 사이에 계약 명령이
+    끼어 파일을 바꾸므로 (`run_criteria_checks`) 메모한 값은 그 자리에서 이미 낡는다. 값은
+    선언한 범위에 비례하고 선언이 없으면 0 이다 — 넓은 선언이 비싸지면 그때 나눠라."""
+    reasons: dict[str, str] = {}
+    for entry in scope:
+        # 하네스 상태는 어느 트리에도 안 들어간다 (`current_tree_ref` 와 `ignored_state` 가 둘 다
+        # `.asgard` 를 뺀다). 지도의 `*.md` 만 예외로 다시 읽힌다 — 나머지는 존재만 확인될 뿐
+        # 내용이 어디에도 안 묶인다.
+        if entry == ".asgard" or (entry.startswith(".asgard/") and not _bound_map_page(entry)):
+            reasons[entry] = "under .asgard — the verdict hash excludes harness state"
+            continue
+        # 선언한 경로 자신뿐 아니라 **거쳐 가는 칸마다** 본다. 중간 칸이 링크면 (`out -> /tmp`,
+        # 선언은 `out/x.json`) `os.path.exists` 는 링크를 따라가 "있다"고 답하는데 git 은 링크
+        # 하나만 저장하고 그 안으로 안 내려간다 — 저장소 밖 파일이 계약을 채운다.
+        ancestor = _symlink_on_the_way(root, entry)
+        if ancestor:
+            reasons[entry] = f"reached through the symlink `{ancestor}` — git stores the link, not what is behind it"
+            continue
+        # 선언한 디렉터리 **안의** 링크도 같은 자리다. 추적 여부로 갈리면 안 되므로
+        # (추적 링크는 무시 파일 열거에, 새 링크는 어느 열거에도 안 나온다) 걸어서 본다.
+        for rel in _symlinks_under(root, entry):
+            reasons.setdefault(rel, "symlink — the gate hashes the link, not the file it points at")
+    for path, value in ignored_state(root, scope).items():
+        if isinstance(value, str) and value.startswith(UNBOUND):
+            reasons.setdefault(
+                path,
+                "symlink — the gate hashes the link, not the file it points at"
+                if "symlink" in value
+                else "not a regular file — git does not enumerate inside it (a nested repository?)",
+            )
+    return [f"{path} ({reason})" for path, reason in sorted(reasons.items())]
 
 
 def diff_state(
@@ -796,7 +934,7 @@ def jvm_behavior_check(cmd: str) -> bool:
             pending = ""
             continue
         if token.startswith("-"):
-            pending = token if token in ("-x", "--exclude-task", "--tests", "-P", "-D") else ""
+            pending = token if token in ("-x", "--exclude-task", "--tests", "-P", "-D", "-f", "--file") else ""
             continue
         tasks.append(token)
     for token in tasks:
@@ -901,7 +1039,103 @@ def detect_checks(root: str, policy: dict) -> list[str]:
             return ["uv run pytest -x -q"]
         if shutil.which("pytest"):
             return ["pytest -x -q"]
-    return _detect_node_checks(root)
+    return _detect_node_checks(root) or _detect_jvm_checks(root)
+
+
+# Gradle·Maven 이 테스트 소스를 두는 표준 자리. 이 중 하나도 없는 모듈은 러너가 있어도 뺀다.
+_JVM_TEST_DIRS = ("src/test/java", "src/test/kotlin", "src/test/groovy")
+
+
+def _detect_jvm_checks(root: str) -> list[str]:
+    """JVM 저장소의 행위 베이스라인 — 러너와 테스트 소스가 같은 모듈에 있을 때만.
+
+    자동 감지가 pytest·npm 계열만 보던 탓에 Gradle·Maven 저장소는 `baseline_checks` 를 손으로
+    적지 않으면 **하네스 실행 증거 레인이 통째로 꺼진 채** 돌았다 — 남는 것은 LLM 판정자 하나고,
+    PASS 가 diff 정독에 얹힌다 (26-08-05 hvami-mono 실측: doctor 가 "자동 감지 대상 없음" 을 냈다).
+    `jvm_behavior_check` 는 사람이 적은 JVM 명령을 받아 주면서도 여기서는 한 줄도 내주지 않아,
+    검증 레인과 감지 레인이 같은 저장소를 두고 다른 답을 들고 있었다.
+
+    node 레인과 같은 보수 조건을 건다: ① 러너가 실재하고 ② 그 모듈에 테스트 소스가 있다.
+    테스트가 0개인 모듈에서는 exit 0 이 설계상 보장돼, 아무것도 재지 않는 명령이 결정론 레인
+    자리에 선다. Maven 은 로컬 저장소(`~/.m2/repository`)까지 요구한다 — 첫 실행의 의존성
+    내려받기 실패는 exit 1 이라 테스트 실패와 구분되지 않아 false-red 로 게이트를 인질로 잡는다.
+
+    모듈은 루트와 바로 아래 한 겹만 본다. 모노레포가 서비스마다 래퍼를 두는 형태이고
+    (`hvami-batch/gradlew`), 더 깊이 내려가면 벤더링 트리의 래퍼까지 긁는다."""
+    import shutil
+
+    try:
+        modules = [""] + sorted(
+            name for name in os.listdir(root) if not name.startswith(".") and os.path.isdir(os.path.join(root, name))
+        )
+    except OSError:
+        return []
+    maven_ready = _maven_local_repo()
+    checks: list[str] = []
+    maven_usable: bool | None = None
+    for module in modules:
+        base = os.path.join(root, module)
+        if not any(os.path.isdir(os.path.join(base, d)) for d in _JVM_TEST_DIRS):
+            continue
+        wrapper = os.path.join(base, "gradlew")
+        if os.path.isfile(wrapper) and os.access(wrapper, os.X_OK):
+            checks.append(f"{module + '/' if module else './'}gradlew test")
+            continue
+        pom = os.path.join(base, "pom.xml")
+        if not (os.path.isfile(pom) and maven_ready and shutil.which("mvn") and _pom_runs_tests(pom)):
+            continue
+        if maven_usable is None:
+            maven_usable = _runner_starts(["mvn", "-v"])
+        if maven_usable:
+            checks.append(f"mvn -q -f {module + '/' if module else ''}pom.xml test")
+    return checks[:4]
+
+
+# pom 이 테스트를 **돌린다**고 말하는 표식. 이름만 test 인 의존성(`spring-kafka-test` — 임베디드
+# 브로커 유틸리티다)에 걸리지 않게 러너와 스코프만 본다.
+_POM_TEST_MARKERS = ("junit", "testng", "maven-surefire-plugin", "<scope>test</scope>")
+
+
+def _pom_runs_tests(pom: str) -> bool:
+    """이 모듈이 테스트 러너를 선언했는가 — `src/test/java` 가 있다는 것과 다른 질문이다.
+
+    26-08-05 실측(hvami-mono/kepco-fep): 테스트 소스 4개가 있는데 pom 에 JUnit 도 surefire 도
+    없다. 그런 모듈에 `mvn test` 를 걸면 둘 중 하나다 — 도는 테스트가 0개인 **진공 green**,
+    아니면 JUnit 임포트가 안 풀리는 컴파일 red. 앞은 아무것도 안 재면서 LLM 판정자를 대신하고,
+    뒤는 코드가 멀쩡한데 게이트를 붙잡는다. 둘 다 이 레인이 없는 것만 못하다."""
+    try:
+        with open(pom, encoding="utf-8", errors="replace") as handle:
+            text = handle.read(200_000).lower()
+    except OSError:
+        return False
+    return any(marker in text for marker in _POM_TEST_MARKERS)
+
+
+def _maven_local_repo() -> bool:
+    """Maven 로컬 저장소가 이미 있는가 — node 레인의 `node_modules` 조건과 같은 자리다.
+
+    첫 실행의 의존성 내려받기 실패는 exit 1 이라 테스트 실패와 구분되지 않아 false-red 로
+    게이트를 인질로 잡는다. 이름 있는 함수로 뽑아 두는 이유는 시험이 이 사실을 **호스트에서
+    빌려오지 않게** 하기 위해서다 — 이 기계에 `~/.m2` 가 있다는 이유로 초록인 시험은 CI 와
+    컨테이너에서 빨개진다 (`_runner_starts` 와 같은 조회 지점)."""
+    return os.path.isdir(os.path.join(os.path.expanduser("~"), ".m2", "repository"))
+
+
+def _runner_starts(argv: list[str]) -> bool:
+    """이 러너가 실제로 뜨는가 — PATH 에 이름이 있다는 것과 다른 질문이다.
+
+    버전 관리자의 셰임은 이름은 내주고 실행은 거절한다 (26-08-05 실측: mise 의 `mvn` 셰임이
+    "No version is set for shim" 과 함께 **exit 1** 을 냈다). 자동 감지가 그런 러너를 내주면
+    `run_baseline` 은 1 을 테스트 실패로 읽어 red 를 세우고, 게이트는 멀쩡한 코드를 붙잡는다 —
+    미설치를 뜻하는 127 과 달리 skip 으로도 안 빠진다.
+
+    자동 감지 경로에서만, JVM 후보가 실제로 나왔을 때만 한 번 돈다 (pytest·node 는 앞에서
+    끝난다). 5초를 못 넘기고, 못 판정하면 안 내준다 — 없는 레인이 거짓 red 보다 낫다."""
+    try:
+        proc = subprocess.run(argv, capture_output=True, timeout=5)
+    except Exception:
+        return False
+    return proc.returncode == 0
 
 
 def _detect_node_checks(root: str) -> list[str]:
@@ -1225,10 +1459,25 @@ def contract_criteria(*sources) -> list:
     return string_sources[0] if string_sources else []
 
 
+def _outside_repo(path) -> bool:
+    """저장소 밖을 가리키는 산출물 선언인가 — `artifact_scope` 가 결속에서 빼는 것과 같은 술어.
+
+    두 소비처가 한 선언을 다르게 읽으면 안 된다. 결속은 절대 경로를 거절하는데 충족 검사가
+    `os.path.join(root, "/tmp/x.json")` 을 그대로 `/tmp/x.json` 으로 풀면 (파이썬의 join 규칙)
+    해시에 안 묶인 저장소 밖 파일 하나가 계약을 채운다."""
+    normalized = os.path.normpath(str(path)).replace("\\", "/")
+    return (
+        not normalized or normalized in (".", "..") or normalized.startswith(("../", "/")) or os.path.isabs(str(path))
+    )
+
+
 def unmet_contracts(root: str, criteria, rec: dict) -> list[str]:
     """PASS 레코드(rec) 기준 미충족 계약 목록. 명령은 하네스 기록(criteria_checks)의 exit 0만 인정,
     산출물은 지금(호출 시점) 존재를 라이브 재확인 — 산출물은 .gitignore로 diff-hash 밖일 수 있어
-    stale 검사가 삭제를 못 잡는다. 계약이 있는데 기록이 없으면(구버전 이벤트) 미충족 — 재검증 유도."""
+    stale 검사가 삭제를 못 잡는다. 계약이 있는데 기록이 없으면(구버전 이벤트) 미충족 — 재검증 유도.
+
+    존재만으로는 부족하다: 있는데 **안 묶이는** 형상이 둘 있어서 (`unbound_artifacts`) 이름만
+    계약이고 내용은 해시 밖인 채로 PASS 가 통과할 수 있다. 그 둘도 미충족으로 센다."""
     unmet = []
     rows = [c for c in (rec.get("criteria_checks") or []) if isinstance(c, dict)]
     checks = {(" ".join(str(c.get("cmd", "")).split())): c.get("exit_code") for c in rows}
@@ -1243,8 +1492,12 @@ def unmet_contracts(root: str, criteria, rec: dict) -> list[str]:
             else:
                 unmet.append("verify: " + cmd)
         for a in c["artifacts"]:
-            if not os.path.exists(os.path.join(root, a)):
+            if _outside_repo(a):
+                unmet.append(f"artifact: {a} (outside the repository — declare a repo-relative path)")
+            elif not os.path.exists(os.path.join(root, a)):
                 unmet.append("artifact: " + a)
+    scope = artifact_scope(criteria)
+    unmet += [f"artifact: {item}" for item in (unbound_artifacts(root, scope) if scope else [])]
     return unmet
 
 

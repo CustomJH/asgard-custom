@@ -21,6 +21,7 @@ import json
 import os
 import re
 import shlex
+import shutil
 import stat
 import subprocess
 import sys
@@ -180,6 +181,34 @@ def git(root, *args, binary=False):
         return 1, b"" if binary else ""
 
 
+# 임시 인덱스 위의 `add -A` 에서 stat 캐시 밖의 지름길을 끈다. 인덱스 사본은 fsmonitor 표식과
+# untracked 캐시를 함께 들고 오는데, 새로 세운 인덱스에는 둘 다 없다 — 켜 둔 채로 두면 씨앗에
+# 따라 훑는 범위가 달라져 같은 워킹트리가 다른 트리를 낸다. `assume-unchanged` 를 거르는 것과
+# 같은 이유다 (26-08-05 2차 교차검토).
+_STAT_NEUTRAL = ("-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false")
+
+
+def seed_index(root, head, index_path, run):
+    """임시 인덱스를 HEAD 트리 내용으로 채운다 — quest_log.py 의 같은 이름 함수와 동일 유지.
+
+    저장소 인덱스를 복사하면 stat 캐시가 살아 뒤따르는 `add -A` 가 382ms 에서 56ms 가 된다
+    (26-08-05 콜드 실측). 사본을 쓰는 조건 셋은 quest_log.py 에 적혀 있다 — 스테이지된 변경이
+    없을 것, `assume-unchanged`·`skip-worktree` 표가 없을 것, `GIT_INDEX_FILE` 이 안 서 있을 것."""
+    if not any(os.environ.get(name) for name in ("GIT_INDEX_FILE", "GIT_DIR", "GIT_WORK_TREE")) and (
+        git(root, "diff-index", "--cached", "--quiet", head)[0] == 0
+    ):
+        rc, listing = git(root, "ls-files", "-v")
+        listing = listing.decode("utf-8", "replace") if isinstance(listing, bytes) else listing
+        flagged = rc != 0 or any(row[:1].islower() or row[:1] == "S" for row in listing.splitlines() if row)
+        if not flagged:
+            try:
+                shutil.copy2(os.path.join(root, ".git", "index"), index_path)
+                return True
+            except OSError:
+                pass
+    return run("read-tree", head).returncode == 0
+
+
 def current_tree_ref(root):
     rc, raw_head = git(root, "rev-parse", "--verify", "HEAD")
     head = raw_head.decode("utf-8", "replace") if isinstance(raw_head, bytes) else raw_head
@@ -201,9 +230,9 @@ def current_tree_ref(root):
         )
 
     try:
-        if run("read-tree", head.strip()).returncode:
+        if not seed_index(root, head.strip(), index_path, run):
             return None
-        if run("add", "-A", "--", ".", ":(exclude).asgard").returncode:
+        if run(*_STAT_NEUTRAL, "add", "-A", "--", ".", ":(exclude).asgard").returncode:
             return None
         _, raw_untracked = git(
             root, "ls-files", "--others", "--exclude-standard", "-z", "--", ".", ":(exclude).asgard", binary=True
@@ -217,7 +246,7 @@ def current_tree_ref(root):
         ):
             return None
         if os.path.isdir(os.path.join(root, ".asgard", "map")):
-            if run("add", "-A", "-f", "--", ".asgard/map").returncode:
+            if run(*_STAT_NEUTRAL, "add", "-A", "-f", "--", ".asgard/map").returncode:
                 return None
         tree = run("write-tree")
         return tree.stdout.decode().strip() if tree.returncode == 0 and tree.stdout.strip() else None
@@ -262,7 +291,7 @@ def artifact_scope(criteria):
             path = os.path.normpath(str(raw)).replace("\\", "/")
             # `..` 는 git 이 저장소 밖으로 거절해 스냅샷 전체를 `<snapshot-unavailable>` 로 만든다.
             # 절대 경로는 저장소 상대로 바꾸지 않는다 — quest_log.py 의 같은 함수와 같은 이유.
-            if path and path not in (".", "..") and not path.startswith(("../", "/")):
+            if path and path not in (".", "..") and not path.startswith(("../", "/")) and not os.path.isabs(raw):
                 out.add(path)
     return tuple(sorted(out))
 
@@ -328,6 +357,10 @@ def sensitive_path(path, needles):
     return False
 
 
+# 결속 불가 표식 — quest_log.py 의 같은 상수와 동일 유지 (어긋나면 영구 stale).
+UNBOUND = "<unbound:"
+
+
 def ignored_state(root, scope=()):
     """선언된 산출물 아래의 무시 파일만 해시한다 — 빈 scope는 결속 대상이 없다는 뜻이라 git도 안
     부른다 (26-08-05 콜드 실측: 이 저장소의 전 무시 파일 7,507건 열거·해시가 432ms)."""
@@ -362,8 +395,10 @@ def ignored_state(root, scope=()):
         try:
             info = os.lstat(full)
             if stat.S_ISLNK(info.st_mode):
+                # 링크는 안 따라간다 (저장소 밖 자격 증명을 증거로 열지 않는다) — 그래서 이 값은
+                # 대상 파일의 내용을 안 담는다. 표식을 붙여 `unbound_artifacts` 가 잡게 한다.
                 body = b"<symlink>\0" + os.readlink(full).encode("utf-8", "surrogateescape")
-                out[path] = hashlib.sha256(body).hexdigest()
+                out[path] = UNBOUND + "symlink:" + hashlib.sha256(body).hexdigest()[:16]
             elif stat.S_ISREG(info.st_mode):
                 digest = hashlib.sha256()
                 with open(full, "rb") as handle:
@@ -371,10 +406,73 @@ def ignored_state(root, scope=()):
                         digest.update(chunk)
                 out[path] = digest.hexdigest()
             else:
-                out[path] = f"<nonregular:{stat.S_IFMT(info.st_mode):o}>"
+                # 중첩 저장소는 `git ls-files` 가 `sub/` 한 줄로만 내고 그 lstat 값은 안 바뀐다.
+                out[path] = UNBOUND + f"nonregular:{stat.S_IFMT(info.st_mode):o}"
         except OSError:
             out[path] = "<missing>"
     return out
+
+
+def _symlink_on_the_way(root, entry):
+    """선언한 경로에 닿기까지 거치는 칸 중 첫 심링크 — 없으면 빈 문자열."""
+    parts = entry.split("/")
+    for depth in range(1, len(parts) + 1):
+        branch = "/".join(parts[:depth])
+        if os.path.islink(os.path.join(root, branch)):
+            return branch
+    return ""
+
+
+def _symlinks_under(root, entry):
+    """선언한 자리 아래의 심링크 경로들 (저장소 상대). 파일 선언이면 빈 목록."""
+    out = []
+    for parent, dirs, files in os.walk(os.path.join(root, entry), followlinks=False):
+        for name in dirs + files:
+            full = os.path.join(parent, name)
+            if os.path.islink(full):
+                out.append(os.path.relpath(full, root).replace("\\", "/"))
+    return out
+
+
+def _bound_map_page(path):
+    """`.asgard` 아래에서 판정 해시가 유일하게 다시 읽는 자리인가 — 지도 바로 아래의 `*.md`.
+    `diff_state` 의 지도 대조와 같은 폭이다 (readonly_guard 의 `_within_managed_map` 도 같다)."""
+    return path.startswith(".asgard/map/") and path.endswith(".md") and path.count("/") == 2
+
+
+def unbound_artifacts(root, scope):
+    """선언은 결속을 약속하는데 해시가 못 따라가는 산출물 — quest_log.py 의 같은 함수와 동일 유지.
+
+    심링크는 링크 신원만 해시되고 (대상 파일을 고쳐도 값이 안 움직인다), 중첩 저장소는
+    `git ls-files` 가 안으로 안 내려가 디렉터리 한 줄만 나온다. 둘 다 안 묶이므로 미충족이다."""
+    reasons = {}
+    for entry in scope:
+        # 하네스 상태는 어느 트리에도 안 들어간다 (`current_tree_ref` 와 `ignored_state` 가 둘 다
+        # `.asgard` 를 뺀다). 지도의 `*.md` 만 예외로 다시 읽힌다 — 나머지는 존재만 확인될 뿐
+        # 내용이 어디에도 안 묶인다.
+        if entry == ".asgard" or (entry.startswith(".asgard/") and not _bound_map_page(entry)):
+            reasons[entry] = "under .asgard — the verdict hash excludes harness state"
+            continue
+        # 선언한 경로 자신뿐 아니라 **거쳐 가는 칸마다** 본다. 중간 칸이 링크면 (`out -> /tmp`,
+        # 선언은 `out/x.json`) `os.path.exists` 는 링크를 따라가 "있다"고 답하는데 git 은 링크
+        # 하나만 저장하고 그 안으로 안 내려간다 — 저장소 밖 파일이 계약을 채운다.
+        ancestor = _symlink_on_the_way(root, entry)
+        if ancestor:
+            reasons[entry] = f"reached through the symlink `{ancestor}` — git stores the link, not what is behind it"
+            continue
+        # 선언한 디렉터리 **안의** 링크도 같은 자리다. 추적 여부로 갈리면 안 되므로
+        # (추적 링크는 무시 파일 열거에, 새 링크는 어느 열거에도 안 나온다) 걸어서 본다.
+        for rel in _symlinks_under(root, entry):
+            reasons.setdefault(rel, "symlink — the gate hashes the link, not the file it points at")
+    for path, value in ignored_state(root, scope).items():
+        if isinstance(value, str) and value.startswith(UNBOUND):
+            reasons.setdefault(
+                path,
+                "symlink — the gate hashes the link, not the file it points at"
+                if "symlink" in value
+                else "not a regular file — git does not enumerate inside it (a nested repository?)",
+            )
+    return [f"{path} ({reason})" for path, reason in sorted(reasons.items())]
 
 
 def diff_state(root, base_ref, ignored_base=None, scope=()):
@@ -680,10 +778,20 @@ def contract_criteria(*sources):
     return string_sources[0] if string_sources else []
 
 
+def _outside_repo(path):
+    """저장소 밖 산출물 선언인가 — `artifact_scope` 가 결속에서 빼는 것과 같은 술어를 쓴다.
+    (안 맞추면 해시에 안 묶인 저장소 밖 파일이 계약을 채운다 — quest_log.py 의 같은 함수 참고.)"""
+    normalized = os.path.normpath(str(path)).replace("\\", "/")
+    return (
+        not normalized or normalized in (".", "..") or normalized.startswith(("../", "/")) or os.path.isabs(str(path))
+    )
+
+
 def unmet_contracts(root, criteria, rec):
     """PASS 레코드(rec) 기준 미충족 계약 목록. 명령은 하네스 기록(criteria_checks)의 exit 0만 인정,
     산출물은 지금(호출 시점) 존재를 라이브 재확인 — 산출물은 .gitignore로 diff-hash 밖일 수 있어
-    stale 검사가 삭제를 못 잡는다. 계약이 있는데 기록이 없으면(구버전 이벤트) 미충족 — 재검증 유도."""
+    stale 검사가 삭제를 못 잡는다. 계약이 있는데 기록이 없으면(구버전 이벤트) 미충족 — 재검증 유도.
+    있는데 **안 묶이는** 형상(`unbound_artifacts`)도 미충족이다 — quest_log.py 와 동일 유지."""
     unmet = []
     checks = {(" ".join(str(c.get("cmd", "")).split())): c.get("exit_code") for c in (rec.get("criteria_checks") or [])}
     for c in criteria_contracts(criteria):
@@ -691,8 +799,12 @@ def unmet_contracts(root, criteria, rec):
         if cmd and checks.get(" ".join(cmd.split())) != 0:
             unmet.append("verify: " + cmd)
         for a in c["artifacts"]:
-            if not os.path.exists(os.path.join(root, a)):
+            if _outside_repo(a):
+                unmet.append(f"artifact: {a} (outside the repository — declare a repo-relative path)")
+            elif not os.path.exists(os.path.join(root, a)):
                 unmet.append("artifact: " + a)
+    scope = artifact_scope(criteria)
+    unmet += [f"artifact: {item}" for item in (unbound_artifacts(root, scope) if scope else [])]
     return unmet
 
 

@@ -36,6 +36,24 @@ WARN = (
 )
 
 
+def _quest_log_script() -> str:
+    """옆에 놓인 기장 스크립트의 실제 이름.
+
+    같은 파일이 두 이름으로 산다 — 패키지에서는 `quest_log.py`(임포트되는 모듈이라 밑줄),
+    배포된 훅 디렉터리에서는 `quest-log.py`(훅 파일 규약이 붙임표). 한쪽만 찾던 판은 배포
+    디렉터리에서 **매번 빗나갔고**, 이 호출은 `check=False` 에 바깥 `except` 까지 있어 아무
+    말도 없이 사라졌다 — Canon 9 의 3연속 실패 사건이 호스트 3모드에서 퀘스트 로그에 한 번도
+    안 적혔고, 전이 함수의 `failure_count` 소비자는 그것을 영영 못 봤다 (26-08-05 감사).
+
+    없으면 밑줄 이름을 돌려준다 — 호출자가 어차피 조용히 실패하므로 새 예외를 만들지 않는다."""
+    here = os.path.dirname(__file__)
+    for name in ("quest-log.py", "quest_log.py"):
+        candidate = os.path.join(here, name)
+        if os.path.isfile(candidate):
+            return candidate
+    return os.path.join(here, "quest_log.py")
+
+
 def sig(text: str) -> str:
     """오류문을 안정된 시그니처로 정규화 — 표현만 바꾼 재시도가 같은 key로 모이게.
 
@@ -113,7 +131,7 @@ def log_fail(proj: str, sid: str, key: str, n: int) -> None:
         subprocess.run(
             [
                 sys.executable,
-                os.path.join(os.path.dirname(__file__), "quest_log.py"),
+                _quest_log_script(),
                 "append",
                 qid,
                 "--session",

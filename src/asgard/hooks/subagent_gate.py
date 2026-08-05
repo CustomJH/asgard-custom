@@ -35,11 +35,35 @@ for _stream in (sys.stdout, sys.stderr):
 
 MAX_BLOCKS = 2  # 역할당 — 3번째는 통과 (최후 방벽은 verifier-gate)
 ROLE_EVENT = {"asgard-thinker": "plan", "asgard-worker": "work", "asgard-verifier": "verify"}
+# 누가 누구를 띄울 수 있는가 — AGENTS.md 트리니티 절의 위임 그래프가 정본이다.
+#
+# **표는 전수여야 한다.** 판정이 `agent in AGENT_TARGETS` 라, 표에 없는 역할은 검사 자체를
+# 안 받고 무엇이든 띄운다. 종전에는 thinker·worker·eitri·planner·mimir·loki·ullr 이 전부
+# 빠져 있어서, 읽기 전용인 Thinker 가 Worker 를 띄워 트리를 고칠 수 있었고 Worker 가 자기
+# 판정자를 띄울 수 있었다 — 검증 독립성이 프런트매터 산문에만 얹혀 있었다 (26-08-05 감사).
+# 빈 frozenset 은 "재위임 없음"이라는 **선언**이고, 항목이 없는 것과 뜻이 다르다.
 AGENT_TARGETS = {
+    # Verifier 는 적대적 읽기 전용 하나만 — 쓰기 가능한 손을 부르면 자기가 고친 diff 를 자기가 심판한다.
     "asgard-verifier": frozenset({"asgard-loki"}),
-    "asgard-freyja": frozenset(),
+    # Thinker 는 탐사 정찰 하나만. 계획하는 손은 트리를 만지지 않는다.
+    "asgard-thinker": frozenset({"asgard-ullr"}),
+    # Worker 는 변경 표면별 딜리버리와 코드 안내자, 그리고 반례 사냥까지.
+    # **판정자와 계획자는 자기가 부르지 않는다** — 자기 일을 심판할 손을 자기가 고르는 자리다.
+    # loki 는 다르다: 읽기 전용이고 판정을 내지 않아, 쓰기 가능한 역할이 자기 작업의 반례를
+    # 찾는 데 써도 독립성이 상하지 않는다. 깨지는 것은 **판정자가 쓰기 가능한 손을 부를 때**뿐이다.
+    "asgard-worker": frozenset(
+        {"asgard-freyja", "asgard-thor", "asgard-thor-lead", "asgard-eitri", "asgard-mimir", "asgard-loki"}
+    ),
+    # thor-lead 의 임무는 sub-Thor 편성이다 (깊이 1). 반례 사냥은 위와 같은 이유로 함께 연다.
     "asgard-thor-lead": frozenset({"asgard-thor", "asgard-loki"}),
+    # 전문가는 재위임하지 않는다.
+    "asgard-freyja": frozenset(),
     "asgard-thor": frozenset(),
+    "asgard-eitri": frozenset(),
+    "asgard-planner": frozenset(),
+    "asgard-mimir": frozenset(),
+    "asgard-loki": frozenset(),
+    "asgard-ullr": frozenset(),
 }
 # 역할 이벤트의 "신선도" 기준점 — 이 이벤트 뒤에 자기 이벤트가 있어야 이번 턴 기록으로 인정.
 ANCHOR = {"plan": "verify", "work": "verify", "verify": "work"}
@@ -542,11 +566,12 @@ def main():
         raw_sid = "cursor" if protocol == "cursor" else data.get("session_id") or "default"
         sid = re.sub(r"[^A-Za-z0-9_.-]", "_", str(raw_sid))[:64]
         qid = quest_pointer(root, sid)
-        if not qid:
-            sys.exit(0)  # 활성 quest 없음 → DIRECT·탐사 디스패치 존중 (fail-open)
         if event in {"PreToolUse", "preToolUse", "pre"} and data.get("tool_name") in {"Agent", "Task"}:
             tool_input = data.get("tool_input") if isinstance(data.get("tool_input"), dict) else {}
             target = str(tool_input.get("subagent_type") or tool_input.get("agent_type") or "")
+            # **위임 경계는 퀘스트와 무관하다.** 종전에는 활성 퀘스트 조회가 이 검사보다 먼저
+            # 빠져나가서, 퀘스트를 열지 않은 세션에서는 판정자가 워커를 띄우는 것도 통과했다 —
+            # 로그를 안 여는 것만으로 역할 경계가 사라지는 셈이었다 (26-08-05 감사).
             if agent in AGENT_TARGETS and target not in AGENT_TARGETS[agent]:
                 allowed = ", ".join(sorted(AGENT_TARGETS[agent])) or "none"
                 deny_pretool(
@@ -554,6 +579,12 @@ def main():
                     "Asgard role boundary: %s cannot dispatch %s (allowed: %s)"
                     % (agent, target or "<missing>", allowed),
                 )
+            if not qid:
+                # 남은 검사(티켓 배리어·배차 장부)는 퀘스트가 있어야 뜻이 있다 — 없으면
+                # DIRECT·탐사 디스패치를 존중한다 (fail-open).
+                if protocol == "cursor":
+                    sys.stdout.write(json.dumps({"permission": "allow"}))
+                sys.exit(0)
             if target == "asgard-worker":
                 if not record_worker_dispatch(root, qid, sid, str(data.get("tool_use_id") or ""), tool_input):
                     deny_pretool(protocol, "Asgard Mode B: Worker Agent prompt requires [ASGARD_UNIT:<id>] marker")
@@ -582,6 +613,8 @@ def main():
             if protocol == "cursor":
                 sys.stdout.write(json.dumps({"permission": "allow"}))
             sys.exit(0)
+        if not qid:
+            sys.exit(0)  # 활성 quest 없음 → 로그 규율의 대상이 아니다 (fail-open)
         stopping = event in {"SubagentStop", "subagentStop", "stop"}
         want = ROLE_EVENT.get(agent)
         if not want:

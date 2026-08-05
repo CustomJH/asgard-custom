@@ -7,6 +7,7 @@ python3 <file> 로 도는 것과 동일 경로. 임시 git repo를 만들어 시
 실행: uv run pytest tests/test_trinity.py
 """
 
+import contextlib
 import hashlib
 import io
 import json
@@ -1174,6 +1175,34 @@ class TestFailureEscalation(TrinityBase):
         out = jout(self.qlog("next"))
         self.assertEqual(out["next_role"], "THINKER_REPLAN")
 
+    def test_tracker_logs_from_the_deployed_hook_layout(self):
+        """배포 디렉터리에서도 기장이 적혀야 한다 — 같은 파일이 두 이름으로 산다.
+
+        패키지는 `quest_log.py`(임포트되는 모듈), 배포본은 `quest-log.py`(훅 파일 규약)다.
+        기존 시험은 패키지 배치에서만 돌아 배포 배치의 빗나감을 못 봤고, 호출이
+        `check=False` + 바깥 `except` 라 Canon 9 의 3연속 실패가 호스트 3모드에서 한 번도
+        안 적혔다 (26-08-05 감사)."""
+        import shutil
+
+        self.open_quest()
+        hooks = os.path.join(self.root, ".claude", "hooks")
+        os.makedirs(hooks, exist_ok=True)
+        shutil.copy2(TRACKER, os.path.join(hooks, "failure-tracker.py"))
+        shutil.copy2(os.path.join(SRC, "quest_log.py"), os.path.join(hooks, "quest-log.py"))
+        payload = {
+            "tool_name": "Bash",
+            "session_id": "s1",
+            "cwd": self.root,
+            "tool_response": {"is_error": True, "error": "command not found: foo"},
+        }
+        deployed = os.path.join(hooks, "failure-tracker.py")
+        for _ in range(3):
+            run(deployed, stdin=json.dumps(payload), cwd=self.root)
+        events = [json.loads(ln) for ln in open(os.path.join(self.root, ".asgard", "quest", "q1.jsonl"))]
+        fails = [e for e in events if e["event"] == "fail"]
+        self.assertEqual(len(fails), 1, "배포 배치에서 fail 이벤트가 안 적혔다")
+        self.assertEqual(fails[0]["failure_count"], 3)
+
     def test_tracker_without_quest_still_warns(self):
         payload = {
             "tool_name": "Bash",
@@ -1502,6 +1531,78 @@ class TestDetectChecks(unittest.TestCase):
     def test_no_markers_no_checks(self):
         with self.which("uv", "pytest"):
             self.assertEqual(self.detect(self.root, {}), [])
+
+    # ── JVM 레인. 자동 감지가 pytest·npm 계열만 보던 탓에 Gradle·Maven 저장소는 손으로 적지
+    #    않으면 하네스 실행 증거 레인이 통째로 꺼진 채 돌았다 (26-08-05 hvami-mono 실측).
+    def module(self, name, *, tests=True, pom="", gradlew=False):
+        base = os.path.join(self.root, name) if name else self.root
+        if tests:
+            os.makedirs(os.path.join(base, "src", "test", "java"), exist_ok=True)
+        else:
+            os.makedirs(base, exist_ok=True)
+        if pom:
+            with open(os.path.join(base, "pom.xml"), "w", encoding="utf-8") as handle:
+                handle.write(pom)
+        if gradlew:
+            wrapper = os.path.join(base, "gradlew")
+            open(wrapper, "w").close()
+            os.chmod(wrapper, 0o755)
+
+    def test_gradle_module_with_tests_is_detected(self):
+        self.module("svc", gradlew=True)
+        with self.which("uv"):
+            self.assertEqual(self.detect(self.root, {}), ["svc/gradlew test"])
+
+    def test_runner_without_test_sources_is_not_a_baseline(self):
+        """테스트가 0개인 모듈에서는 exit 0 이 설계상 보장된다 — 아무것도 안 재는 레인이 선다."""
+        self.module("svc", tests=False, gradlew=True)
+        with self.which("uv"):
+            self.assertEqual(self.detect(self.root, {}), [])
+
+    @contextlib.contextmanager
+    def maven_host(self, *, local_repo=True, runner_starts=True):
+        """호스트 사실을 시험이 빌려오지 않게 고정한다.
+
+        `~/.m2/repository` 유무와 `mvn` 실행 가능 여부는 **이 기계의 사정**이다. 안 묶으면
+        Maven 이 깔린 개발기에서만 초록이고 CI·컨테이너에서 빨개진다 — 같은 퀘스트가
+        `templates/worker.py` 에 적은 Filesystem 결정론 규칙을 시험 자신이 어기게 된다."""
+        with (
+            self.which("uv", "mvn"),
+            mock.patch("asgard.hooks.quest_log._maven_local_repo", return_value=local_repo),
+            mock.patch("asgard.hooks.quest_log._runner_starts", return_value=runner_starts),
+        ):
+            yield
+
+    def test_maven_module_needs_a_declared_test_runner(self):
+        """`src/test/java` 가 있어도 pom 이 러너를 선언하지 않으면 진공 green 아니면 컴파일 red 다."""
+        self.module("fep", pom="<project><artifactId>fep</artifactId></project>")
+        with self.maven_host():
+            self.assertEqual(self.detect(self.root, {}), [])
+        self.module("fepj", pom="<project><dependency><artifactId>junit</artifactId></dependency></project>")
+        with self.maven_host():
+            self.assertEqual(self.detect(self.root, {}), ["mvn -q -f fepj/pom.xml test"])
+
+    def test_maven_needs_a_runner_that_actually_starts(self):
+        """버전 관리자의 셰임은 이름은 내주고 실행은 거절한다 — 그 exit 1 은 테스트 실패로 읽힌다."""
+        self.module("fepj", pom="<project><dependency><artifactId>junit</artifactId></dependency></project>")
+        with self.maven_host(runner_starts=False):
+            self.assertEqual(self.detect(self.root, {}), [])
+
+    def test_maven_needs_the_local_repository(self):
+        """첫 실행의 의존성 내려받기 실패는 exit 1 이라 테스트 실패와 구분되지 않는다."""
+        self.module("fepj", pom="<project><dependency><artifactId>junit</artifactId></dependency></project>")
+        with self.maven_host(local_repo=False):
+            self.assertEqual(self.detect(self.root, {}), [])
+
+    def test_detected_jvm_commands_pass_the_deterministic_lane(self):
+        """감지 레인과 검증 레인이 같은 답을 들어야 한다 — 내준 명령이 게이트를 세워야 한다."""
+        from asgard.hooks import quest_log
+
+        self.module("svc", gradlew=True)
+        with self.which("uv"):
+            for cmd in self.detect(self.root, {}):
+                self.assertTrue(quest_log.jvm_behavior_check(cmd), cmd)
+            self.assertTrue(quest_log.gate_first_checks_available(self.root, {}))
 
     def test_explicit_policy_wins(self):
         self.touch("uv.lock")
@@ -2462,6 +2563,47 @@ class TestSubagentGate(TrinityBase):
     def work(self, **extra):
         body = {"role": "worker", "event": "work", "commands": [{"cmd": "python3 app.py", "exit_code": 0}], **extra}
         return self.qlog("append", stdin=json.dumps(body))
+
+    def test_every_role_has_a_delegation_entry(self):
+        """판정이 `agent in AGENT_TARGETS` 라, 표에 없는 역할은 검사를 안 받고 무엇이든 띄운다."""
+        from asgard.hooks.subagent_gate import AGENT_TARGETS
+        from asgard.templates.roles import ROLE_AGENTS
+
+        for fname, _ in ROLE_AGENTS:
+            name = fname.removesuffix(".md")
+            self.assertIn(name, AGENT_TARGETS, f"{name} 이 위임 표에 없어 무제한이다")
+
+    def test_read_only_roles_cannot_dispatch_a_write_capable_hand(self):
+        """검증 독립성은 판정자가 고치는 손을 못 부르는 데서 나온다 — 계획자도 같다."""
+        self.open_quest()
+        for agent, target in (
+            ("asgard-verifier", "asgard-worker"),
+            ("asgard-verifier", "asgard-thor"),
+            ("asgard-verifier", "asgard-freyja"),
+            ("asgard-thinker", "asgard-worker"),
+            ("asgard-thinker", "asgard-thor"),
+        ):
+            p = self.sg(agent, event="PreToolUse", tool_input={"subagent_type": target, "prompt": "go"})
+            self.assertEqual(p.returncode, 2, f"{agent} → {target} 이 통과했다")
+
+    def test_worker_cannot_pick_its_own_judge(self):
+        """자기 일을 심판할 손을 자기가 고르면 판정은 판정이 아니다."""
+        self.open_quest()
+        for target in ("asgard-verifier", "asgard-thinker", "asgard-planner"):
+            p = self.sg("asgard-worker", event="PreToolUse", tool_input={"subagent_type": target, "prompt": "go"})
+            self.assertEqual(p.returncode, 2, f"worker → {target} 이 통과했다")
+
+    def test_the_boundary_holds_without_an_open_quest(self):
+        """퀘스트를 안 여는 것만으로 역할 경계가 사라지면 경계가 아니다.
+
+        종전에는 활성 퀘스트 조회가 이 검사보다 먼저 빠져나갔다 (26-08-05 감사)."""
+        p = self.sg(
+            "asgard-verifier", event="PreToolUse", tool_input={"subagent_type": "asgard-worker", "prompt": "go"}
+        )
+        self.assertEqual(p.returncode, 2, p.stderr)
+        # 허용된 짝은 퀘스트가 없어도 그대로 통과한다 (DIRECT·탐사 존중).
+        ok = self.sg("asgard-verifier", event="PreToolUse", tool_input={"subagent_type": "asgard-loki", "prompt": "go"})
+        self.assertEqual(ok.returncode, 0, ok.stderr)
 
     def test_claude_settings_wire_mode_b_gate_at_start_dispatch_and_stop(self):
         from asgard.templates.claude import cc_settings
