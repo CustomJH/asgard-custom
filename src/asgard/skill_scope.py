@@ -258,8 +258,43 @@ def scope_note(
             f" {verbs.get(loader, verbs['load_skill'])} — the match is deterministic, so these are not"
             " suggestions to re-evaluate."
         )
+    if agent == "worker" and (specialists := _matching_specialists(root, request)):
+        lines.append(
+            "This request also matches a delivery specialist's canon: "
+            + ", ".join(f"{role} ({', '.join(names)})" for role, names in specialists)
+            + ". The Worker does not read a specialist's canon — it dispatches, and the specialist loads its"
+            " own. Hand the matching surface over rather than working it here."
+        )
     lines.append(
         "The shape sets the planning discipline, not the turn budget. Do not inflate a slice into a"
         " feature to look thorough, and do not compress a feature into one unit to look fast."
     )
     return "\n".join(lines)
+
+
+# Worker 가 넘길 수 있는 배달 전문가 — AGENTS.md 의 위임 그래프와 같은 집합이다.
+_DISPATCHABLE = ("freyja", "thor", "eitri", "mimir")
+
+
+def _matching_specialists(root: str, request: str) -> list[tuple[str, list[str]]]:
+    """이 요청이 어느 전문가의 정본에 걸리는가.
+
+    워커로 물으면 전문가 스킬은 하나도 안 나온다 — 배정 대상이 그 전문가라서고, 그건 설계대로다
+    (워커는 디스패치하고 전문가가 자기 정본을 읽는다). 다만 그 결과가 **"아무것도 안 걸렸다"와
+    화면에서 구분되지 않아**, 계획하는 손이 넘길 자리를 못 보고 직접 손대는 쪽으로 기운다.
+    이름만 돌려준다 — 본문은 넘겨받은 쪽이 읽는다 (26-08-05).
+
+    조회가 실패하면 빈 목록이다: 이 줄이 없다고 잘못되는 것은 없고, 틀린 지목은 턴을 태운다."""
+    out: list[tuple[str, list[str]]] = []
+    try:
+        from .skill_registry import resolve_skills
+    except Exception:
+        return out
+    for role in _DISPATCHABLE:
+        try:
+            names = [name for name, _ in resolve_skills(root, request, role, include_learned=False)]
+        except Exception:
+            continue
+        if names:
+            out.append((role, names[:3]))
+    return out

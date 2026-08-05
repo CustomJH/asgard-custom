@@ -328,6 +328,30 @@ class ChangeFactsTest(unittest.TestCase):
         self.assertIn("directories touched", note)
         self.assertIn("Canon 7", note, "범위 확대 면허가 아니라는 것을 같이 실어야 한다")
 
+    def test_the_worker_is_told_which_specialist_owns_the_surface(self):
+        """워커로 물으면 전문가 스킬은 하나도 안 나온다 — 배정 대상이 그 전문가라서다.
+
+        그 결과가 화면에서 "아무것도 안 걸렸다"와 구분되지 않아, 계획하는 손이 넘길 자리를 못
+        보고 직접 손대는 쪽으로 기운다. 이름만 지목한다 — 본문은 넘겨받은 쪽이 읽는다."""
+        for request, role in (
+            ("로그인 화면이 모바일에서 깨져요", "freyja"),
+            ("결제 API 가 가끔 타임아웃이 나요", "thor"),
+            ("CI 빌드가 느려요", "eitri"),
+            ("이 모듈이 무슨 일을 하는지 설명해 주세요", "mimir"),
+        ):
+            with self.subTest(request=request):
+                note = scope_note(self.root, request, _WRITE, agent="worker", loader="cli")
+                self.assertIn("delivery specialist's canon", note, request)
+                self.assertIn(role, note, request)
+
+    def test_a_specialist_is_not_told_to_hand_its_own_work_away(self):
+        note = scope_note(self.root, "로그인 화면이 모바일에서 깨져요", _WRITE, agent="freyja", loader="cli")
+        self.assertNotIn("delivery specialist's canon", note)
+
+    def test_a_plain_request_names_nobody(self):
+        note = scope_note(self.root, "README 오타 하나 고쳐 주세요", _WRITE, agent="worker", loader="cli")
+        self.assertNotIn("delivery specialist's canon", note)
+
     def test_every_bundled_manifest_only_names_assignable_agents(self):
         """플러그인 `agents`에 배정 불가 역할이 섞이면 매니페스트 검증 실패로 그 플러그인이
         **조용히 사라진다** (fail-open continue). 전 번들을 훑어 그 함정을 봉인한다."""
