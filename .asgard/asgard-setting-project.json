@@ -1,0 +1,108 @@
+{
+  "lagom": {
+    "mode": "full"
+  },
+  "project_memory": {
+    "_comment": "Project shared memory — one `asgard memory connect <endpoint>` fills this in (project_id = memory bank name, auto-derived unless given). Ownership identity (project_uid/binding_id) is managed by Asgard in .asgard/memory/binding.json — never edit it by hand. Set `enabled: false` to switch project memory off. Keys starting with `_` are comments and ignored.",
+    "_example": {
+      "engine": "hindsight",
+      "endpoint": "http://127.0.0.1:8888",
+      "project_id": "my-project-bank",
+      "enabled": true
+    }
+  },
+  "agent_models": {},
+  "trinity_policy": {
+    "schema": 1,
+    "roles": {
+      "thinker": {
+        "tier": "high",
+        "effort": "high"
+      },
+      "worker": {
+        "tier": "standard",
+        "effort": "medium"
+      },
+      "verifier": {
+        "tier": "high",
+        "effort": "high"
+      }
+    },
+    "delivery": {
+      "freyja": "standard",
+      "thor": "standard",
+      "eitri": "standard",
+      "loki": "fast",
+      "mimir": "standard"
+    },
+    "budget_priors": {
+      "trivial": {
+        "turns": 1
+      },
+      "standard": {
+        "turns": 6
+      },
+      "deep": {
+        "turns": 12
+      }
+    },
+    "small_write": {
+      "max_files": 2,
+      "max_lines": 80
+    },
+    "sensitive_paths": [
+      "hooks",
+      "policy",
+      "policies",
+      "templates",
+      "install",
+      "security",
+      "auth",
+      "authn",
+      "authz",
+      "authentication",
+      "authorization",
+      "secret",
+      "secrets",
+      "credentials",
+      "db",
+      "migration",
+      "migrations",
+      "ci",
+      ".github",
+      ".claude",
+      ".cursor",
+      ".codex"
+    ],
+    "readonly_commands": [
+      "git status",
+      "git diff",
+      "git log",
+      "git show",
+      "git ls-files",
+      "git rev-parse",
+      "rg",
+      "grep",
+      "ls",
+      "cat",
+      "head",
+      "tail",
+      "find",
+      "wc",
+      "pwd",
+      "which"
+    ],
+    "failure_threshold": 3,
+    "verify_level": "low",
+    "baseline_checks": [],
+    "baseline_timeout": 120,
+    "baseline_parallel": true,
+    "gate_first_max_lines": 25,
+    "quest_retention": 30,
+    "ticket_runtime": {
+      "isolation": true,
+      "lease_seconds": 300,
+      "max_attempts": 3
+    }
+  }
+}
