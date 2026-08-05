@@ -56,7 +56,11 @@ def jout(p):
 
 class TrinityBase(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        # 정리 실패를 무시한다 — 이 시험들이 부르는 훅은 판정을 돌려준 뒤에도 `<root>/.asgard` 에
+        # 상태를 쓰고, 병렬 실행에서 그 쓰기가 tearDown 뒤로 밀리면 rmtree 가 "Directory not empty"
+        # 로 죽는다 (26-08-06: 전수 병렬 실행에서 한 건). 검증은 그 전에 이미 끝났고 디렉터리는
+        # 버릴 것이라, 여기서 나는 예외는 판정이 아니라 잡음이다.
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.root = self.tmp.name
         # HOME 격리 — 훅 subprocess가 호스트의 글로벌 git 설정(excludesfile 등)·~/.asgard 상태를
         # 보지 않게 한다. map_current 판정이 호스트 상태에 따라 흔들린 flake 방어 (test_heimdall 관행).
@@ -2636,15 +2640,12 @@ class TestVerifyCostControls(TrinityBase):
         built: list[str | None] = []
         real = summary_mod.current_tree_ref
 
-        def counting(root: str):
+        def counting(root: str) -> str | None:
             built.append(real(root))
             return built[-1]
 
-        summary_mod.current_tree_ref = counting
-        try:
+        with mock.patch.object(summary_mod, "current_tree_ref", counting):
             summary_mod.summarize(self.root, "q1", load_events(self.root, "q1"), load_policy(self.root))
-        finally:
-            summary_mod.current_tree_ref = real
         self.assertEqual(len(built), 1, f"요약 한 번이 트리를 {len(built)}번 지었다")
 
         # 그리고 캐시가 아니다 — 파일이 바뀌면 다음 트리는 다른 값이어야 한다
