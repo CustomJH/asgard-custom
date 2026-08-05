@@ -596,9 +596,9 @@ class TestNoInjectionInvariants(EvoBase):
         import inspect
         import re as _re
 
-        from asgard.agent.heimdall import trinity
+        from asgard.agent.heimdall.trinity import verdict
 
-        src = inspect.getsource(trinity)
+        src = inspect.getsource(verdict)
         m = _re.search(r"def mk_verifier\b.*?(?=\n {8}\w)", src, _re.DOTALL)
         assert m is not None, "mk_verifier 조립 지점을 찾지 못함 — 리네임 시 이 테스트도 갱신"
         self.assertNotIn("_learned_note", m.group(0))

@@ -54,7 +54,7 @@ class DocumentToolTest(unittest.TestCase):
 
     def test_pdf_reader_is_paginated(self):
         Path(self.root, "sample.pdf").write_bytes(b"%PDF-test")
-        with mock.patch.object(tools, "_extract_pdf", return_value="one\ntwo\nthree"):
+        with mock.patch.object(tools.knowledge, "_extract_pdf", return_value="one\ntwo\nthree"):
             result = tools.run_document(self.root, {"path": "sample.pdf", "offset": 2, "limit": 2})
         self.assertIn("[PDF · lines 2-3/3]", result)
         self.assertTrue(result.endswith("two\nthree"))
@@ -68,8 +68,8 @@ class DocumentToolTest(unittest.TestCase):
             return mock.Mock(returncode=0, stdout="", stderr="")
 
         with (
-            mock.patch.object(tools.subprocess, "run", side_effect=converted) as run,
-            mock.patch.object(tools, "_extract_hwpx", return_value="한글 본문") as extract,
+            mock.patch.object(tools.knowledge.subprocess, "run", side_effect=converted) as run,
+            mock.patch.object(tools.knowledge, "_extract_hwpx", return_value="한글 본문") as extract,
         ):
             result = tools.run_document(self.root, {"path": "sample.hwp"})
 

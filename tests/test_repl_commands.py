@@ -200,7 +200,7 @@ def test_exact_skill_slash_reaches_heimdall_as_explicit_prompt(monkeypatch, tmp_
         except StopIteration as exc:
             raise EOFError from exc
 
-    monkeypatch.setattr(repl, "_PT", True)
+    monkeypatch.setattr(repl.editline, "_PT", True)
     monkeypatch.setattr(repl, "banner", lambda _rp: None)
     monkeypatch.setattr(repl, "prompt", ask)
     monkeypatch.setattr(repl, "_new_heimdall", lambda *_args, **_kwargs: Heimdall())
@@ -258,7 +258,7 @@ def test_pt_session_erases_input_frame_on_accept(monkeypatch, tmp_path) -> None:
     from prompt_toolkit.input import create_pipe_input
     from prompt_toolkit.output import DummyOutput
 
-    monkeypatch.setattr(repl, "_history_path", lambda: str(tmp_path / "history"))
+    monkeypatch.setattr(repl.editline, "_history_path", lambda: str(tmp_path / "history"))
 
     with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
         session = repl._pt_session()
@@ -271,7 +271,7 @@ def test_pt_prompt_accepts_prefilled_draft_immediately(monkeypatch, tmp_path) ->
     from prompt_toolkit.input import create_pipe_input
     from prompt_toolkit.output import DummyOutput
 
-    monkeypatch.setattr(repl, "_history_path", lambda: str(tmp_path / "history"))
+    monkeypatch.setattr(repl.editline, "_history_path", lambda: str(tmp_path / "history"))
     # TERM 미설정이면 prompt_toolkit이 dumb-prompt 폴백으로 빠져 accept_default 콜백을
     # 사용하지 않고 stdin을 기다린다. 이 테스트는 전체 화면 앱 경로의 자동 제출 계약이다.
     monkeypatch.setenv("TERM", "xterm-256color")
@@ -336,8 +336,8 @@ def test_dock_mount_places_frame_on_bottom_rows_without_scroll(monkeypatch, caps
     # CPR 응답 경로 — 흐름(4행)이 독 영역(19~24행) 위: 스크롤 0, 절대 배치 + 입력행 캐럿 파킹
     monkeypatch.setattr(ui, "_COLOR", False)
     monkeypatch.setattr(ui, "term_cols", lambda: 80)
-    monkeypatch.setattr(repl, "_term_rows", lambda: 24)
-    monkeypatch.setattr(repl, "_cursor_row", lambda: 4)
+    monkeypatch.setattr(repl.dock, "_term_rows", lambda: 24)
+    monkeypatch.setattr(repl.dock, "_cursor_row", lambda: 4)
     repl._PT_CTX.update(root=".", rp=SimpleNamespace(missing=True), heimdall=None)
 
     dock = repl._Dock()
@@ -355,8 +355,8 @@ def test_dock_mount_scrolls_only_overlap_when_flow_is_deep(monkeypatch, capsys) 
     # CPR 응답 경로 — 흐름(22행)이 독 영역 침범: 부족분(22-19=3)만 최하단 개행으로 밀어낸다
     monkeypatch.setattr(ui, "_COLOR", False)
     monkeypatch.setattr(ui, "term_cols", lambda: 80)
-    monkeypatch.setattr(repl, "_term_rows", lambda: 24)
-    monkeypatch.setattr(repl, "_cursor_row", lambda: 22)
+    monkeypatch.setattr(repl.dock, "_term_rows", lambda: 24)
+    monkeypatch.setattr(repl.dock, "_cursor_row", lambda: 22)
     repl._PT_CTX.update(root=".", rp=SimpleNamespace(missing=True), heimdall=None)
 
     dock = repl._Dock()
@@ -373,8 +373,8 @@ def test_dock_live_typing_renders_draft_and_prefills_next_prompt(monkeypatch, ca
     # 턴 중 타이핑 → 독 입력행에 골드 캐럿+본문 표시, 캐럿 열은 CJK 전각 반영, 회수 시 초안+제출 의사
     monkeypatch.setattr(ui, "_COLOR", False)
     monkeypatch.setattr(ui, "term_cols", lambda: 80)
-    monkeypatch.setattr(repl, "_term_rows", lambda: 24)
-    monkeypatch.setattr(repl, "_cursor_row", lambda: 4)
+    monkeypatch.setattr(repl.dock, "_term_rows", lambda: 24)
+    monkeypatch.setattr(repl.dock, "_cursor_row", lambda: 4)
     repl._PT_CTX.update(root=".", rp=SimpleNamespace(missing=True), heimdall=None)
 
     dock = repl._Dock()
@@ -457,7 +457,7 @@ def test_completion_menu_reservation_is_dynamic(monkeypatch, tmp_path) -> None:
     from prompt_toolkit.input import create_pipe_input
     from prompt_toolkit.output import DummyOutput
 
-    monkeypatch.setattr(repl, "_history_path", lambda: str(tmp_path / "history"))
+    monkeypatch.setattr(repl.editline, "_history_path", lambda: str(tmp_path / "history"))
 
     with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
         session = repl._pt_session()

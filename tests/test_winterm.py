@@ -388,12 +388,16 @@ _GUARDED = ("_cursor_row", "_echo_off", "_read_keys")
 
 
 def _repl_ast():
+    """repl 패키지 전체를 한 나무로 — 함수가 어느 파일에 사는지는 이 앵커가 볼 일이 아니다."""
     import ast
-    import inspect
+    import pathlib
 
     from asgard.agent import repl
 
-    return ast, ast.parse(inspect.getsource(repl))
+    merged = ast.Module(body=[], type_ignores=[])
+    for path in sorted(pathlib.Path(repl.__file__).parent.glob("*.py")):
+        merged.body.extend(ast.parse(path.read_text(encoding="utf-8")).body)
+    return ast, merged
 
 
 def _function(tree, name):

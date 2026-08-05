@@ -1,0 +1,128 @@
+"""에이전트 도구 — 선언과 구현.
+
+`tool_kernel` 이 이 이름들을 그대로 집는다. 면별 모듈로 갈랐어도 부르는 자리는 한 이름이다:
+`from ..agent.tools import run_bash` 는 파일 하나였을 때와 같은 것을 준다."""
+
+from ._core import (
+    _MAX_ARCHIVE_BYTES,
+    _MAX_DOCUMENT_BYTES,
+    _MAX_FETCH_BYTES,
+    _MAX_OUT,
+    _TIMEOUT,
+    ToolError,
+    _cap,
+    _confine,
+    _dedup_log,
+)
+from .guards import (
+    _BOUNDARY_FILES,
+    _CONTROL_PATHS,
+    _DEV_DESTRUCTIVE,
+    _destructive_guard,
+    _git_guard,
+    _has_dynamic_expansion,
+    _hook_guard,
+    _release_guard,
+    _scope_guard,
+    validate_bash_command,
+)
+from .knowledge import (
+    _extract_docx,
+    _extract_hwp,
+    _extract_hwpx,
+    _extract_pdf,
+    _safe_archive,
+    run_document,
+    run_ingest_document,
+    run_memory_propose,
+)
+from .patch import (
+    _apply_hunks,
+    _parse_patch,
+    _patch_path,
+    run_apply_patch,
+    run_editor,
+)
+from .schemas import (
+    APPLY_PATCH_TOOL,
+    BASH_TOOL,
+    EDITOR_TOOL,
+    INGEST_DOCUMENT_TOOL,
+    MEMORY_PROPOSE_TOOL,
+    PROCESS_TOOL,
+    READ_DOCUMENT_TOOL,
+    TICKET_TOOL,
+    WEB_FETCH_TOOL,
+)
+from .shell import (
+    BackgroundProcessManager,
+    _kill_group,
+    _pump,
+    _tail_note,
+    _TailBuffer,
+    run_bash,
+)
+from .tickets import (
+    _ticket_line,
+    run_ticket,
+)
+from .web import (
+    _HTMLText,
+    _public_url,
+    run_web_fetch,
+)
+
+__all__ = [
+    "APPLY_PATCH_TOOL",
+    "BASH_TOOL",
+    "BackgroundProcessManager",
+    "EDITOR_TOOL",
+    "INGEST_DOCUMENT_TOOL",
+    "MEMORY_PROPOSE_TOOL",
+    "PROCESS_TOOL",
+    "READ_DOCUMENT_TOOL",
+    "TICKET_TOOL",
+    "ToolError",
+    "WEB_FETCH_TOOL",
+    "_BOUNDARY_FILES",
+    "_CONTROL_PATHS",
+    "_DEV_DESTRUCTIVE",
+    "_HTMLText",
+    "_MAX_ARCHIVE_BYTES",
+    "_MAX_DOCUMENT_BYTES",
+    "_MAX_FETCH_BYTES",
+    "_MAX_OUT",
+    "_TIMEOUT",
+    "_TailBuffer",
+    "_apply_hunks",
+    "_cap",
+    "_confine",
+    "_dedup_log",
+    "_destructive_guard",
+    "_extract_docx",
+    "_extract_hwp",
+    "_extract_hwpx",
+    "_extract_pdf",
+    "_git_guard",
+    "_has_dynamic_expansion",
+    "_hook_guard",
+    "_kill_group",
+    "_parse_patch",
+    "_patch_path",
+    "_public_url",
+    "_pump",
+    "_release_guard",
+    "_safe_archive",
+    "_scope_guard",
+    "_tail_note",
+    "_ticket_line",
+    "run_apply_patch",
+    "run_bash",
+    "run_document",
+    "run_editor",
+    "run_ingest_document",
+    "run_memory_propose",
+    "run_ticket",
+    "run_web_fetch",
+    "validate_bash_command",
+]

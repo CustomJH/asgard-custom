@@ -213,8 +213,8 @@ class TestHeimdallSessionId(SessionBase):
         from asgard.providers import PROVIDERS, ResolvedProvider
 
         self.addCleanup(mock.patch.stopall)
-        mock.patch.object(core_mod, "AgentSession", lambda *a, **k: object()).start()
-        mock.patch.object(core_mod, "make_client", lambda _rp: object()).start()
+        mock.patch.object(core_mod.sessions, "AgentSession", lambda *a, **k: object()).start()
+        mock.patch.object(core_mod.sessions, "make_client", lambda _rp: object()).start()
         rp = ResolvedProvider(profile=PROVIDERS["anthropic"], model="claude-x", api_key="k")
         return core_mod.Heimdall(rp, root, on_text=lambda _s: None, **kwargs)
 
@@ -260,7 +260,7 @@ class TestHeimdallSessionId(SessionBase):
         root = self.project()
         profiles.create("loki-qa")
         swarm.bind(root, "loki-qa", mode="native")
-        with mock.patch.object(core_mod, "_resolve_agent", side_effect=RuntimeError("배치 파손")):
+        with mock.patch.object(core_mod.recall, "_resolve_agent", side_effect=RuntimeError("배치 파손")):
             hd = self._heimdall(root)
         self.assertEqual(hd._session_agent, "")
         self.assertEqual(sessions.parse_key(hd._memory_session_id)["agent"], profiles.DEFAULT)

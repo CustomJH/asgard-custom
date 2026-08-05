@@ -995,14 +995,14 @@ class TestSyncTurnCLI(ProjectMemoryBase):
         cfg = dict(self.CFG)
         self.grant(cfg, mb.GRANT_AUTO_RETAIN_TURNS)
         with (
-            mock.patch("asgard.commands.memory.find_config", return_value=(self.root, cfg)),
-            mock.patch("asgard.commands.memory.is_backend_trusted", return_value=True),
+            mock.patch("asgard.commands.memory.autosave.find_config", return_value=(self.root, cfg)),
+            mock.patch("asgard.commands.memory.autosave.is_backend_trusted", return_value=True),
             mock.patch(
-                "asgard.commands.memory.retain_turn",
+                "asgard.commands.memory.autosave.retain_turn",
                 return_value=project_memory.TurnRetentionResult("retained", "turn-doc"),
             ) as retain,
             mock.patch(
-                "asgard.commands.memory.propose_completion",
+                "asgard.commands.memory.autosave.propose_completion",
                 return_value=project_memory.CompletionProposalResult(
                     "proposed", "approval-1", "record-1", "승인 미리보기"
                 ),
@@ -1026,10 +1026,10 @@ class TestSyncTurnCLI(ProjectMemoryBase):
         payload = {"user_text": "읽기 요청", "assistant_text": "응답", "verified": False}
         with (
             mock.patch(
-                "asgard.commands.memory.find_config",
+                "asgard.commands.memory.autosave.find_config",
                 return_value=(self.root, {"server": "http://memory", "bank": "demo"}),
             ),
-            mock.patch("asgard.commands.memory.retain_turn") as retain,
+            mock.patch("asgard.commands.memory.autosave.retain_turn") as retain,
         ):
             result = CliRunner().invoke(
                 app, ["memory", "sync-turn", "--mode", "claude-code"], input=json.dumps(payload)
@@ -1049,9 +1049,9 @@ class TestSyncTurnCLI(ProjectMemoryBase):
         payload = {"user_text": "민감한 요청", "assistant_text": "응답", "verified": False}
         cfg = {"server": "http://memory", "bank": "demo", "auto_retain_turns": True}
         with (
-            mock.patch("asgard.commands.memory.find_config", return_value=(self.root, cfg)),
-            mock.patch("asgard.commands.memory.is_backend_trusted", return_value=False),
-            mock.patch("asgard.commands.memory.retain_turn") as retain,
+            mock.patch("asgard.commands.memory.autosave.find_config", return_value=(self.root, cfg)),
+            mock.patch("asgard.commands.memory.autosave.is_backend_trusted", return_value=False),
+            mock.patch("asgard.commands.memory.autosave.retain_turn") as retain,
         ):
             result = CliRunner().invoke(
                 app, ["memory", "sync-turn", "--mode", "claude-code"], input=json.dumps(payload)
@@ -1075,9 +1075,9 @@ class TestSyncTurnCLI(ProjectMemoryBase):
         payload = {"user_text": "민감한 요청", "assistant_text": "응답", "verified": False}
         cfg = dict(self.CFG)
         with (
-            mock.patch("asgard.commands.memory.find_config", return_value=(self.root, cfg)),
-            mock.patch("asgard.commands.memory.is_backend_trusted", return_value=True),
-            mock.patch("asgard.commands.memory.retain_turn") as retain,
+            mock.patch("asgard.commands.memory.autosave.find_config", return_value=(self.root, cfg)),
+            mock.patch("asgard.commands.memory.autosave.is_backend_trusted", return_value=True),
+            mock.patch("asgard.commands.memory.autosave.retain_turn") as retain,
         ):
             result = CliRunner().invoke(
                 app, ["memory", "sync-turn", "--mode", "claude-code"], input=json.dumps(payload)
@@ -1097,12 +1097,12 @@ class TestSyncTurnCLI(ProjectMemoryBase):
 
         with (
             mock.patch(
-                "asgard.commands.memory.find_config",
+                "asgard.commands.memory.project.find_config",
                 return_value=(self.root, {"server": "http://memory", "bank": "demo"}),
             ),
-            mock.patch("asgard.commands.memory.is_backend_trusted", return_value=True),
+            mock.patch("asgard.commands.memory.project.is_backend_trusted", return_value=True),
             mock.patch(
-                "asgard.commands.memory.commit_approved_record",
+                "asgard.commands.memory.project.commit_approved_record",
                 return_value={"success": True, "canonical_path": ".asgard/memory/records/record.md"},
             ) as commit,
         ):
@@ -1119,12 +1119,12 @@ class TestSyncTurnCLI(ProjectMemoryBase):
 
         with (
             mock.patch(
-                "asgard.commands.memory.find_config",
+                "asgard.commands.memory.project.find_config",
                 return_value=(self.root, {"server": "http://memory", "bank": "demo"}),
             ),
-            mock.patch("asgard.commands.memory.is_backend_trusted", return_value=True),
+            mock.patch("asgard.commands.memory.project.is_backend_trusted", return_value=True),
             mock.patch(
-                "asgard.commands.memory.commit_approved_record",
+                "asgard.commands.memory.project.commit_approved_record",
                 side_effect=ValueError("canonical saved; backend pending"),
             ) as commit,
         ):
@@ -1140,11 +1140,11 @@ class TestSyncTurnCLI(ProjectMemoryBase):
 
         with (
             mock.patch(
-                "asgard.commands.memory.find_config",
+                "asgard.commands.memory.project.find_config",
                 return_value=(self.root, {"server": "http://memory", "bank": "demo"}),
             ),
-            mock.patch("asgard.commands.memory.is_backend_trusted", return_value=False),
-            mock.patch("asgard.commands.memory.commit_approved_record") as commit,
+            mock.patch("asgard.commands.memory.project.is_backend_trusted", return_value=False),
+            mock.patch("asgard.commands.memory.project.commit_approved_record") as commit,
         ):
             result = CliRunner().invoke(app, ["memory", "project-approve", "approval-1"])
 
@@ -1169,12 +1169,12 @@ class TestSyncTurnCLI(ProjectMemoryBase):
             "removed": [],
         }
         with (
-            mock.patch("asgard.commands.memory.os.getcwd", return_value=self.root),
+            mock.patch("asgard.commands.memory.project.os.getcwd", return_value=self.root),
             mock.patch(
                 "asgard.memory_bridge.find_config",
                 return_value=(self.root, {"server": "http://memory", "bank": "demo"}),
             ),
-            mock.patch("asgard.commands.memory.is_backend_trusted", return_value=True),
+            mock.patch("asgard.commands.memory.project.is_backend_trusted", return_value=True),
             mock.patch("asgard.project_memory.changed_paths", return_value=[]),
             mock.patch("asgard.project_memory.scan_project", return_value=[]),
             mock.patch("asgard.project_memory.sync_artifacts", return_value=rejected),
@@ -1190,12 +1190,12 @@ class TestSyncTurnCLI(ProjectMemoryBase):
         from asgard.cli import app
 
         with (
-            mock.patch("asgard.commands.memory.os.getcwd", return_value=self.root),
+            mock.patch("asgard.commands.memory.project.os.getcwd", return_value=self.root),
             mock.patch(
                 "asgard.memory_bridge.find_config",
                 return_value=(self.root, {"server": "http://memory", "bank": "demo"}),
             ),
-            mock.patch("asgard.commands.memory.is_backend_trusted", return_value=False),
+            mock.patch("asgard.commands.memory.project.is_backend_trusted", return_value=False),
             mock.patch("asgard.project_memory.changed_paths") as changed,
         ):
             result = CliRunner().invoke(app, ["memory", "project-sync"])
@@ -1211,9 +1211,9 @@ class TestSyncTurnCLI(ProjectMemoryBase):
 
         cfg = {"engine": "hindsight", "endpoint": "http://memory", "project_id": "demo"}
         with (
-            mock.patch("asgard.commands.memory.os.getcwd", return_value=self.root),
+            mock.patch("asgard.commands.memory.project.os.getcwd", return_value=self.root),
             mock.patch("asgard.memory_bridge.find_config", return_value=(self.root, cfg)),
-            mock.patch("asgard.commands.memory.is_backend_trusted", return_value=True),
+            mock.patch("asgard.commands.memory.project.is_backend_trusted", return_value=True),
             mock.patch("asgard.project_memory.changed_paths") as changed,
             mock.patch("asgard.project_memory.scan_project", return_value=[]) as scan,
         ):

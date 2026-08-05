@@ -186,8 +186,14 @@ class TestDoctorWindows(unittest.TestCase):
     def test_python_check_uses_hook_python(self):
         from asgard.commands import doctor
 
-        with mock.patch.object(doctor, "hook_python_token", return_value="py"):
-            with mock.patch.object(doctor, "on_path", side_effect=lambda b: f"C:\\bin\\{b}.exe"):
+        # `on_path` 를 두 번 씌우는 이유는 doctor 가 패키지라서다 — 임포트한 모듈마다 자기
+        # 바인딩을 든다. 파사드만 씌우면 engines 는 진짜 `on_path` 를 부르고, win32 로 가장한
+        # 호스트에서 `shutil.which` 가 Windows 분기로 들어가 터진다.
+        with mock.patch.object(doctor.wiring, "hook_python_token", return_value="py"):
+            with (
+                mock.patch.object(doctor, "on_path", side_effect=lambda b: f"C:\\bin\\{b}.exe"),
+                mock.patch.object(doctor.engines, "on_path", side_effect=lambda b: f"C:\\bin\\{b}.exe"),
+            ):
                 with mock.patch.object(doctor.sys, "platform", "win32"):
                     import io
                     from contextlib import redirect_stdout

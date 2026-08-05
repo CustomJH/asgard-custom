@@ -328,7 +328,7 @@ class TestRecallWiring(Base):
 
         path = self._write("계량기-요구사항.md", _spec_text())
         with mock.patch(
-            "asgard.commands.memory.find_config",
+            "asgard.commands.memory.project.find_config",
             return_value=(self.root, {"server": "http://memory", "bank": "demo"}),
         ):
             result = CliRunner().invoke(app, ["memory", "project-ingest", path, "--json"])

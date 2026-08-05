@@ -451,8 +451,8 @@ class TestNativeCompositionEndToEnd(ProfileBase):
                 captured.append({**kwargs, "system": args[3] if len(args) > 3 else kwargs.get("system", "")})
 
         self.addCleanup(mock.patch.stopall)
-        mock.patch.object(core_mod, "AgentSession", _Stub).start()
-        mock.patch.object(core_mod, "make_client", lambda _rp: object()).start()
+        mock.patch.object(core_mod.sessions, "AgentSession", _Stub).start()
+        mock.patch.object(core_mod.sessions, "make_client", lambda _rp: object()).start()
         rp = ResolvedProvider(profile=PROVIDERS["anthropic"], model="claude-x", api_key="k")
         return core_mod.Heimdall(rp, root, on_text=lambda _s: None), captured
 

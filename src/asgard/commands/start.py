@@ -10,9 +10,16 @@ Asgard 자체에서 돈다 — 모델은 provider 설정으로 연결하고, Cla
 import importlib.util
 import os
 import sys
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from .. import errors, profiles, sandbox, ui
 from ..providers import ResolvedProvider, resolve
+
+if TYPE_CHECKING:
+    from typing import TextIO
+
+    from ..agent.runtime import TurnEvent, TurnResult
 
 
 def preflight(
@@ -215,13 +222,12 @@ def run_prompt(
     quest_id: str | None = None,
     dual: bool = False,
 ) -> int:
-    """headless 단발 실행 — 벤치·CI 표면. Heimdall.handle 1회 후 종료.
+    """headless 단발 실행 — 벤치·CI 표면. ExecutionSession 턴 1회 후 종료.
 
     모드 B는 라우팅 논리레이어 주입 불가(벤치 실측) — 게이트-우선의 측정·강제 표면은
     이 네이티브 경로다 (하네스가 전이 산출을 코드로 수행, 채택률 100%).
     exit code: 0 정상 / 1 ⚠ 보고(에스컬레이션·중단·예산 소진) / 2 프리플라이트 실패."""
     import json as _json
-    import time as _time
 
     root = os.getcwd()
     from .. import i18n
@@ -240,55 +246,64 @@ def run_prompt(
             _render_failure(checks, failure)
         return failure.exit_code
     os.environ.setdefault("ASGARD_UNATTENDED", "1")  # Canon 8 — headless는 무인, 게이트도 이 신호를 본다
-    from .. import activity
-    from ..agent.heimdall import Heimdall
+    from ..agent.runtime import ExecutionSession
 
     sink = sys.stderr if json_out else sys.stdout  # --json: stdout은 최종 JSON 전용
-
-    def stream(s: str) -> None:
-        sink.write(s)
-
-    # 헤드리스에도 라이브 상태를 켠다. 여태 여기가 `on_status=None`이었고, 그래서 이 프로세스를
-    # 자식으로 띄운 스튜디오는 '지금 무엇을 하는 중'이라는 앎이 **생성되지도** 않은 채 끝날
-    # 때까지 기다렸다. 화면이 없는 것과 신호가 없는 것은 다르다 — 보는 쪽이 터미널이 아닐 뿐이다.
-    activity.emit("run.start", prompt=(prompt or "")[:400], provider=rp.profile.name, model=rp.model, resume=resume)
-    h = Heimdall(rp, root, on_text=stream, on_status=lambda label: activity.emit("status", label=label))
-    h.dual_mode = dual
-    t0 = _time.time()
+    session = ExecutionSession(rp, root, dual=dual, on_event=_run_events(sink))
     if resume:
-        result = h.resume(quest_id)
-    elif prompt:
-        result = h.handle(prompt)  # handle이 자체적으로 오류를 ⚠ 보고로 감싼다
+        result = session.resume(quest_id)
     else:
-        result = "⚠ 새 실행에는 prompt가 필요해요. 이미 있는 Quest를 이어가려면 --resume을 쓰세요."
-    wall = round(_time.time() - t0, 1)
-    activity.emit("run.end", ok=not result.startswith("⚠"), wall_s=wall, tokens=h.total_tokens)
+        result = session.submit(prompt or "")
     if json_out:
-        sys.stdout.write(_run_summary(h, rp, result, wall))
+        sys.stdout.write(_run_summary(result))
     else:
-        sys.stdout.write("\n" + result + "\n")
-    return 1 if result.startswith("⚠") else 0
+        rendered = "" if result.response_streamed else result.text
+        sys.stdout.write("\n" + rendered + "\n")
+    return 0 if result.ok else 1
 
 
-def _run_summary(h, rp: "ResolvedProvider", result: str, wall: float) -> str:
+def _run_events(sink: "TextIO") -> "Callable[[TurnEvent], None]":
+    """공통 턴 이벤트를 기존 headless 활동·출력 표면에 연결한다."""
+    from .. import activity
+    from ..agent.runtime import TurnFinished, TurnStarted, TurnStatusChanged, TurnText
+
+    def emit(event: "TurnEvent") -> None:
+        if isinstance(event, TurnStarted):
+            activity.emit(
+                "run.start",
+                prompt=event.prompt[:400],
+                provider=event.provider,
+                model=event.model,
+                resume=event.resume,
+            )
+        elif isinstance(event, TurnText):
+            sink.write(event.text)
+        elif isinstance(event, TurnStatusChanged):
+            activity.emit("status", label=event.label)
+        elif isinstance(event, TurnFinished):
+            activity.emit("run.end", ok=event.ok, wall_s=event.wall_s, tokens=event.tokens)
+
+    return emit
+
+
+def _run_summary(result: "TurnResult") -> str:
     """`--json`이 stdout에 내놓는 한 덩이 — 이 명령의 기계용 계약."""
     import json as _json
 
     return (
         _json.dumps(
             {
-                # DIRECT의 빈 문자열은 REPL 이중 출력 방지 sentinel — 헤드리스는 실제 응답을 회수한다
-                "result": result or h.last_response_text,
+                "result": result.text,
                 # 이 실행이 연 퀘스트 — 없으면 null (DIRECT 턴은 로그를 안 연다). 종전에는 이 값이
                 # 어디에도 안 나와서, `--json` 을 소비하는 쪽이 방금 만들어진 로그를 찾을 길이
                 # 없었다: 벤치도 스튜디오도 `.asgard/quest/` 를 시각으로 뒤져 짐작해야 했다.
-                "quest_id": getattr(h, "_last_quest_id", None),
-                "tokens": h.total_tokens,
-                "cache_read_tokens": h.cache_read_tokens,  # 프롬프트 캐시 적중분 (~0.1× 과금) — 벤치 비용 산정용
-                "cache_prompt_tokens": h.cache_prompt_tokens,
-                "wall_s": wall,
-                "provider": rp.profile.name,
-                "model": rp.model,
+                "quest_id": result.quest_id,
+                "tokens": result.tokens,
+                "cache_read_tokens": result.cache_read_tokens,  # 프롬프트 캐시 적중분 (~0.1× 과금) — 벤치 비용 산정용
+                "cache_prompt_tokens": result.cache_prompt_tokens,
+                "wall_s": result.wall_s,
+                "provider": result.provider,
+                "model": result.model,
             },
             ensure_ascii=False,
         )

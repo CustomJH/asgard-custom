@@ -79,16 +79,14 @@ class EnvPropagationTest(unittest.TestCase):
 
     def test_bash_tool_runs_as_the_scoped_agent(self) -> None:
         """도구 안에서 `asgard …`를 부르면 같은 에이전트로 가야 한다."""
-        from asgard.agent import tools
-
         import io
+
+        from asgard.agent import tools
 
         with mock.patch("subprocess.Popen") as popen:
             # 펌프 스레드가 실제로 읽으므로 파일 같은 것을 줘야 한다 — None이면 스레드가
             # 예외를 뱉고 시험이 경고로 시끄러워진다(단언과는 무관하지만 다음 사람이 헷갈린다).
-            popen.return_value = mock.Mock(
-                stdout=io.StringIO(""), stderr=io.StringIO(""), returncode=0
-            )
+            popen.return_value = mock.Mock(stdout=io.StringIO(""), stderr=io.StringIO(""), returncode=0)
             with profiles.scoped("alpha"), mock.patch.object(tools, "validate_bash_command", return_value=None):
                 try:
                     tools.run_bash(self._tmp.name, {"command": "true"})
@@ -109,7 +107,7 @@ class EnvPropagationTest(unittest.TestCase):
 
         from asgard.agent import tools
 
-        source = inspect.getsource(tools)
+        source = inspect.getsource(tools.knowledge)
         marker = source.index("convert_hwp.py")
         window = source[marker : marker + 700]
         self.assertNotIn("subprocess_env", window)

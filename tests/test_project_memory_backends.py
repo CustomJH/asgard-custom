@@ -526,7 +526,7 @@ class TestBackendSelection(unittest.TestCase):
         with (
             tempfile.TemporaryDirectory() as root,
             mock.patch.dict(os.environ, {"HOME": root}),
-            mock.patch("asgard.commands.memory.os.getcwd", return_value=root),
+            mock.patch("asgard.commands.memory.backends.os.getcwd", return_value=root),
         ):
             result = CliRunner().invoke(
                 app,

@@ -1,7 +1,7 @@
 """원복 백업(오딘 지시 26-07-24) — 맵 뷰 고도화 전 레이아웃 원본.
 
-원복 절차: view.py에서 `from .view_legacy import _TEMPLATE_LEGACY as _TEMPLATE`로
-활성 템플릿을 전환한다. 전체 사본: ref/backup/map-view-legacy-20260724/.
+원복 절차: view.py의 `_template()`이 자산 파일 대신 여기 `_TEMPLATE_LEGACY`를 돌려주게 한다.
+전체 사본: ref/backup/map-view-legacy-20260724/.
 """
 
 _TEMPLATE_LEGACY = """<!doctype html>

@@ -21,6 +21,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
+from pathlib import Path
 
 from asgard.commands import doctor
 
@@ -284,16 +285,16 @@ class TestFunctionLengthAnchor(unittest.TestCase):
 
     @staticmethod
     def _long_functions() -> list[tuple[str, int]]:
-        path = os.path.join(os.path.dirname(doctor.__file__), "doctor.py")
-        with open(path, encoding="utf-8") as fh:
-            tree = ast.parse(fh.read())
+        """doctor 패키지 전체를 훑는다 — 한 파일만 보면 검사를 옆 모듈로 옮기는 것이 곧 감량이 된다."""
         long: list[tuple[str, int]] = []
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
-                continue
-            span = (node.end_lineno or node.lineno) - node.lineno + 1  # end_lineno 는 선택 필드다
-            if span > LINE_BUDGET:
-                long.append((node.name, span))
+        for path in sorted(Path(doctor.__file__).parent.glob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                    continue
+                span = (node.end_lineno or node.lineno) - node.lineno + 1  # end_lineno 는 선택 필드다
+                if span > LINE_BUDGET:
+                    long.append((node.name, span))
         return sorted(long, key=lambda pair: -pair[1])
 
     def test_long_function_count_does_not_grow(self):

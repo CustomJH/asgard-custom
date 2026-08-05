@@ -183,8 +183,8 @@ class TestMemoryDirectoryConfig(MemoryBase):
         self.assertTrue(os.path.isfile(os.path.join(configured, "maps", "index.md")))
 
         with (  # darwin 분기 고정 — Linux CI 러너는 webbrowser 경로로 빠져 headless 실패한다
-            mock.patch("asgard.commands.memory.sys.platform", "darwin"),
-            mock.patch("asgard.commands.memory.subprocess.run") as opened,
+            mock.patch("asgard.commands.memory.personal.sys.platform", "darwin"),
+            mock.patch("asgard.commands.memory.personal.subprocess.run") as opened,
         ):
             result = CliRunner().invoke(app, ["memory", "obsidian"])
         self.assertEqual(result.exit_code, 0, result.output)

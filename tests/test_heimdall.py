@@ -345,7 +345,7 @@ class TestTrinityLoop(Base):
                 return subprocess.CompletedProcess(args, 1, stdout="", stderr="stale close")
             return real_ql(root, *args, **kwargs)
 
-        with mock.patch("asgard.agent.heimdall.trinity.ql", side_effect=reject_close):
+        with mock.patch("asgard.agent.heimdall.trinity.verdict.ql", side_effect=reject_close):
             out = h.handle("w1.txt 만들어")
 
         self.assertIn("close를 거부했어요", out)
@@ -612,7 +612,9 @@ class TestTrinityLoop(Base):
             verifier("PASS"),  # 게이트 수리 재검증 턴
         ]
         h = FakeHeimdall(self.root, seq, cls=CLS_WRITE)
-        with mock.patch("asgard.agent.heimdall.trinity.gate", return_value=(True, "stale PASS — 물리 대조 불일치")):
+        with mock.patch(
+            "asgard.agent.heimdall.trinity.verdict.gate", return_value=(True, "stale PASS — 물리 대조 불일치")
+        ):
             out = h.handle("w1.txt 만들어")
         self.assertIn("오딘이 정해 주셔야 해요", out)
         self.assertIn("stale-pass", out)
@@ -624,7 +626,7 @@ class TestTrinityLoop(Base):
         seq = [worker({"w1.txt": "x\n"}, self.root), verifier("PASS"), verifier("PASS")]
         h = FakeHeimdall(self.root, seq, cls=CLS_WRITE)
         real_gate = [(True, "stale PASS — 물리 대조 불일치"), (False, "")]
-        with mock.patch("asgard.agent.heimdall.trinity.gate", side_effect=real_gate):
+        with mock.patch("asgard.agent.heimdall.trinity.verdict.gate", side_effect=real_gate):
             out = h.handle("w1.txt 만들어")
         self.assertIn(DONE, out)
         # 단복수까지 맞춘 표면 — "1 gate blocks" 같은 문장은 사람 글로 읽히지 않는다

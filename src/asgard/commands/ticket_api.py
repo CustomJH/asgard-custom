@@ -21,6 +21,7 @@ from ..studio import projects as P
 from ..studio import teams as TM
 from ..studio import tickets as T
 from ..studio import vocab as V
+from ..studio.db import exists as db_exists  # 저장소가 아직 없는 창 — 티켓 어휘가 아니라 db 원시값이다
 
 _PATHS = frozenset(
     {
@@ -164,8 +165,8 @@ def snapshot(root: str, params: dict[str, list[str]] | None = None) -> dict[str,
         "summary": T.summary(root, team=team),
         "cycles": T.list_cycles(root, team=team),
         "teams": _teams_with_states(),
-        "projects": P.list_projects() if T.exists() else [],
-        "initiatives": P.list_initiatives() if T.exists() else [],
+        "projects": P.list_projects() if db_exists() else [],
+        "initiatives": P.list_initiatives() if db_exists() else [],
         # 문서 목록은 **발췌만** 든다 — 본문은 열 때 `/api/doc`이 전달한다. 여기 통째로 넣으면
         # 보드를 새로 고칠 때마다 안 읽는 글 수십 편이 같이 온다.
         "documents": D.list_documents(team=team if team not in ("", "*") else None),
@@ -181,7 +182,7 @@ def _teams_with_states() -> list[dict[str, Any]]:
     칸 이름은 **팀마다 다른 유일한 어휘**다(범주 다섯만 고정). 그래서 팀 화면이 그것을 못
     보면, 화면은 팀이 무엇을 다르게 하는지를 못 그린다. 목록과 따로 물으면 팀 하나당 왕복이
     하나씩 늘고, 그 사이에 낀 변경이 서로의 결과처럼 보인다."""
-    if not T.exists():
+    if not db_exists():
         return []
     rows = TM.list_teams()
     for row in rows:
@@ -239,7 +240,7 @@ def _read(path: str, params: dict[str, list[str]], root: str) -> tuple[int, str,
         found = T.find_ticket(root, ref)
         return _json(200, found) if found else _error(404, "ticket_not_found", f"ticket not found: {ref}")
     if path == "/api/teams":
-        if not T.exists():
+        if not db_exists():
             return _json(200, {"teams": [], "vocabulary": vocabulary()})
         rows = TM.list_teams(include_archived=_one(params, "archived") in ("1", "true"))
         for row in rows:
@@ -249,7 +250,7 @@ def _read(path: str, params: dict[str, list[str]], root: str) -> tuple[int, str,
     if path == "/api/teams/states":
         return _json(200, {"states": TM.list_states(_one(params, "team"))})
     if path == "/api/projects":
-        if not T.exists():
+        if not db_exists():
             return _json(200, {"projects": []})
         return _json(
             200,
@@ -282,7 +283,7 @@ def _read(path: str, params: dict[str, list[str]], root: str) -> tuple[int, str,
     if path == "/api/doc":
         return _json(200, D.get_document(_one(params, "ref") or _one(params, "id")))
     if path == "/api/initiatives":
-        return _json(200, {"initiatives": P.list_initiatives() if T.exists() else []})
+        return _json(200, {"initiatives": P.list_initiatives() if db_exists() else []})
     if path == "/api/initiative":
         return _json(200, P.get_initiative(_one(params, "ref") or _one(params, "id")))
     if path == "/api/triage":
@@ -562,7 +563,7 @@ def _team_of(root: str) -> str:
     from ..studio.db import reading
     from ..studio.teams import ensure_team
 
-    if not T.exists():
+    if not db_exists():
         return ""
     with reading() as conn:
         row = ensure_team(conn, root, create=False)

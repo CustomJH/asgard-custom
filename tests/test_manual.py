@@ -559,7 +559,20 @@ class TestNativeWiring(unittest.TestCase):
     """네이티브(모드 A) 프롬프트가 매뉴얼을 실제로 들고 가는가."""
 
     def _read(self, *parts: str) -> str:
-        path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src", "asgard", *parts)
+        """소스 앵커 — 패키지면 그 안의 모든 모듈을 이어 붙인다.
+
+        조립식이 어느 파일에 사는지는 이 앵커가 볼 일이 아니다. 한 파일만 보면 그 줄을 옆
+        모듈로 옮기는 것만으로 계약이 사라진 것처럼 보인다."""
+        base = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src", "asgard")
+        path = os.path.join(base, *parts)
+        if not os.path.exists(path) and path.endswith(".py") and os.path.isdir(path[:-3]):
+            path = path[:-3]  # `trinity.py` → `trinity/` 패키지
+        if os.path.isdir(path):
+            return "\n".join(
+                open(os.path.join(path, name), encoding="utf-8").read()
+                for name in sorted(os.listdir(path))
+                if name.endswith(".py")
+            )
         with open(path, encoding="utf-8") as handle:
             return handle.read()
 

@@ -383,6 +383,25 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
         ("계약", frozenset({"tool_kernel", "episodes"})),
         ("세션", frozenset({"session", "evicted"})),
         ("루프", frozenset({"heimdall", "repl"})),
+        # 표면이 Heimdall을 직접 조립하지 않도록 턴·이벤트 계약을 한곳에 둔다.
+        ("실행", frozenset({"runtime"})),
+        ("파사드", frozenset({"__init__"})),
+    ),
+    # 도구는 선언(모델이 읽는 스키마)과 구현이 갈라져 있고, 실행 도구는 판정을 먼저 지난다.
+    # `guards` 가 `shell`·`patch` 아래인 것이 계약이다 — 실행이 판정을 우회할 방향이 없다.
+    "agent.tools": (
+        ("바닥", frozenset({"_core", "schemas"})),
+        ("판정", frozenset({"guards"})),
+        ("실행", frozenset({"shell", "patch", "web", "knowledge", "tickets"})),
+        ("파사드", frozenset({"__init__"})),
+    ),
+    # 터미널 — 그리는 것(chrome)과 차례표(catalog)가 바닥이고, 그 위에 입력 재료, 상주 독,
+    # 슬래시 명령이 차례로 선다. 파사드에 남은 것은 그것들을 엮는 루프 하나다.
+    "agent.repl": (
+        ("바닥", frozenset({"chrome", "catalog"})),
+        ("재료", frozenset({"editline", "render"})),
+        ("상주", frozenset({"dock"})),
+        ("명령", frozenset({"commands"})),
         ("파사드", frozenset({"__init__"})),
     ),
     "agent.heimdall": (
@@ -392,6 +411,32 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
         ("레인", frozenset({"trinity", "waves", "delivery"})),
         ("코어", frozenset({"core"})),
         ("파사드", frozenset({"__init__"})),
+    ),
+    # TrinityRun 은 실행 상태 하나를 믹스인 셋이 나눠 진다. 믹스인끼리는 서로를 안 부르므로
+    # 같은 등급이고, 그 아래 `_shared` 는 상태를 안 드는 상수·순수 판정만 든다.
+    "agent.heimdall.trinity": (
+        ("순수", frozenset({"_shared"})),
+        ("턴", frozenset({"turns", "verdict", "notes"})),
+        ("파사드", frozenset({"__init__"})),
+    ),
+    # Heimdall 도 같은 형상이다 — 조정자 상태 하나를 면 넷이 나눠 진다.
+    "agent.heimdall.core": (
+        ("순수", frozenset({"_shared"})),
+        ("면", frozenset({"sessions", "recall", "routing", "closing"})),
+        ("파사드", frozenset({"__init__"})),
+    ),
+    # 명령 표면 — `_app` 이 루트 Typer 앱과 전역 플래그를 들고, 그룹 모듈은 거기에 자기 명령을
+    # 매단다. 그룹끼리는 서로를 안 부른다. `__main__`(python -m asgard.cli)은 파사드와 같은
+    # 등급이다 — 둘 다 이 패키지의 가장 바깥이고, 파사드보다 위인 등급은 규칙이 허락하지 않는다.
+    "cli": (
+        ("바닥", frozenset({"_app"})),
+        (
+            "그룹",
+            frozenset(
+                {"root", "agent", "map", "role", "siege", "skills", "memory", "ticket", "evolve", "office", "k6"}
+            ),
+        ),
+        ("파사드", frozenset({"__init__", "__main__"})),
     ),
     "commands": (
         # 명령 구현 대부분이 여기다 — 서로를 안 부른다. 같은 등급이라 새로 부르면 빨개진다.
@@ -454,6 +499,20 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
             ),
         ),
         # 지금 이 파사드는 형제를 하나도 안 부른다 (cli 가 명령을 함수 안 lazy 로 고르므로).
+        ("파사드", frozenset({"__init__"})),
+    ),
+    # 검사군은 서로를 안 부른다 — 파사드만 전부를 모아 한 화면으로 그린다. 같은 등급이라
+    # 검사 하나가 옆 검사를 부르기 시작하면 여기서 빨개진다 (그건 조립기가 할 일이다).
+    "commands.doctor": (
+        ("검사", frozenset({"memory", "codemap", "gate", "wiring", "engines"})),
+        ("파사드", frozenset({"__init__"})),
+    ),
+    # `_core` 는 승인 계획의 보관·선점과 모든 run_* 가 쓰는 오류 봉투다. `personal` 이 한 단
+    # 위인 이유는 하나뿐이다 — 재색인 안내 문구를 `backends` 의 플래그에서 읽는다.
+    "commands.memory": (
+        ("바닥", frozenset({"_core"})),
+        ("표면", frozenset({"autosave", "backends", "evolution", "hygiene", "project"})),
+        ("개인", frozenset({"personal"})),
         ("파사드", frozenset({"__init__"})),
     ),
     "commands.memory_dashboard": (
@@ -561,6 +620,16 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
         ("축", frozenset({"projects", "tickets", "legacy"})),
         # documents — 티켓과 나란한 글. 프로젝트·팀에 매달릴 수 있어 그 둘 위에 선다.
         ("글", frozenset({"documents"})),
+        ("파사드", frozenset({"__init__"})),
+    ),
+    # 티켓 — `_core` 가 "어디까지 보이는가"와 "이 값을 받는가"를 혼자 진다. 읽는 면이 쓰는 면
+    # 아래인 것이 방향이다: 쓰고 나서 무엇이 됐는지를 읽지, 읽으면서 쓰지 않는다.
+    "studio.tickets": (
+        ("바닥", frozenset({"_core"})),
+        ("조각", frozenset({"labels", "cycles", "evidence"})),
+        ("읽기", frozenset({"views"})),
+        ("쓰기", frozenset({"crud"})),
+        ("분류", frozenset({"triage"})),
         ("파사드", frozenset({"__init__"})),
     ),
     "templates": (
