@@ -215,7 +215,9 @@ def _routable_commands(graph_text: str) -> list[tuple[str, str]]:
 
 def _coverage_note(graph_text: str) -> str:
     """Carry a partial scanner boundary into the agent slice without copying the full gap catalog."""
-    found = next((_COVERAGE.fullmatch(line) for line in graph_text.splitlines() if line.startswith("- Coverage status:")), None)
+    found = next(
+        (_COVERAGE.fullmatch(line) for line in graph_text.splitlines() if line.startswith("- Coverage status:")), None
+    )
     if found is None or found.group(1) != "partial":
         return ""
     count = int(found.group(2))

@@ -14,9 +14,7 @@ map_app = typer.Typer(
 app.add_typer(map_app, name="map")
 
 
-@map_app.command(
-    "scan", help="rebuild source-grounded relation evidence and retain every named scanner coverage limit"
-)
+@map_app.command("scan", help="rebuild source-grounded relation evidence and retain every named scanner coverage limit")
 def map_scan(
     dry_run: bool = typer.Option(False, "--dry-run"),
     json_: bool = typer.Option(False, "--json"),

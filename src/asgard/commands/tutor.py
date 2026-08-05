@@ -167,9 +167,7 @@ def _payload(
             "checkpoints": [{**asdict(p), "weight": p.weight, "cid": p.cid, "form": form} for p, form in rows],
             # 전체 후보는 기계 소비자에게 남기고, Stop 훅에는 사람이 실제로 볼 목록을 따로 준다.
             # 둘을 섞으면 화면에 없던 후보까지 질문·건너뜀으로 기록된다.
-            "shown_checkpoints": [
-                {**asdict(p), "weight": p.weight, "cid": p.cid, "form": form} for p, form in shown
-            ],
+            "shown_checkpoints": [{**asdict(p), "weight": p.weight, "cid": p.cid, "form": form} for p, form in shown],
             "checkpoint_summary": _point_counts(rows),
             "revisits": [
                 {"cid": r.cid, "kind": r.kind, "path": r.path, "unit": r.unit, "ask": r.ask, "asks": r.asks}
@@ -342,9 +340,7 @@ def _report_explain(exp: Any, include_recall: bool = True) -> list[str]:
         ]
     if exp.terms:
         lines += ["", "이 변경이 쓰는 말:", ""]
-        lines += [
-            f"- **{t.name}** — {t.gloss} (`{t.where}` · {t.source})" for t in exp.terms[:_REPORT_TERM_LIMIT]
-        ]
+        lines += [f"- **{t.name}** — {t.gloss} (`{t.where}` · {t.source})" for t in exp.terms[:_REPORT_TERM_LIMIT]]
         if len(exp.terms) > _REPORT_TERM_LIMIT:
             lines.append(f"- 나머지 {len(exp.terms) - _REPORT_TERM_LIMIT}개 말은 다음 회차로 넘긴다.")
     if exp.checks:

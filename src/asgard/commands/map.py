@@ -435,9 +435,7 @@ def run_map_impact(node_id: str, *, depth: int = 4, json_out: bool = False) -> i
             ui.step(f"  d{hop['depth']} {hop['via']} → {hop['id']}{mark}{anchor}{tail}")
     coverage = report["coverage"]
     truncated = coverage["upstream_truncated"] + coverage["downstream_truncated"]
-    ui.step(
-        f"coverage: {coverage['status']} · depth {depth} · all edge kinds · candidates {coverage['candidates']}"
-    )
+    ui.step(f"coverage: {coverage['status']} · depth {depth} · all edge kinds · candidates {coverage['candidates']}")
     if truncated:
         ui.step(f"{truncated} nodes at depth limit still have unexplored edges — raise --depth to continue")
     for limit in coverage["limits"]:

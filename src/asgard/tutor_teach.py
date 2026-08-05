@@ -317,9 +317,7 @@ def _order(nodes: dict[_Key, _Node], edges: set[tuple[_Key, _Key]]) -> list[_Key
     return out
 
 
-def _flow_order(
-    nodes: dict[_Key, _Node], edges: set[tuple[_Key, _Key]]
-) -> tuple[list[_Key], tuple[int, ...]]:
+def _flow_order(nodes: dict[_Key, _Node], edges: set[tuple[_Key, _Key]]) -> tuple[list[_Key], tuple[int, ...]]:
     """호출 관계로 이어진 묶음을 큰 것부터 놓고, 각 묶음 안에서는 호출자가 먼저 오게 한다.
 
     전역 위상 정렬은 서로 무관한 흐름을 경로 이름순으로 섞는다. 그러면 카드의 첫 세 자리가 한
