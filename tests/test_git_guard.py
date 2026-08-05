@@ -68,6 +68,67 @@ class TestShellIndirectionKeepsTheTable(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIsNotNone(blocked_reason(command), command)
 
+    def test_the_runner_hidden_in_a_variable_is_still_the_runner(self) -> None:
+        """`g=git; $g stash` 는 `git stash` 다.
+
+        토큰 분류기는 `$g` 를 git 이 아니라고 읽었고, 정규식 표는 `git` 과 하위 명령이
+        텍스트상 떨어져 있어 역시 못 봤다 — 두 갈래가 같은 자리에서 함께 비껴갔다
+        (26-08-05 감사)."""
+        for command in (f"g=git; $g {STASH}", "G=git ; $G reset --hard HEAD", f"g=git && ${{g}} {STASH}"):
+            with self.subTest(command=command):
+                self.assertIsNotNone(blocked_reason(command), command)
+
+    def test_list_argument_form_is_read_as_a_command(self) -> None:
+        """인터프리터가 리스트로 넘기면 토큰 사이에 공백이 없고 `','` 가 있다.
+
+        패턴마다 구분자를 넓히면 다음 패턴에서 같은 구멍이 다시 난다 — 세 턴 연속 그렇게 났다.
+        입구에서 한 번 펴는 것이 이 시험이 지키는 계약이고, 그래서 **플래그 자리까지** 잰다."""
+        for argv in (
+            f"['git','{STASH}']",
+            "['git','push','--force']",
+            "['git','reset','--hard']",
+            "['git','clean','-fd']",
+            "['git','branch','-D','x']",
+            "['git','checkout','--','.']",
+            "['git','rebase','-i']",
+        ):
+            command = f'python3 -c "import subprocess;subprocess.run({argv})"'
+            with self.subTest(command=command):
+                self.assertIsNotNone(blocked_reason(command), command)
+
+    def test_no_wrapper_unblocks_repository_destruction(self) -> None:
+        """감싼 형태와 안 감싼 형태의 답이 갈리면 감싸는 것이 곧 우회다."""
+        for command in (
+            'sh -c "rm -rf .git"',
+            "bash -c 'rm -rf .git'",
+            'eval "rm -rf .git"',
+            "`rm -rf .git`",  # 역따옴표는 `.git` 뒤에 공백도 끝도 안 남긴다
+            "echo `rm -rf .git`",
+            "rm -rf .git",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNotNone(blocked_reason(command), command)
+
+    def test_destroying_the_repository_without_naming_git_or_rm(self) -> None:
+        """`shutil.rmtree('.git')` 에는 git 토큰도 `rm` 도 없어 두 갈래가 모두 비껴갔다."""
+        for command in (
+            "python3 -c \"import shutil;shutil.rmtree('.git')\"",
+            "python3 -c \"import os;os.rename('.git','/tmp/x')\"",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNotNone(blocked_reason(command), command)
+
+    def test_talking_about_the_repository_is_not_destroying_it(self) -> None:
+        """확장이 커진 만큼 오탐도 같이 재 둔다 — 설명하는 문장은 명령이 아니다."""
+        for command in (
+            'echo "the .git directory holds history"',
+            "wc -c src/asgard/hooks/git_guard.py",
+            'for f in a b; do wc -c "$f"; done',
+            "ls .github/workflows",
+        ):
+            with self.subTest(command=command):
+                self.assertIsNone(blocked_reason(command), command)
+
 
 if __name__ == "__main__":
     unittest.main()

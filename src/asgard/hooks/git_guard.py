@@ -37,6 +37,23 @@ _GIT = (
     r"\bgit(?:\s+(?:-C(?:\s+\S+|\S+)|-c(?:\s+\S+|\S+)|--(?:git-dir|work-tree|namespace|config-env)"
     r"(?:=\S+|\s+\S+)|--(?:exec-path|super-prefix)=\S+|-(?:p|P)|--(?:no-pager|paginate|bare|literal-pathspecs|no-replace-objects)))*\s+"
 )
+# 표를 대기 전에 명령을 **한 번** 편다 — 인용부호와 쉼표를 공백으로. 인터프리터가 리스트로
+# 넘기는 형태(`run(['git','push','--force'])`)에는 토큰 사이에 공백이 없고 `','` 가 있어서,
+# 아래 스무 개 패턴이 저마다 `\s` 를 쓰는 한 자리씩 전부 빗나갔다. 패턴마다 구분자를 넓히면
+# 다음 패턴에서 같은 구멍이 다시 난다 — 세 번 연속 그렇게 났다 (26-08-05 재판정). 입구에서
+# 한 번 펴면 스무 개가 손 안 대고 같이 맞는다.
+#
+# 이 정규화는 **불투명 명령에만** 쓴다. 평범한 명령문에 대면 인용 안의 글이 명령으로 읽혀
+# `grep -n "git stash" <파일>` 이 막힌다 — 토큰 분류기가 이미 그 자리를 정확히 본다.
+# 역따옴표도 함께 편다 — `` `rm -rf .git` `` 은 `.git` 뒤에 공백도 끝도 없어서 그 항목의
+# 경계 요구(`(?:\s|$)`)를 못 넘겼다. 다른 파괴 항목은 경계를 안 요구해 이미 잡혔다 (26-08-05).
+_TABLE_SEPARATORS = re.compile(r"['\"`,]+")
+
+
+def _flattened(command: str) -> str:
+    return _TABLE_SEPARATORS.sub(" ", command)
+
+
 BLOCK = [
     (r"\bgit(?:\s+[^|;&]+)*\s+-c(?:\s+|\S*)alias\.", "inline destructive alias"),
     (_GIT + r"push\b[^|;&]*\s-(-force\b|f\b)", "force-push"),  # 원격 히스토리 덮어쓰기
@@ -204,15 +221,75 @@ def _destructive_git(subcommand: str, args: list[str]) -> str | None:
 # 본문이 통째로 한 토큰이라 위 토큰 분류기가 `git` 을 못 본다. 처음 낸 목록은 `sh -c` 계열만
 # 담아서 인라인 코드(`python -c` · `node -e`)와 파이프 실행(`printf … | sh`)이 빠져 있었다
 # (26-08-04 교차검토 지적) — 같은 원리인데 철자만 달랐다.
-_OPAQUE = re.compile(
-    r"\$\(|`|\beval\b|\b(?:ba|z|k)?sh\s+-c\b|\bxargs\b"
+# `secret_guard._OPAQUE_CORE` 와 글자까지 같아야 한다 — 두 가드가 같은 질문에 다른 답을 들면
+# 한쪽에서 막힌 것이 다른 쪽에서는 통과한다. 훅은 배포 디렉터리에서 서로를 임포트하지 못하므로
+# (파일 이름이 붙임표다) 같은 글자를 두 벌 두고 시험이 동일성을 고정한다.
+_OPAQUE_CORE = (
+    r"\$\(|`|\beval\b|\b(?:ba|z|k)?sh\s+-[a-z]*c[a-z]*\b|\bxargs\b"
     r"|\bpython[0-9.]*\s+-c\b|\bnode\s+-(?:e|-eval)\b|\bperl\s+-e\b|\bruby\s+-e\b"
     r"|\|\s*(?:ba|z|k)?sh\b"
 )
+_OPAQUE = re.compile(_OPAQUE_CORE)
+# 프로그램 이름 자리의 셸 확장 — `g=git; $g stash` 처럼 실행자를 변수에 담아 부르는 형태다.
+# 토큰 분류기는 `$g` 를 보고 git 이 아니라고 판단하고, `_OPAQUE` 는 `$(` 만 알아서 정규식 표도
+# 안 댔다 (26-08-05 감사). 피연산자 자리의 `$VAR` 는 흔하고 무해하므로 **머리 토큰만** 본다.
+_HEAD_EXPANSION = re.compile(r"^\$\{?[A-Za-z_]")
+# 인터프리터가 파일계를 직접 부수는 형태. git 토큰도 `rm` 도 없어 위의 두 갈래가 모두 비껴간다
+# (26-08-05 감사: `python3 -c "import shutil;shutil.rmtree('.git')"`).
+_FS_DESTROY = re.compile(
+    r"\b(?:rmtree|removedirs|rmdir|unlink|remove|rename|replace|move|rmSync|rmdirSync|rimraf)\s*\("
+)
+
+
+def _interpreter_repo_destruction(command: str) -> str | None:
+    """인터프리터 코드가 `.git` 을 지우거나 옮기는가.
+
+    문자열을 다시 코드로 펴는 명령에서만 본다 — 평범한 명령문에 그대로 대면 `.git` 을
+    **설명하는** 문서 한 줄이 파괴로 읽힌다."""
+    if not _OPAQUE.search(command) or not _FS_DESTROY.search(command):
+        return None
+    return "delete .git (repository destruction)" if _DOT_GIT_LITERAL.search(command) else None
+
+
+# 코드 안의 `.git` 경로 리터럴 — 따옴표 안이든 밖이든, 경로 경계에 있을 때만.
+_DOT_GIT_LITERAL = re.compile(r"(?:^|[\s'\"(/])\.git(?:[\s'\")/]|$)")
+
+
+_ASSIGN = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$")
+_VAR_USE = re.compile(r"^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?$")
+
+
+def _resolve_head_vars(segments: list[list[str]]) -> list[list[str]]:
+    """실행자 자리의 변수를 한 겹 편다 — `g=git; $g stash` 는 `git stash` 다.
+
+    토큰 분류기는 `$g` 를 보고 git 이 아니라고 판단했고, 정규식 표는 `git` 과 하위 명령이
+    텍스트상 떨어져 있어(`g=git; $g stash`) 역시 못 봤다 — 두 갈래가 같은 자리에서 함께
+    비껴갔다 (26-08-05 감사).
+
+    한 겹만, 리터럴 대입만 편다. 값이 또 변수거나 명령 치환이면 펴지 않고 그대로 두는데,
+    그 형태는 `_OPAQUE`·`_HEAD_EXPANSION` 이 이미 정규식 표로 넘긴다."""
+    known: dict[str, str] = {}
+    out: list[list[str]] = []
+    for segment in segments:
+        rest = list(segment)
+        while rest and (m := _ASSIGN.match(rest[0])):
+            name, value = m.group(1), m.group(2)
+            if value and not value.startswith("$") and "`" not in value:
+                known[name] = value
+            rest = rest[1:]
+        if rest and (use := _VAR_USE.match(rest[0])) and use.group(1) in known:
+            rest = [known[use.group(1)], *rest[1:]]
+        out.append(rest or segment)
+    return out
 
 
 def blocked_reason(command: str) -> str | None:
-    segments = _segments(command)
+    if reason := _interpreter_repo_destruction(command):
+        return reason
+    segments = _resolve_head_vars(_segments(command))
+    # 머리 토큰이 셸 확장이면 그 조각은 무엇을 부르는지 읽히지 않는다 — 토큰이 증거가 아니므로
+    # 아래 정규식 표를 대는 쪽으로 넘긴다 (위에서 편 것은 이미 실명으로 바뀌었다).
+    opaque_head = any(segment and _HEAD_EXPANSION.match(segment[0]) for segment in segments)
     for segment in segments:
         for index, token in enumerate(segment):
             base = os.path.basename(token)
@@ -234,9 +311,10 @@ def blocked_reason(command: str) -> str | None:
     # (`_destructive_git`), 모르는 전역 옵션은 error 로 fail-closed 하므로 파싱이 된 명령에서
     # 이 표는 판정을 더하지 않고 오탐만 더한다. 파싱이 안 됐거나 셸이 문자열을 다시 명령으로
     # 펴는 형태($(...)·eval·sh -c·xargs)에서는 그대로 댄다 — 거기서는 토큰이 증거가 아니다.
-    if not segments or _OPAQUE.search(command):
+    if not segments or opaque_head or _OPAQUE.search(command):
+        flattened = _flattened(command)
         for pattern, label in BLOCK:
-            if re.search(pattern, command):
+            if re.search(pattern, command) or re.search(pattern, flattened):
                 return label
     return None
 

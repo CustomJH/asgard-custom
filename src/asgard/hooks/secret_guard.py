@@ -91,9 +91,97 @@ SECRET_READ_COMMANDS = [
     ("aws", ("configure", "get"), "aws configure get"),
 ]
 # 파일을 stdout으로 내보내는 도구 — 인자에 시크릿 경로가 오면 `Read`와 같은 판정.
-_READERS = frozenset(
-    {"cat", "bat", "less", "more", "head", "tail", "strings", "xxd", "od", "base64", "nl", "tac", "openssl"}
+# 파일을 인자로 받는 판독기 — **모든** 비플래그 인자가 경로다.
+# 26-08-05 감사가 통과시킨 형태들을 여기 담았다. 판정이 고정된 이름 집합이라, 같은 파일을 같은
+# 목적으로 읽는 다른 도구는 전부 빠져나갔다 — `cut -d= -f2 .env` 는 cat 과 다르지 않다.
+# 내보내는 형태도 같이 담는다: stdout 으로 안 쏟아도 자격 증명이 다른 자리로 간다.
+_FILE_READERS = frozenset(
+    {
+        "cat", "bat", "less", "more", "head", "tail", "strings", "xxd", "od", "base64", "nl", "tac", "openssl",
+        "cut", "sort", "uniq", "paste", "join", "column", "fold", "expand", "rev", "split", "csplit",
+        "xmllint", "diff", "sdiff", "vimdiff", "colordiff",
+        "cp", "mv", "install", "rsync", "scp", "tee", "dd", "tar", "zip", "gzip", "bzip2", "xz", "shasum", "md5sum",
+    }
+)  # fmt: skip
+# 패턴을 먼저 받는 판독기 — **첫 비플래그 인자는 찾을 글자이지 경로가 아니다.**
+# 이 구분이 없던 판은 `grep -rn database.key src/` 의 검색어를 파일로 읽어 평범한 조사를 막았다
+# (26-08-05 재판정이 재현). 이름만 넓히고 자리를 안 가르면 오탐과 구멍이 번갈아 난다.
+_PATTERN_READERS = frozenset({"sed", "gsed", "awk", "gawk", "nawk", "mawk", "grep", "egrep", "fgrep", "rg", "ag", "jq", "yq"})  # fmt: skip
+_READERS = _FILE_READERS | _PATTERN_READERS
+# 글롭 꼬리 — `cat .env*` 는 경로 정규식의 `$` 앵커를 깨서 통째로 빠져나갔다. 판정 전에만 벗기고
+# 보고에는 원문을 쓴다.
+_GLOB_TAIL = re.compile(r"[*?\[\]]+$")
+# 셸이나 인터프리터가 **문자열 인자를 다시 명령으로 편다**는 표. `git_guard._OPAQUE_CORE` 와
+# 글자까지 같아야 한다 — 두 가드가 같은 질문에 다른 답을 들면, 한쪽에서 막힌 것이 다른 쪽에서는
+# 통과한다. 실제로 그랬다: secret 쪽에만 파이프 실행(`… | sh`)이 빠져 있어 감싸는 것이 곧
+# 우회였다 (26-08-05 재판정). 훅은 배포 디렉터리에서 서로를 임포트하지 못하므로(파일 이름이
+# 붙임표다) 같은 글자를 두 벌 두고, `tests/test_secret_guard.py` 가 동일성을 고정한다.
+#
+# `-c` 는 `-ec`·`-cx` 처럼 다른 낱글자와 앞뒤로 뭉쳐 오므로, 묶음 **안 어디에나** 있으면 받는다.
+_OPAQUE_CORE = (
+    r"\$\(|`|\beval\b|\b(?:ba|z|k)?sh\s+-[a-z]*c[a-z]*\b|\bxargs\b"
+    r"|\bpython[0-9.]*\s+-c\b|\bnode\s+-(?:e|-eval)\b|\bperl\s+-e\b|\bruby\s+-e\b"
+    r"|\|\s*(?:ba|z|k)?sh\b"
 )
+# 읽기 쪽만 표준 입력 리다이렉션을 더 본다 — 파일을 명령에 흘려보내는 것도 읽기다.
+_OPAQUE_READ = re.compile(_OPAQUE_CORE + r"|<\s*[^\s<>|&]+")
+
+
+# 확장자만으로 붙는 이름표 중 **설정 키 이름과 글자로 구분되지 않는** 것. 이것만 경로 모양을
+# 요구하고, 나머지 키 자재 확장자(`.pem`·`.p12`·`.pfx`·`.jks`·`.keystore`)는 이름으로 받는다.
+#
+# lagom: 남는 구멍은 하나다 — 경로 없는 `*.key` 를 셸 래퍼로 감싼 형태(`sh -c 'cat id.key'`).
+# 같은 파일이라도 경로가 붙거나(`certs/id.key`) 안 감싸면 잡히고, 다른 키 확장자는 전부 잡힌다.
+# 이 자리를 닫으려면 불투명 명령의 **토큰 자리**를 알아야 하는데, 그건 문자열을 다시 파싱한다는
+# 뜻이라 이 훅이 안 하기로 한 일이다(파일 머리 주석). 대신 이 한 칸을 남기고 오탐 0을 지킨다 —
+# 오탐이 쌓인 게이트는 꺼지고, 꺼진 게이트는 없는 것과 같다. 상향 경로: 셸 파서를 들이거나,
+# OS 실행 경계(`asgard start --execution container|sandbox`)로 이 층 자체를 대체한다.
+_AMBIGUOUS_KEY_EXT = (".key",)
+
+
+def _path_shaped(token: str) -> bool:
+    """이 낱말이 경로처럼 생겼는가 — 토큰 자신만 본다 (명령 전체를 보지 않는다)."""
+    return token.startswith((".", "~", "/")) or "/" in token
+
+
+_ASSIGN_LITERAL = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$")
+_VAR_OPERAND = re.compile(r"^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?$")
+
+
+def _expand(token: str, assigned: dict[str, str]) -> str:
+    """이 명령문 안에서 리터럴로 대입된 변수 하나를 편다. 모르는 변수는 그대로 둔다."""
+    m = _VAR_OPERAND.match(token)
+    return assigned.get(m.group(1), token) if m else token
+
+
+def _opaque_secret_read(command: str) -> str:
+    """불투명한 명령문 안에 자격 파일 경로가 있는가.
+
+    `python3 -c "print(open('.env').read())"` · `F=.env; cat $F` · `while read l; do echo $l;
+    done < .env` — 셋 다 토큰 분류기에는 자격 파일이 안 보인다 (26-08-05 감사). 여기서만
+    명령문 글자를 본다. 평범한 명령에 그대로 대면 `.env` 를 **설명하는** 한 줄이 유출로 읽힌다."""
+    if not _OPAQUE_READ.search(command):
+        return ""
+    for candidate in re.findall(r"[\w./~-]*\.?[\w./~-]+", command):
+        stripped = _GLOB_TAIL.sub("", candidate)
+        label = secret_path(stripped)
+        if not label:
+            continue
+        # 확장자로 붙는 `key material` 중 **모호한 것은 `.key` 하나뿐**이다 — 설정 키 이름이
+        # 그 꼴로 산다(`database.key`·`api.key`). `.pem`·`.p12`·`.jks` 를 딕셔너리 키로 쓰는
+        # 코드는 없으므로 그쪽은 이름만으로 받는다.
+        #
+        # 종전에는 "이 **명령**이 파일을 여는가"로 갈랐는데, 그건 **피연산자 단위 질문에
+        # 명령 단위로 답하는** 것이라 구멍과 오탐이 동시에 났다: 패턴형 판독기는 그 검사를
+        # 영영 만족 못 해 감싼 읽기가 새고, 반대로 파일 판독기 이름이 명령 어딘가에 있으면
+        # 같은 명령 안의 모든 점 찍힌 낱말이 키 파일로 승격됐다 (26-08-05 4차 판정).
+        # 판정은 토큰 자신만 보고 내린다.
+        if label == "key material" and stripped.lower().endswith(_AMBIGUOUS_KEY_EXT) and not _path_shaped(stripped):
+            continue
+        return f"{label} ({candidate})"
+    return ""
+
+
 # 환경 전체를 쏟는 이름. 피연산자 없이 부르면 덤프다.
 _ENV_DUMPERS = frozenset({"env", "printenv"})
 # 환경변수·grep 패턴이 자격 증명을 겨냥하는지. `key`·`auth`는 단독으로도 인정한다 — 여기서
@@ -187,12 +275,22 @@ def secret_command(command: str) -> str:
     """명령이 자격 증명을 쏟으면 사유, 아니면 빈 문자열."""
     if not command:
         return ""
+    if opaque := _opaque_secret_read(command):
+        return f"credential file read via an opaque command — {opaque}"
     segments = _segments(command)
+    # 피연산자 자리의 변수를 한 겹 편다 — `F=.env; cat $F` 는 `cat .env` 다. 리터럴 대입만,
+    # 한 겹만 (값이 또 변수거나 명령 치환이면 위 `_opaque_secret_read` 가 이미 받는다).
+    assigned: dict[str, str] = {}
+    for tokens, _ in segments:
+        for token in tokens:
+            m = _ASSIGN_LITERAL.match(token)
+            if m and m.group(2) and not m.group(2).startswith("$"):
+                assigned[m.group(1)] = m.group(2)
     for index, (tokens, piped) in enumerate(segments):
         program, args = _program(tokens)
         if not program:
             continue
-        operands = [a for a in args if not a.startswith("-")]
+        operands = [_expand(a, assigned) for a in args if not a.startswith("-")]
         if program in _ENV_DUMPERS:
             # `env FOO=1 cmd`는 실행이지 덤프가 아니다 — _program이 이미 걷어냈으므로 여기
             # 도달한 env는 피연산자가 없거나(전체 덤프) 시크릿 이름을 콕 집은 경우다.
@@ -205,8 +303,13 @@ def secret_command(command: str) -> str:
                 continue  # grep이 시크릿 아닌 이름으로 걸렀다 — 전체 환경은 나가지 않는다
             return f"{program} (full environment dump)"
         if program in _READERS:
+            # 패턴형은 첫 비플래그 인자를 버린다 — 그건 찾을 글자다 (`grep <패턴> <경로들>`).
+            if program in _PATTERN_READERS:
+                operands = operands[1:]
             for operand in operands:
-                label = secret_path(operand)
+                # 글롭 꼬리를 벗기고 본다 — `cat .env*` 가 경로 정규식의 `$` 앵커를 깨고
+                # 통째로 빠져나갔다 (26-08-05 감사).
+                label = secret_path(operand) or secret_path(_GLOB_TAIL.sub("", operand))
                 if label:
                     return f"{program} of {label} ({operand})"
             continue
@@ -263,6 +366,18 @@ def main() -> None:
         for pat, label in SECRET:
             if re.search(pat, text):
                 deny(protocol, "Asgard Canon Law 4 — possible secret (" + label + ") blocked: " + path)
+    # 같은 표를 명령문에도 댄다. 종전에는 `content`/`new_string`/`patch` 필드만 봐서, Bash 로
+    # 적은 자격 증명(`echo 'AKIA…' > creds.txt`)은 그 필드가 없다는 이유로 검사 자체를 안 받았다
+    # — 같은 리터럴을 `Write` 툴로 쓰면 거부되는데 (26-08-05 감사). 리터럴이 명령문에 있는 순간
+    # 이미 전사에 들어간 것이라, 파일에 닿기 전에 막는 것이 이 계약의 요점이다.
+    if command:
+        for pat, label in SECRET:
+            if re.search(pat, command):
+                deny(
+                    protocol,
+                    f"Asgard Canon Law 4 — possible secret ({label}) in a command. "
+                    "Credentials must never enter the transcript; every turn re-sends it to the model provider.",
+                )
 
     if protocol == "cursor":  # Cursor는 침묵을 허용으로 안 본다 — 명시적 allow가 프로토콜 요구사항.
         sys.stdout.write(json.dumps({"permission": "allow"}, separators=(",", ":")))
