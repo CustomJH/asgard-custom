@@ -55,7 +55,12 @@ def _flattened(command: str) -> str:
 
 
 BLOCK = [
-    (r"\bgit(?:\s+[^|;&]+)*\s+-c(?:\s+|\S*)alias\.", "inline destructive alias"),
+    # 사이 토큰을 건너뛰는 자리는 **한 토큰씩** 건너뛴다. `(?:\s+[^|;&]+)*` 는 안쪽이 공백까지
+    # 먹어서 토큰 n개를 나누는 경우의 수만큼 되짚었다 — 역따옴표가 든 316자 `git commit` 하나가
+    # PreToolUse 훅 상한 600초를 통째로 태우고 timedOut 으로 끝났다 (26-08-05 실측, 세션
+    # 645d7ee9 hook_cancelled durationMs=600026). 안쪽에서 공백을 빼면 경계가 한 자리로 정해져
+    # 되짚을 갈래가 없어지고, 표가 받는 문자열의 집합은 그대로다.
+    (r"\bgit(?:\s+[^\s|;&]+)*\s+-c(?:\s+|\S*)alias\.", "inline destructive alias"),
     (_GIT + r"push\b[^|;&]*\s-(-force\b|f\b)", "force-push"),  # 원격 히스토리 덮어쓰기
     (
         _GIT + r"push\b[^|;&]*--force-with-lease\b",

@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import time
 import unittest
 
 from asgard.hooks.git_guard import blocked_reason
@@ -128,6 +129,40 @@ class TestShellIndirectionKeepsTheTable(unittest.TestCase):
         ):
             with self.subTest(command=command):
                 self.assertIsNone(blocked_reason(command), command)
+
+
+class TestTableCostStaysBounded(unittest.TestCase):
+    """표를 대는 값은 명령문 길이를 따라 폭발하면 안 된다.
+
+    26-08-05 실측: 역따옴표가 든 316자 `git commit` 한 줄에서 PreToolUse 훅이 상한 600초를 통째로
+    태우고 timedOut 으로 끝났다 (세션 645d7ee9, `durationMs=600026`). 훅이 상한을 채우면 그 한
+    번의 commit 이 10분이다. 시험은 항목 목록이 아니라 **값의 상한**을 고정한다 — 새 항목이
+    같은 형태로 들어와도 여기서 걸린다."""
+
+    BUDGET = 2.0  # 초 — 선형이면 밀리초, 지수면 상한 600초를 채운다. 100배 여유.
+
+    def _opaque(self, tokens: int) -> str:
+        """표를 타는(불투명) 형태이면서 어느 항목에도 안 걸리는 긴 명령."""
+        return 'git commit -m "`code` ' + " ".join(f"word{i}" for i in range(tokens)) + '"'
+
+    def test_long_backticked_commit_is_judged_within_budget(self) -> None:
+        for tokens in (20, 40, 80):
+            command = self._opaque(tokens)
+            with self.subTest(tokens=tokens):
+                start = time.perf_counter()
+                verdict = blocked_reason(command)
+                spent = time.perf_counter() - start
+                self.assertIsNone(verdict, command)
+                self.assertLess(spent, self.BUDGET, f"{tokens} tokens took {spent:.1f}s")
+
+    def test_the_alias_form_it_guards_still_blocks(self) -> None:
+        """값을 줄이면서 판정을 잃지 않았는지 — 이 항목이 원래 잡던 형태."""
+        for command in (
+            "git -c alias.x='!rm -rf .git' x",
+            "git --no-pager -c alias.wipe=stash x",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(blocked_reason(command), "inline destructive alias")
 
 
 if __name__ == "__main__":
