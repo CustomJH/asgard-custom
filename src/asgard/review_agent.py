@@ -21,7 +21,7 @@ import threading
 import time
 import uuid
 from dataclasses import asdict, dataclass
-from typing import Any, Callable, Iterator
+from typing import Any, Callable, Iterator, cast
 
 from . import craft, errors, profiles, tutor
 from .io_files import read_json, write_json
@@ -375,7 +375,7 @@ def _copy(row: dict[str, Any]) -> dict[str, Any]:
     return json.loads(json.dumps(row, ensure_ascii=False))
 
 
-def _number(value: object, default: float = 0.0) -> float:
+def _number(value: Any, default: float = 0.0) -> float:
     try:
         return float(value)
     except TypeError, ValueError:
@@ -693,7 +693,11 @@ def _text(value: object, cap: int) -> str:
     return str(value or "").replace("\x00", "").strip()[:cap]
 
 
-def _valid_line(root: str, path: str, raw: object) -> int:
+def _as_list(value: object) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _valid_line(root: str, path: str, raw: Any) -> int:
     try:
         line = int(raw)
     except TypeError, ValueError:
@@ -726,7 +730,7 @@ def _normalise_result(root: str, scope: ReviewScope, raw: object) -> dict[str, A
     dropped = 0
     seen: set[tuple[str, int, str]] = set()
     allowed_paths = set(scope.paths)
-    raw_findings = raw.get("findings") if isinstance(raw.get("findings"), list) else []
+    raw_findings = _as_list(raw.get("findings"))
     for item in raw_findings[:MAX_FINDINGS]:
         if not isinstance(item, dict):
             dropped += 1
@@ -763,7 +767,7 @@ def _normalise_result(root: str, scope: ReviewScope, raw: object) -> dict[str, A
                 "status": "open",
             }
         )
-    raw_gaps = raw.get("gaps") if isinstance(raw.get("gaps"), list) else []
+    raw_gaps = _as_list(raw.get("gaps"))
     gaps = [_text(item, 500) for item in raw_gaps if _text(item, 500)]
     gaps.extend(f"{item['path']}: {item['why']}" for item in scope.gaps)
     if dropped:
@@ -771,7 +775,9 @@ def _normalise_result(root: str, scope: ReviewScope, raw: object) -> dict[str, A
     summary = _text(raw.get("summary"), 2_000)
     if not summary:
         summary = f"검토할 제안이 {len(findings)}건 있어요" if findings else "높은 확신의 제안을 찾지 못했어요"
-    meta = raw.get("_meta") if isinstance(raw.get("_meta"), dict) else {}
+    raw_meta = raw.get("_meta")
+    # isinstance 는 키 타입을 미지로 남겨 아래 첨자 접근이 막힌다 — JSON 객체이므로 str 키로 못박는다.
+    meta = cast(dict[str, Any], raw_meta) if isinstance(raw_meta, dict) else {}
     return {
         "summary": summary,
         "findings": findings,

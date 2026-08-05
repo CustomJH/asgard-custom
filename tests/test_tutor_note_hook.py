@@ -28,7 +28,7 @@ from test_mode_parity import _hook_payload  # rootdir 삽입 경로 — test_orc
 from asgard import tutor_teach
 from asgard.hooks import tutor_note
 
-_LESSON = {
+_LESSON: dict[str, Any] = {
     "files": ["app.py"],
     "added": 12,
     "removed": 3,
@@ -205,7 +205,9 @@ class TutorNoteHookTest(unittest.TestCase):
         self.assertIn("이 설정이 비면 무엇이 기본값이 되나요?", card, "판정 질문이 없을 때는 회상 질문을 쓴다")
 
     def test_the_hook_prefers_the_one_checkpoint_the_engine_marked_as_shown(self) -> None:
-        hidden = dict(_LESSON["checkpoints"][0], path="hidden.py", unit="hidden", ask="숨은 질문인가요?", cid="deadbeef")
+        hidden = dict(
+            _LESSON["checkpoints"][0], path="hidden.py", unit="hidden", ask="숨은 질문인가요?", cid="deadbeef"
+        )
         lesson = dict(
             _LESSON,
             checkpoints=[_LESSON["checkpoints"][0], hidden],

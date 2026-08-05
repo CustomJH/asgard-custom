@@ -176,9 +176,8 @@ class GraphCommand(unittest.TestCase):
 
         # 2 = 부른 쪽이 틀렸다 (`_guard` 의 ValueError 봉투). 0 으로 돌리면 스크립트가
         # 오타 난 동사를 성공으로 읽는다.
-        for kwargs in ({"verb": "nope"}, {"verb": "hubs", "scope": "nope"}, {"verb": "hubs", "edges": "nope"}):
-            verb = kwargs.pop("verb")
-            self.assertEqual(run_graph(verb, **kwargs), 2)
+        for verb, scope, edges in (("nope", "personal", "all"), ("hubs", "nope", "all"), ("hubs", "personal", "nope")):
+            self.assertEqual(run_graph(verb, scope=scope, edges=edges), 2)
 
     def test_the_verb_table_matches_the_command_body(self):
         """표면 목록과 실제 처리 갈래가 갈리면 도움말이 없는 동사를 광고한다."""

@@ -96,7 +96,9 @@ class TestReviewScopeAndApproval(ReviewRepoCase):
         self.assertEqual(row["findings"][0]["id"], "f1")
         self.assertEqual(row["findings"][0]["path"], "app.py")
         self.assertEqual(row["model"]["model"], "review-test")
-        self.assertEqual(review_agent.get(self.root, row["id"])["summary"], row["summary"])
+        saved = review_agent.get(self.root, row["id"])
+        assert saved is not None  # ty 내로잉 — 방금 저장한 기록이므로 실존
+        self.assertEqual(saved["summary"], row["summary"])
 
     def test_changed_scope_invalidates_the_approval_before_model_cost(self) -> None:
         scope = review_agent.inspect_scope(self.root)
@@ -108,7 +110,9 @@ class TestReviewScopeAndApproval(ReviewRepoCase):
             review_agent.execute(self.root, request["id"], runner=runner, now=1_001)
 
         runner.assert_not_called()
-        self.assertEqual(review_agent.get(self.root, request["id"])["status"], "stale")
+        saved = review_agent.get(self.root, request["id"])
+        assert saved is not None  # ty 내로잉 — stage 가 남긴 기록이므로 실존
+        self.assertEqual(saved["status"], "stale")
 
     def test_a_change_during_review_keeps_the_result_but_marks_it_stale(self) -> None:
         scope = review_agent.inspect_scope(self.root)
@@ -149,7 +153,9 @@ class TestReviewScopeAndApproval(ReviewRepoCase):
             review_agent.execute(self.root, request["id"], runner=runner, now=1_001)
 
         runner.assert_not_called()
-        self.assertEqual(review_agent.get(self.root, request["id"])["status"], "stale")
+        saved = review_agent.get(self.root, request["id"])
+        assert saved is not None  # ty 내로잉 — stage 가 남긴 기록이므로 실존
+        self.assertEqual(saved["status"], "stale")
 
     def test_a_symlink_cannot_turn_an_external_line_into_a_finding(self) -> None:
         outside = Path(self.root).parent / f"{Path(self.root).name}-outside.py"

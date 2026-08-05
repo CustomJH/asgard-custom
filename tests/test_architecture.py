@@ -1079,15 +1079,18 @@ class TestLayeredArchitecture(unittest.TestCase):
         def scan(node: ast.AST, fname: str, guarded: bool) -> None:
             for child in ast.iter_child_nodes(node):
                 targets: list[str] = []
+                # 줄 번호는 임포트 노드에서만 읽는다 — `iter_child_nodes` 가 주는 `ast.AST` 에는
+                # `lineno` 가 없고, 아래 보고 줄은 `targets` 가 찬 두 갈래에서만 돈다.
+                line = 0
                 if isinstance(child, ast.ImportFrom) and child.level == 0:
-                    targets = [(child.module or "").split(".")[0]]
+                    targets, line = [(child.module or "").split(".")[0]], child.lineno
                 elif isinstance(child, ast.Import):
-                    targets = [a.name.split(".")[0] for a in child.names]
+                    targets, line = [a.name.split(".")[0] for a in child.names], child.lineno
                 for target in targets:
                     if target == "asgard" and not guarded:
-                        violations.append(f"{HOOK_LIBRARY}/{fname}:{child.lineno} — try 밖 asgard 임포트")
+                        violations.append(f"{HOOK_LIBRARY}/{fname}:{line} — try 밖 asgard 임포트")
                     elif target in hook_modules:
-                        violations.append(f"{HOOK_LIBRARY}/{fname}:{child.lineno} — 훅({target})을 부른다 (방향 역전)")
+                        violations.append(f"{HOOK_LIBRARY}/{fname}:{line} — 훅({target})을 부른다 (방향 역전)")
                 scan(child, fname, guarded or isinstance(child, ast.Try))
 
         for f in sorted(os.listdir(library_dir)):

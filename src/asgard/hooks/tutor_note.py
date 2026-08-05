@@ -238,8 +238,8 @@ def _explain(exp: object, limit: int = MAX_SHOWN, quiz: bool = True) -> list[str
     if depth == "owned":
         where = " · ".join(("%s %s" % (_at(step), step.get("unit") or "")).strip() for step in steps[:limit])
         return ["⠶ 설명 — %s" % where] if where else []
-    total = int(exp.get("total_units") or len(steps))
-    flows = int(exp.get("flow_count") or 1)
+    total = _count(exp, "total_units", len(steps))
+    flows = _count(exp, "flow_count", 1)
     overview = str(exp.get("overview") or "").strip()
     if not overview:
         overview = (
@@ -251,7 +251,7 @@ def _explain(exp: object, limit: int = MAX_SHOWN, quiz: bool = True) -> list[str
     mission = " ".join(str(exp.get("mission") or "").split())
     if depth == "first" and mission:
         lines.append("  임무 — " + mission[:120])
-    primary = int(exp.get("primary_units") or len(steps))
+    primary = _count(exp, "primary_units", len(steps))
     shown = steps[: min(max(0, limit), primary)]
     if shown:
         lines.append("  먼저 읽을 흐름 — %d곳" % len(shown))
@@ -297,6 +297,20 @@ def _rows(exp: dict, name: str, kind: type = dict) -> list:
 def _texts(exp: dict, name: str) -> list:
     rows = exp.get(name)
     return [str(row) for row in rows if str(row).strip()] if isinstance(rows, list) else []
+
+
+def _count(exp: dict, name: str, fallback: int) -> int:
+    """payload 의 수 칸 — 비었거나 0이면 fallback, 숫자로 안 읽히면 그것도 fallback.
+
+    `_rows`·`_texts` 와 같은 이유로 있다: 이 훅은 디스크에서 온 payload 를 못 믿는다. 여기서
+    죽으면 Stop 시점의 카드가 통째로 사라지고, 막지 않는 훅이라 화면에는 아무것도 안 남는다."""
+    value = exp.get(name)
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)) or not value:
+        return fallback
+    try:
+        return int(value)
+    except ValueError:
+        return fallback
 
 
 def _label(row: dict) -> str:

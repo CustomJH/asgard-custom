@@ -233,7 +233,7 @@ def main():
     except Exception as e:
         row["out_json_error"] = str(e)
 
-    tp = transcript_path(wd, row.get("session_id") or "")
+    tp = transcript_path(wd, str(row.get("session_id") or ""))
     row.update(read_transcript(tp) if tp else {"agent_calls": None, "transcript": "missing"})
     if arm == "asgard":
         row.update(read_quest(wd))
@@ -242,7 +242,8 @@ def main():
     # 형식 조건: 세션이 산출물을 냈는가. asgard 아암은 조율 산출물(퀘스트 워크플로)까지 본다.
     ok_format = not row.get("timeout") and not row.get("is_error") and total > 0
     if arm == "asgard":
-        ok_format = ok_format and row.get("workflow_steps", 0) > 0
+        steps_seen = row.get("workflow_steps")
+        ok_format = ok_format and isinstance(steps_seen, int) and steps_seen > 0
     row["ok_format"] = bool(ok_format)
     row["correct"] = bool(correct)
     row["reward"] = conductor_reward(arm, ok_format, correct)

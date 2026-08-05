@@ -175,6 +175,9 @@ def _fail(message: str, *, code: str = "invalid_input", remedy: str = "", detail
     return err.exit_code
 
 
-def _emit(payload: dict) -> None:
-    """`--json` 산출물 — 사람 문장이 차지하던 stdout을 이것 하나가 받는다."""
+def _emit(payload: dict | list) -> None:
+    """`--json` 산출물 — 사람 문장이 차지하던 stdout을 이것 하나가 받는다.
+
+    최상위가 배열인 표면이 둘 있다 (`memory graph hubs`·`communities`) — 그 둘은 순위와 덩어리
+    목록이라 봉투로 감싸지 않는다."""
     print(_json.dumps(payload, ensure_ascii=False, indent=2))
