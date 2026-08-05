@@ -68,6 +68,28 @@ class TestRegistry(Base):
         self.assertTrue(os.path.exists(os.path.join(self.root, ".asgard", "state", "map-graph.json")))
         self.assertIsNotNone(memory._read(memory.memory_dir(), memory.DEFAULT_SKILL_PREFERENCE_SLUG))
 
+    def test_setup_adds_codex_without_overwriting_registered_cc_scaffold(self):
+        from asgard.commands.setup import run_setup
+
+        cwd = os.getcwd()
+        os.chdir(self.root)
+        try:
+            self.assertEqual(run_setup(cc=True), 0)
+            hook = os.path.join(self.root, ".claude", "hooks", "git-guard.py")
+            with open(hook, "w", encoding="utf-8") as handle:
+                handle.write("# keep existing scaffold\n")
+
+            self.assertEqual(run_setup(codex=True), 0)
+        finally:
+            os.chdir(cwd)
+
+        with open(hook, encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), "# keep existing scaffold\n")
+        self.assertTrue(os.path.exists(os.path.join(self.root, ".codex", "config.toml")))
+        self.assertTrue(os.path.exists(os.path.join(self.root, ".agents", "skills", "asgard-skills", "SKILL.md")))
+        project = registry.load()[0]
+        self.assertEqual((project["cc"], project["cursor"], project["codex"]), (True, False, True))
+
     def test_setup_tolerates_preexisting_map_seed(self):
         """`asgard map`·훅이 init 전에 `.asgard/.gitignore` + `map/INDEX.md` 를 lazy 생성해도 init 은
         차단(rc 2)하지 않는다. `.gitignore` 는 한 글자도 안 건드리고, INDEX.md 는 asgard 소유라 재동기화.

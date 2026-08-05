@@ -6,9 +6,27 @@ testable in isolation, with no escaping and no `asgard` import (it runs inside t
 scaffolds a hook by reading its source verbatim via `script(name)` — this package is the abstraction
 boundary, so command/template code never embeds hook bodies as escaped strings.
 
-Registry maps a logical hook name → module filename. Add a hook = drop a file here + one REGISTRY entry."""
+Registry maps a logical hook name → module filename. Add a hook = drop a file here + one REGISTRY entry.
 
+`asgard_hooklib/` is the shared substrate the bigger hooks stand on, and setup lays it down in the SAME
+folder as the hooks (`library_files`). Deployment stays self-contained: a hook imports `asgard_hooklib`,
+never `asgard`. Before that package existed the substrate was copy-pasted — 26-08-06 measurement: of 49
+definitions shared by quest-log and verifier-gate, 9 had already drifted apart in meaning while both
+files carried a "keep identical" comment."""
+
+import os
+import sys
 from importlib import resources
+
+LIBRARY = "asgard_hooklib"
+
+# 라이브러리의 이름은 하나여야 한다. 훅은 배포 이름(`import asgard_hooklib`)으로 부르고, 저장소
+# 안에서도 그 이름으로 서게 여기서 경로를 얹는다 — 안 그러면 `asgard.hooks.asgard_hooklib` 라는
+# 두 번째 정체가 생기고, 시험이 그쪽을 패치하면 훅이 쓰는 쪽은 그대로라 패치가 조용히 빗나간다.
+# 각 훅에도 같은 세 줄이 있다: 배포본에는 이 파일이 안 깔리기 때문이다.
+_HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
+if _HOOK_DIR not in sys.path:
+    sys.path.append(_HOOK_DIR)
 
 # logical name → filename (without .py). Each script is tool-agnostic: it auto-detects the hook
 # protocol (Claude Code / Codex / Cursor) from the payload, so one file serves every tool.
@@ -42,3 +60,19 @@ def script(name: str) -> str:
     or a bare module name. Raises KeyError for an unknown logical name."""
     module = REGISTRY.get(name, name)
     return resources.files(__package__).joinpath(module + ".py").read_text(encoding="utf-8")
+
+
+def library_files() -> list[tuple[str, str]]:
+    """[(relative path under the hooks dir, source text)] for the shared library — scaffolded verbatim
+    alongside the hooks.
+
+    The path is relative on purpose: the three clients scaffold into different directories
+    (`.claude/hooks/`, `.cursor/hooks/`, `.codex/hooks/`) and the library has to land next to the
+    hooks in each of them, because that adjacency is what makes `import asgard_hooklib` resolve in a
+    deployed copy (a script's own folder is `sys.path[0]`)."""
+    base = resources.files(__package__).joinpath(LIBRARY)
+    return sorted(
+        (LIBRARY + "/" + entry.name, entry.read_text(encoding="utf-8"))
+        for entry in base.iterdir()
+        if entry.name.endswith(".py")
+    )

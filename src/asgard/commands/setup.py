@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from .. import io_files, ui
+from ..hooks import library_files  # asgard_hooklib/* — the shared substrate, laid next to the hooks
 from ..hooks import script as hook  # hook("git-guard") → the hook's source, scaffolded verbatim
 from ..skill_registry import client_skill_bodies, skill_catalog
 from ..templates import (
@@ -353,6 +354,11 @@ def hook_files(hooks_dir: str, client: str = "claude-code") -> list[tuple[str, s
         (j(hooks_dir, "agent-activate.py"), hook("agent-activate")),
         (j(hooks_dir, "map-activate.py"), hook("map-activate")),
     ]
+    # 공용 라이브러리는 훅과 **같은 폴더**에 깔린다. 그 인접이 곧 임포트 경로다: 스크립트로 실행된
+    # 훅은 자기 폴더가 `sys.path[0]` 이라 `import asgard_hooklib` 이 그대로 선다. 표에 한 줄씩
+    # 적지 않는 이유는 훅과 반대다 — 훅은 이벤트 배선이 갈리므로 이름이 보여야 하지만, 라이브러리
+    # 모듈은 배선이 없고 전부 함께 깔려야 한다 (한 파일이라도 빠지면 배포본이 임포트에서 죽는다).
+    files += [(j(hooks_dir, *rel.split("/")), body) for rel, body in library_files()]
     # statusLine 은 CC 에만 있는 표면이라 스크립트도 CC 에만 설치한다. 배선은 하지 않는다 —
     # 호스트의 상태줄은 호스트 설정이 정한다 (templates/lagom.py LAGOM_STATUSLINE_SH 주석).
     if client == "claude-code":
@@ -545,6 +551,16 @@ def run_setup(
     cc = cc or profile == "claude-code"
     cursor = cursor or profile == "cursor"
     codex = codex or profile == "codex"
+    from .. import registry
+
+    root = os.path.realpath(os.getcwd())
+    previous = next(
+        (project for project in registry.load() if os.path.realpath(str(project["root"])) == root),
+        None,
+    )
+    universal = not cc and not cursor and not codex
+    requested = {"cc": cc or universal, "cursor": cursor or universal, "codex": codex or universal}
+    adding_client = previous is not None and any(requested[name] and not bool(previous.get(name)) for name in requested)
     from ..code_map import MapError, MapOwnershipError, refresh_map
     from ..map_graph import GraphError, GraphOwnershipError, scan_graph
 
@@ -562,16 +578,20 @@ def run_setup(
         ui.fail(str(exc))
         return 2
     files, label = plan_files(cc, cursor, codex)
+    # 새 클라이언트 설치는 기존 스캐폴드의 갱신이 아니다. --force가 없으면 기존 경로를
+    # 보존하고 새 클라이언트에 필요한 경로만 만든다.
+    if adding_client and not force:
+        files = [(path, content) for path, content in files if not os.path.lexists(path)]
     rc = _scaffold(files, label, force, dry_run)
     if rc == 0 and not dry_run:  # 레지스트리 기록 — `asgard sync`가 세팅된 프로젝트를 찾는 근거
-        from .. import memory, registry
+        from .. import memory
 
         # 초기 프로젝트 방향을 즉시 그린다; 이후 훅이 주기적으로 갱신. init은 현재 디렉토리가
         # 정본이므로 낡거나 마커 없는 기존 지도는 스캔 결과로 엎어쓴다 (force=소유권만 우회).
         refresh_map(os.getcwd(), force=True)
         scan_graph(os.getcwd(), force=True)
-        universal = not cc and not cursor and not codex
-        registry.record(os.getcwd(), cc or universal, cursor or universal, codex or universal)
+        registered = {name: enabled or bool(previous and previous.get(name)) for name, enabled in requested.items()}
+        registry.record(root, registered["cc"], registered["cursor"], registered["codex"])
         try:
             memory.seed_defaults()
         except Exception as exc:  # 개인 메모리는 fail-open — 프로젝트 setup을 막지 않는다.

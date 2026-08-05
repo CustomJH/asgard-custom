@@ -30,6 +30,13 @@ for _stream in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
+# 주입 스키마는 훅과 함께 깔리는 공용 라이브러리가 쥔다 — 아홉 훅이 같은 JSON 리터럴을 손으로
+# 적던 자리다 (스키마 오타는 호스트가 조용히 버려서 주입이 통째로 사라진다).
+_HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
+if _HOOK_DIR not in sys.path:
+    sys.path.append(_HOOK_DIR)
+
+from asgard_hooklib.inject import client, emit_context  # noqa: E402
 
 # manual.py 상수와 동일 유지
 MANUAL_NAMES = ("MANUAL.md", "CUSTOM_MANUAL.md", "CUSTOM.md", "RULES.md")
@@ -339,29 +346,6 @@ def section_for(agent):
     return "identity"  # 메인 · 딜리버리(freyja/thor/eitri/loki)
 
 
-CLIENTS = {"claude-code", "codex", "cursor"}
-
-
-def client():
-    raw = str(sys.argv[1] if len(sys.argv) > 1 else "claude-code")
-    return raw if raw in CLIENTS else "claude-code"
-
-
-def emit(current_client, agent, text):
-    """주입 스키마는 클라이언트마다 다르다 — charter/map/memory-activate와 동일 유지 (단일 규약)."""
-    if current_client == "cursor":
-        sys.stdout.write(json.dumps({"additional_context": text}, ensure_ascii=False) + "\n")
-    elif agent:  # SubagentStart — JSON additionalContext (lagom-subagent 스키마)
-        sys.stdout.write(
-            json.dumps(
-                {"hookSpecificOutput": {"hookEventName": "SubagentStart", "additionalContext": text}},
-                ensure_ascii=False,
-            )
-        )
-    else:  # SessionStart/UserPromptSubmit — 평문 stdout (lagom-activate 스키마)
-        sys.stdout.write(text)
-
-
 def main():
     try:
         data = json.load(sys.stdin)
@@ -381,7 +365,7 @@ def main():
         body = render(manual, section_for(agent))
         if not body:
             sys.exit(0)
-        emit(client(), agent, "[manual]\n\n%s" % body)
+        emit_context(client(), "[manual]\n\n%s" % body, "SubagentStart" if agent else "SessionStart")
     except Exception:
         pass  # fail-open — 어떤 실패도 세션을 막지 않는다
     sys.exit(0)

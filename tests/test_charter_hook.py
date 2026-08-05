@@ -23,6 +23,8 @@ import sys
 import tempfile
 import unittest
 
+from hookscaffold import deploy_library
+
 from asgard.charter import note
 
 HOOK_SRC = os.path.join(
@@ -41,6 +43,7 @@ class CharterHookBase(unittest.TestCase):
         self.hooks = os.path.join(self.root, ".claude", "hooks")
         os.makedirs(self.hooks)
         shutil.copy(HOOK_SRC, os.path.join(self.hooks, "charter-activate.py"))
+        deploy_library(self.hooks)  # 배포본 배치 — 훅 옆에 공용 라이브러리가 함께 선다
 
     def tearDown(self):
         self.tmp.cleanup()

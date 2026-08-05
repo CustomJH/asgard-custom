@@ -22,6 +22,8 @@ import sys
 import tempfile
 import unittest
 
+from hookscaffold import deploy_library
+
 HOOK_SRC = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "src",
@@ -40,6 +42,7 @@ class AgentHookBase(unittest.TestCase):
         self.hooks = os.path.join(self.root, ".claude", "hooks")
         os.makedirs(self.hooks)
         shutil.copy(HOOK_SRC, os.path.join(self.hooks, "agent-activate.py"))
+        deploy_library(self.hooks)  # 배포본 배치 — 훅 옆에 공용 라이브러리가 함께 선다
         # 훅과 정본이 같은 뿌리를 보도록 HOME을 빈 임시 디렉터리로 고정 (양쪽 동일 조건).
         self.home = tempfile.TemporaryDirectory()
         self.addCleanup(self.home.cleanup)

@@ -199,12 +199,17 @@ class UndeclaredIgnoredPathsDoNotMoveTheHash(Repo):
         self.assertIn("app.py", changed)
 
     def test_enumeration_failure_is_still_reported_when_something_is_declared(self):
-        """열거가 실패하면 스냅샷은 증거가 아니다 — 그 사실이 marker 로 남아야 open 이 막힌다."""
+        """열거가 실패하면 스냅샷은 증거가 아니다 — 그 사실이 marker 로 남아야 open 이 막힌다.
+
+        패치 대상이 훅이 아니라 `asgard_hooklib.scope` 인 것이 요점이다: 두 훅은 이제 이름을
+        재수출할 뿐이라 훅 쪽 이름을 갈아 끼워도 열거를 도는 함수는 그대로다. 고칠 곳도 여기다."""
         from unittest import mock
 
+        from asgard_hooklib import scope as scope_module
+
         marker = {"<snapshot-unavailable>": "ignored-enumeration-failed"}
-        for module in (quest_log, verifier_gate):
-            with mock.patch.object(module, "git", return_value=(1, b"")):
+        with mock.patch.object(scope_module, "git", return_value=(1, b"")):
+            for module in (quest_log, verifier_gate):
                 self.assertEqual(module.ignored_state(self.root, ("workspace",)), marker, module.__name__)
 
 

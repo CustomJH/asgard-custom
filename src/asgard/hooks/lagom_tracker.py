@@ -22,6 +22,13 @@ for _stream in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
+# 와이어 포맷은 공용 라이브러리가 쥔다. 정책(어느 호스트에 무엇을 낼지)은 이 파일에 남는다 —
+# 아래 emit 이 다른 주입 훅과 다른 것은 드리프트가 아니라 호스트가 강제한 것이다.
+_HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
+if _HOOK_DIR not in sys.path:
+    sys.path.append(_HOOK_DIR)
+
+from asgard_hooklib.inject import client, cursor_message, host_context  # noqa: E402
 
 MODES = ("off", "lite", "full")
 
@@ -174,14 +181,6 @@ def canon_text():
         return ""
 
 
-CLIENTS = {"claude-code", "codex", "cursor"}
-
-
-def client():
-    raw = str(sys.argv[1] if len(sys.argv) > 1 else "claude-code")
-    return raw if raw in CLIENTS else "claude-code"
-
-
 def emit(current_client, text):
     """주입 스키마는 클라이언트마다 다르다 — map-activate·memory-activate와 동일 유지 (단일 규약).
     한 번만 쓴다: 이 훅은 문장을 이어 붙이는 자리가 여럿이라 조각마다 JSON을 뱉으면 파손된다.
@@ -192,15 +191,9 @@ def emit(current_client, text):
     if not text:
         return
     if current_client == "cursor":
-        sys.stdout.write(json.dumps({"user_message": text}, ensure_ascii=False) + "\n")
+        cursor_message(text)
     elif current_client == "codex":
-        sys.stdout.write(
-            json.dumps(
-                {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": text}},
-                ensure_ascii=False,
-            )
-            + "\n"
-        )
+        host_context("UserPromptSubmit", text)
     else:
         sys.stdout.write(text)
 

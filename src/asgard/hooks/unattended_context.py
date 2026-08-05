@@ -18,33 +18,15 @@ for _stream in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
+# 주입 스키마는 훅과 함께 깔리는 공용 라이브러리가 쥔다 — 아홉 훅이 같은 JSON 리터럴을 손으로
+# 적던 자리다 (스키마 오타는 호스트가 조용히 버려서 주입이 통째로 사라진다).
+_HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
+if _HOOK_DIR not in sys.path:
+    sys.path.append(_HOOK_DIR)
+
+from asgard_hooklib.inject import client, emit_context  # noqa: E402
 
 UNATTENDED_MODES = {"bypassPermissions", "dontAsk"}  # verifier_gate.py와 동일 유지
-
-
-CLIENTS = {"claude-code", "codex", "cursor"}
-
-
-def client():
-    raw = str(sys.argv[1] if len(sys.argv) > 1 else "claude-code")
-    return raw if raw in CLIENTS else "claude-code"
-
-
-def emit(current_client, text):
-    """주입 스키마는 클라이언트마다 다르다 — map-activate·memory-activate와 동일 유지 (단일 규약).
-    Cursor=additional_context, Codex=hookSpecificOutput, Claude Code=평문 stdout."""
-    if current_client == "cursor":
-        sys.stdout.write(json.dumps({"additional_context": text}, ensure_ascii=False) + "\n")
-    elif current_client == "codex":
-        sys.stdout.write(
-            json.dumps(
-                {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": text}},
-                ensure_ascii=False,
-            )
-            + "\n"
-        )
-    else:
-        sys.stdout.write(text)
 
 
 def main():
@@ -56,13 +38,17 @@ def main():
     if os.environ.get("ASGARD_UNATTENDED") != "1" and mode not in UNATTENDED_MODES:
         sys.exit(0)
     # NOTE: the `가정:` criteria-prefix token is matched elsewhere in the codebase — keep it literal.
-    emit(
+    emit_context(
         client(),
         "[asgard] Unattended session detected (permission_mode=%s) — Canon 8 auto-proceed "
         "is in effect: do not end the session waiting on a question or approval. Pick a defensible default, "
         "log the assumption as a plan criteria `가정: ...` item, and proceed immediately — state the "
         "assumptions and alternatives in the final report. ESCALATE is for blockers you cannot proceed "
         "past only — never use it to request approval." % (mode or "env"),
+        # 이 훅은 UserPromptSubmit 에 매달려 있다. 26-08-06 까지 codex 만 구조화 출력을 받았고
+        # Claude Code 는 평문이었다 — 같은 이벤트에서 map-activate·budget-guard 는 구조화를 쓰고
+        # 있었으니 그 갈림은 결정이 아니라 사본의 흔적이다. 이제 셋이 같은 표를 지난다.
+        "UserPromptSubmit",
     )
     sys.exit(0)
 

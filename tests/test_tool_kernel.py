@@ -4,6 +4,8 @@ import os
 import tempfile
 import unittest
 
+from asgard_hooklib.workspace import path_token_targets_control
+
 from asgard.agent.tool_kernel import (
     ToolContext,
     ToolRegistry,
@@ -13,7 +15,7 @@ from asgard.agent.tool_kernel import (
     execute_tool,
     to_openai_tool,
 )
-from asgard.hooks.readonly_guard import _path_token_targets_control, is_readonly_bash_safe
+from asgard.hooks.readonly_guard import is_readonly_bash_safe
 
 
 class TestRegistry(unittest.TestCase):
@@ -22,10 +24,8 @@ class TestRegistry(unittest.TestCase):
             os.makedirs(os.path.join(root, ".claude"))
             os.symlink(".claude", os.path.join(root, "control"))
             roots = (os.path.realpath(root),)  # 뿌리는 이제 여럿이다 — 판정은 그 전부를 본다
-            self.assertTrue(_path_token_targets_control(roots, "control/settings.json", (".claude", ".asgard")))
-            self.assertTrue(
-                _path_token_targets_control(roots, "--output=control/settings.json", (".claude", ".asgard"))
-            )
+            self.assertTrue(path_token_targets_control(roots, "control/settings.json", (".claude", ".asgard")))
+            self.assertTrue(path_token_targets_control(roots, "--output=control/settings.json", (".claude", ".asgard")))
 
     def test_readonly_shell_parser_respects_quoted_pipes_and_trinity_metadata(self):
         self.assertTrue(is_readonly_bash_safe('grep -nE "add_parser|next_role" hook.py | head -20'))

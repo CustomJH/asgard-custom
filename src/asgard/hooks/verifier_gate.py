@@ -16,17 +16,15 @@
 # 왜 블록 3회 상한인가: Stop block → 모델 재시도 → 또 block의 무한 루프는 Canon 9(3-실패 법칙)
 # 위반이다. 같은 세션에서 3회 차단하면 4번째는 경고와 함께 통과시키고 Odin 에스컬레이션을 지시한다.
 # 게이트는 자기기만 방어지 인질극 장치가 아니다.
-import hashlib
+#
+# 판정 기반(트리 해시·귀속 범위·증거·계약·정책)은 quest-log 와 **같은 함수**를 부른다. 26-08-06
+# 까지는 그것이 이 파일 안의 사본이었고 두 파일 다 "동일 유지 (단일 출처 원칙)"이라고 적고
+# 있었지만, 실제로는 `current_tree_ref`·`ignored_state`·`pass_evidence`·`unmet_contracts` 등
+# 9개가 이미 갈라져 있었다 — 게이트와 CLI 가 같은 워킹트리에 다른 답을 낼 수 있는 상태였다.
 import json
 import os
 import re
-import shlex
-import shutil
-import stat
-import subprocess
 import sys
-import tempfile
-from typing import Any
 
 # Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 넣지 못한다 — 인코딩 오류가
 # fail-open에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
@@ -36,124 +34,51 @@ for _stream in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
+# 공용 라이브러리는 이 훅 **옆에** 깔린다 (setup 의 `library_files`). 스크립트로 돌 때는
+# `sys.path[0]` 이 이미 그 폴더다 — 이 세 줄은 저장소 안에서 `asgard.hooks.verifier_gate` 로
+# 임포트될 때를 위한 것이다. `asgard` 임포트가 아니므로 자립 계약은 그대로다.
+_HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
+if _HOOK_DIR not in sys.path:
+    sys.path.append(_HOOK_DIR)
 
-EMPTY = hashlib.sha256(b"").hexdigest()
-# quest_log.py의 DEFAULT_POLICY와 동일 유지 — 정책 파일이 없어도 두 스크립트가 같은 기준으로 판단.
-# dict[str, Any]: 사용자 trinity-policy.json이 update()로 섞이므로 값 타입은 런타임에 열려 있다.
-DEFAULT_POLICY: dict[str, Any] = {
-    "small_write": {"max_files": 2, "max_lines": 80},
-    "sensitive_paths": [
-        "hooks",
-        "policy",
-        "policies",
-        "templates",
-        "install",
-        "security",
-        "auth",
-        "authn",
-        "authz",
-        "authentication",
-        "authorization",
-        "secret",
-        "secrets",
-        "credentials",
-        "db",
-        "migration",
-        "migrations",
-        "ci",
-        ".github",
-        ".claude",
-        ".cursor",
-        ".codex",
-    ],
-    "readonly_commands": [
-        "git status",
-        "git diff",
-        "git log",
-        "git show",
-        "git ls-files",
-        "git rev-parse",
-        "rg",
-        "grep",
-        "ls",
-        "cat",
-        "head",
-        "tail",
-        "find",
-        "wc",
-        "pwd",
-        "which",
-    ],
-    # 하네스 소유 베이스라인 체크 — quest_log.py와 동일 유지. 게이트는 실행하지 않고
-    # PASS 레코드에 quest-log가 기록한 결과만 읽는다 (Stop 지연 예산에 pytest를 얹지 않는다).
-    "baseline_checks": [],
-    "baseline_timeout": 120,
-    # 검증 강도 — low: 항상 micro / high: 위험 축이 걸릴 때만 full / full: 항상 full (quest_log.py와 동일 유지)
-    "verify_level": "low",
-}
-VERIFY_LEVELS = ("low", "high", "full")
+# `F401` 이 붙은 줄은 이 게이트가 직접 안 부르지만 밖에서 `asgard.hooks.verifier_gate.<이름>` 으로
+# 집는 이름이다 — 게이트와 CLI 가 같은 해시를 내는지 보는 패리티 시험(test_gate_ignored_scope)이
+# 두 모듈에서 같은 이름을 꺼내 대조한다. 이제 그 대조는 같은 함수 객체끼리라 항상 참이고, 시험이
+# 지키는 것은 "두 모듈이 같은 출처를 본다"는 계약 자체다.
+from asgard_hooklib.contracts import (  # noqa: E402
+    artifact_scope,  # noqa: F401
+    contract_criteria,
+    criteria_contracts,  # noqa: F401
+    quest_events_scope,
+    unmet_contracts,
+)
+from asgard_hooklib.evidence import pass_evidence  # noqa: E402
+from asgard_hooklib.integrity import EMPTY, ledger_integrity, verification_identity  # noqa: E402
+from asgard_hooklib.paths import git, is_testfile, read_text  # noqa: E402
+from asgard_hooklib.policy import (  # noqa: E402
+    DEFAULT_POLICY,  # noqa: F401
+    full_verify_required,
+    load_policy,
+    sensitive_path,
+)
+from asgard_hooklib.scope import (  # noqa: E402
+    UNBOUND,  # noqa: F401
+    ignored_state,  # noqa: F401
+    in_artifact_scope,  # noqa: F401
+    unbound_artifacts,  # noqa: F401
+    unsafe_map_links,
+)
+from asgard_hooklib.session import host_session_id  # noqa: E402
+from asgard_hooklib.tree import (  # noqa: E402
+    current_tree_ref,  # noqa: F401
+    deleted_tests,
+    diff_state,
+    stale_pass_scope,
+)
+
 MAX_BLOCKS = 3  # Canon 9 정합 — 동일 세션 4번째 차단 대신 에스컬레이션
-UNSCOPED_DRIFT = "<unscoped>"  # quest_log.py와 동일 유지 — 귀속을 못 따진 fail-safe stale 표시
 UNATTENDED_MODES = {"bypassPermissions", "dontAsk"}  # unattended_context.py와 동일 유지
 _HOST_PROTOCOL = "claude"
-
-
-def _canonical_hash(value):
-    return hashlib.sha256(
-        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    ).hexdigest()
-
-
-def event_identity(event):
-    return _canonical_hash({key: value for key, value in event.items() if key != "event_hash"})
-
-
-def verification_identity(event):
-    return _canonical_hash(
-        {
-            "execution_id": event.get("execution_id"),
-            "acceptance_hash": event.get("acceptance_hash"),
-            "diff_hash": event.get("diff_hash"),
-            "tree_ref": event.get("tree_ref"),
-            "level": event.get("level"),
-            "verdict": event.get("verdict"),
-            "commands": event.get("commands") or [],
-            "baseline": event.get("baseline") or {},
-            "criteria_checks": event.get("criteria_checks") or [],
-        }
-    )
-
-
-def ledger_integrity(events):
-    """quest_log.py mirror — standalone deployed hook cannot import the package."""
-    previous = EMPTY
-    protected = False
-    execution_id = None
-    acceptance_hash = None
-    for index, event in enumerate(events, 1):
-        if not isinstance(event, dict) or event.get("_corrupt"):
-            return False, f"turn {index}: malformed JSON event"
-        hashed = bool(event.get("event_hash"))
-        if not hashed:
-            if protected:
-                return False, f"turn {index}: unhashed event after protected chain"
-            previous = event_identity(event)
-            continue
-        protected = True
-        if event.get("prev_event_hash") != previous:
-            return False, f"turn {index}: previous event hash mismatch"
-        if event.get("event_hash") != event_identity(event):
-            return False, f"turn {index}: event hash mismatch"
-        previous = str(event["event_hash"])
-        current_execution = event.get("execution_id")
-        current_acceptance = event.get("acceptance_hash")
-        if not current_execution or not current_acceptance:
-            return False, f"turn {index}: protected event lacks execution identity"
-        execution_id = execution_id or current_execution
-        acceptance_hash = acceptance_hash or current_acceptance
-        if current_execution != execution_id or current_acceptance != acceptance_hash:
-            return False, f"turn {index}: execution or acceptance identity changed"
-    return True, "protected" if protected else "legacy"
 
 
 def unattended(data):
@@ -161,667 +86,13 @@ def unattended(data):
     return os.environ.get("ASGARD_UNATTENDED") == "1" or str(data.get("permission_mode")) in UNATTENDED_MODES
 
 
-def _read_text(path):
-    """파일을 통째로 읽는다. 오류는 그대로 올린다 — 호출부마다 삼킬 범위가 다르다. quest_log.py와 동일 유지.
-
-    핸들 수명을 여기서 끝내는 것이 요점이다. `open(p).read()`는 CPython의 참조 계수에 기대
-    곧장 닫히는 것이고, 그 기댐은 코드에 안 적혀 있어서 다른 런타임에서 조용히 깨진다."""
-    with open(path, encoding="utf-8") as handle:
-        return handle.read()
-
-
-def _read_bytes(path):
-    with open(path, "rb") as handle:
-        return handle.read()
-
-
-def git(root, *args, binary=False):
-    # color.ui=false 강제 — quest_log.py의 git과 동일 유지 (ANSI가 경로 파싱을 오염)
-    try:
-        p = subprocess.run(["git", "-C", root, "-c", "color.ui=false", *args], capture_output=True, timeout=60)
-        return p.returncode, (p.stdout if binary else p.stdout.decode("utf-8", "replace"))
-    except Exception:
-        return 1, b"" if binary else ""
-
-
-# 임시 인덱스 위의 `add -A` 에서 stat 캐시 밖의 지름길을 끈다. 인덱스 사본은 fsmonitor 표식과
-# untracked 캐시를 함께 들고 오는데, 새로 세운 인덱스에는 둘 다 없다 — 켜 둔 채로 두면 씨앗에
-# 따라 훑는 범위가 달라져 같은 워킹트리가 다른 트리를 낸다. `assume-unchanged` 를 거르는 것과
-# 같은 이유다 (26-08-05 2차 교차검토).
-_STAT_NEUTRAL = ("-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false")
-
-
-def seed_index(root, head, index_path, run):
-    """임시 인덱스를 HEAD 트리 내용으로 채운다 — quest_log.py 의 같은 이름 함수와 동일 유지.
-
-    저장소 인덱스를 복사하면 stat 캐시가 살아 뒤따르는 `add -A` 가 382ms 에서 56ms 가 된다
-    (26-08-05 콜드 실측). 사본을 쓰는 조건 셋은 quest_log.py 에 적혀 있다 — 스테이지된 변경이
-    없을 것, `assume-unchanged`·`skip-worktree` 표가 없을 것, `GIT_INDEX_FILE` 이 안 서 있을 것."""
-    if not any(os.environ.get(name) for name in ("GIT_INDEX_FILE", "GIT_DIR", "GIT_WORK_TREE")) and (
-        git(root, "diff-index", "--cached", "--quiet", head)[0] == 0
-    ):
-        rc, listing = git(root, "ls-files", "-v")
-        listing = listing.decode("utf-8", "replace") if isinstance(listing, bytes) else listing
-        flagged = rc != 0 or any(row[:1].islower() or row[:1] == "S" for row in listing.splitlines() if row)
-        if not flagged:
-            try:
-                shutil.copy2(os.path.join(root, ".git", "index"), index_path)
-                return True
-            except OSError:
-                pass
-    return run("read-tree", head).returncode == 0
-
-
-def current_tree_ref(root):
-    rc, raw_head = git(root, "rev-parse", "--verify", "HEAD")
-    head = raw_head.decode("utf-8", "replace") if isinstance(raw_head, bytes) else raw_head
-    if rc != 0 or not head.strip():
-        return None
-    fd, index_path = tempfile.mkstemp(prefix="asgard-current-index-")
-    os.close(fd)
-    os.unlink(index_path)
-    env = {**os.environ, "GIT_INDEX_FILE": index_path}
-
-    def run(*args, input_data=None):
-        return subprocess.run(
-            ["git", "-C", root, *args],
-            input=input_data,
-            capture_output=True,
-            timeout=60,
-            env=env,
-            check=False,
-        )
-
-    try:
-        if not seed_index(root, head.strip(), index_path, run):
-            return None
-        if run(*_STAT_NEUTRAL, "add", "-A", "--", ".", ":(exclude).asgard").returncode:
-            return None
-        _, raw_untracked = git(
-            root, "ls-files", "--others", "--exclude-standard", "-z", "--", ".", ":(exclude).asgard", binary=True
-        )
-        if isinstance(raw_untracked, str):
-            raw_untracked = raw_untracked.encode("utf-8", "surrogateescape")
-        junk = [path for path in raw_untracked.split(b"\0") if path and _junk(path.decode("utf-8", "surrogateescape"))]
-        if (
-            junk
-            and run("update-index", "--force-remove", "-z", "--stdin", input_data=b"\0".join(junk) + b"\0").returncode
-        ):
-            return None
-        if os.path.isdir(os.path.join(root, ".asgard", "map")):
-            if run(*_STAT_NEUTRAL, "add", "-A", "-f", "--", ".asgard/map").returncode:
-                return None
-        tree = run("write-tree")
-        return tree.stdout.decode().strip() if tree.returncode == 0 and tree.stdout.strip() else None
-    finally:
-        try:
-            os.unlink(index_path)
-        except OSError:
-            pass
-
-
-# ── quest_log.py의 diff_state와 알고리즘 동일 유지 (단일 출처 원칙 — 어긋나면 위양성 차단) ──
-# 검증 실행 아티팩트 — quest_log.py의 _junk와 동일해야 한다 (양쪽 hash 불일치 = 영구 stale).
-# lagom: 고정 목록 — 정책 파일로 빼면 exclude 확대가 게이트 우회 벡터가 되므로 하드코딩 유지.
-_JUNK_DIRS = {"__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".tox", "node_modules", ".venv", ".cache"}
-# 두 목록을 나눠 두는 이유는 quest_log.py의 같은 자리에 적혀 있다 — `_junk`는 추적되지 않은
-# 파일을, `_generated`는 이미 무시된 파일을 본다. 넓은 쪽을 `_junk`에 쓰면 gitignore되지 않은
-# 새 소스가 트리 스냅샷에서 빠져 게이트가 증거를 못 본다.
-_GENERATED_DIRS = _JUNK_DIRS | {"target", "dist", "build", ".next", ".gradle", "coverage", "htmlcov"}
-
-
-def _junk(p):
-    return p.endswith((".pyc", ".pyo")) or any(seg in _JUNK_DIRS for seg in p.split("/"))
-
-
-def _generated(p):
-    return p.endswith((".pyc", ".pyo")) or any(seg in _GENERATED_DIRS for seg in p.split("/"))
-
-
-def artifact_scope(criteria):
-    """무시 파일 대조가 볼 경로 — 퀘스트가 `artifacts:` 로 선언한 것만. 빈 튜플이면 대조 없음.
-
-    선언 밖의 gitignored 경로까지 세면 검증이 자기 판정을 무효로 만든다 — 계측 산출물 하나가
-    직전 PASS 를 stale 로 만들어 이 게이트가 orphan-write 로 막았다 (26-08-04 세션 3회).
-    quest_log.py 의 같은 이름 함수와 동일 유지 (단일 출처 원칙 — 어긋나면 영구 stale)."""
-    # `criteria_contracts` 의 5건 상한은 verify 명령용이지 결속 범위의 상한이 아니다 —
-    # 물리면 여섯 번째 산출물이 조용히 안 묶인다 (quest_log.py 의 같은 함수와 동일 유지).
-    out = set()
-    for text in criteria or []:
-        if not isinstance(text, str):
-            continue
-        for raw in parse_criterion(text)["artifacts"]:
-            path = os.path.normpath(str(raw)).replace("\\", "/")
-            # `..` 는 git 이 저장소 밖으로 거절해 스냅샷 전체를 `<snapshot-unavailable>` 로 만든다.
-            # 절대 경로는 저장소 상대로 바꾸지 않는다 — quest_log.py 의 같은 함수와 같은 이유.
-            if path and path not in (".", "..") and not path.startswith(("../", "/")) and not os.path.isabs(raw):
-                out.add(path)
-    return tuple(sorted(out))
-
-
-def in_artifact_scope(path, scope):
-    """선언된 산출물 자신이거나 그 아래인가 (세그먼트 경계 — `workspace2/`가 `workspace`에 안 걸린다)."""
-    return any(path == entry or path.startswith(entry + "/") for entry in scope)
-
-
-def quest_events_scope(events):
-    """이 퀘스트가 선언한 산출물 전부 — quest_log.py의 같은 이름 함수와 동일 유지."""
-    return artifact_scope([c for e in events for c in (e.get("criteria") or []) if isinstance(c, str)])
-
-
-def reconcile_ignored(root, ignored_base, digest, scope=()):
-    """무시 파일의 기준선↔현재 대조. quest_log.py의 같은 이름 함수와 동일 유지 (단일 출처 원칙)."""
-    if ignored_base is None or not scope:
-        return []
-    base = {path: value for path, value in ignored_base.items() if in_artifact_scope(path, scope)}
-    current = ignored_state(root, scope)
-    changed = sorted(path for path in set(base) | set(current) if base.get(path) != current.get(path))
-    for path in changed:
-        digest.update(
-            b"ignored\0"
-            + path.encode("utf-8", "surrogateescape")
-            + b"\0"
-            + str(base.get(path, "<missing>")).encode()
-            + b"\0"
-            + str(current.get(path, "<missing>")).encode()
-        )
-    return changed
-
-
-def unsafe_map_links(root):
-    map_dir = os.path.join(root, ".asgard", "map")
-    expected = os.path.join(os.path.realpath(root), ".asgard", "map")
-    if os.path.islink(map_dir) or os.path.realpath(map_dir) != expected:
-        return [".asgard/map"]
-    try:
-        return [
-            ".asgard/map/" + name
-            for name in os.listdir(map_dir)
-            if name.endswith(".md") and os.path.islink(os.path.join(map_dir, name))
-        ]
-    except OSError:
-        return []
-
-
-def symlink_map_state(path):
-    """Hash only the link identity; never open or consume an external target as evidence."""
-    target = os.readlink(path).encode(errors="surrogateescape")
-    return b"<unsafe-symlink>\0" + target
-
-
-def verify_strength(policy):
-    """trinity_policy.verify_level — quest_log.py의 같은 함수와 동일 유지 (어긋나면 게이트↔전이 판정 분열).
-    모르는 값·빈 값은 기본값으로 (fail-open — 설정 오타가 게이트를 못 끈다)."""
-    level = str((policy or {}).get("verify_level") or "").strip().lower()
-    return level if level in VERIFY_LEVELS else "low"
-
-
-def full_verify_required(policy, risky):
-    """위험 축 판정에 설정 강도를 얹는다 — quest_log.full_verify_required와 동일 유지."""
-    level = verify_strength(policy)
-    return level == "full" or (level == "high" and bool(risky))
-
-
-def sensitive_path(path, needles):
-    """quest_log.py의 sensitive_path와 동일 유지 (단일 출처 원칙 — 어긋나면 판정 분열).
-    세그먼트 정확 일치 또는 [._-] 토큰 정확 일치 — substring 파생형은 needle 목록에 명시."""
-    segs = path.lower().split("/")
-    for n in needles:
-        n = str(n).lower()
-        if any(seg == n or n in re.split(r"[._\-]", seg) for seg in segs):
-            return True
-    return False
-
-
-# 결속 불가 표식 — quest_log.py 의 같은 상수와 동일 유지 (어긋나면 영구 stale).
-UNBOUND = "<unbound:"
-
-
-def ignored_state(root, scope=()):
-    """선언된 산출물 아래의 무시 파일만 해시한다 — 빈 scope는 결속 대상이 없다는 뜻이라 git도 안
-    부른다 (26-08-05 콜드 실측: 이 저장소의 전 무시 파일 7,507건 열거·해시가 432ms)."""
-    if not scope:
-        return {}
-    rc, raw = git(
-        root,
-        "ls-files",
-        "--others",
-        "--ignored",
-        "--exclude-standard",
-        "-z",
-        "--",
-        *scope,
-        ":(exclude).asgard",
-        binary=True,
-    )
-    if rc != 0:
-        return {"<snapshot-unavailable>": "ignored-enumeration-failed"}
-    if isinstance(raw, str):
-        raw = raw.encode("utf-8", "surrogateescape")
-    out = {}
-    for item in raw.split(b"\0"):
-        if not item:
-            continue
-        path = item.decode("utf-8", "surrogateescape")
-        # pathspec 은 glob 을 받는다 — 돌려받은 경로를 같은 술어로 한 번 더 거른다.
-        # `_generated` 는 안 태운다 — 선언된 `build/`·`target/` 산출물이 조용히 안 묶인다.
-        if not in_artifact_scope(path, scope):
-            continue
-        full = os.path.join(root, path)
-        try:
-            info = os.lstat(full)
-            if stat.S_ISLNK(info.st_mode):
-                # 링크는 안 따라간다 (저장소 밖 자격 증명을 증거로 열지 않는다) — 그래서 이 값은
-                # 대상 파일의 내용을 안 담는다. 표식을 붙여 `unbound_artifacts` 가 잡게 한다.
-                body = b"<symlink>\0" + os.readlink(full).encode("utf-8", "surrogateescape")
-                out[path] = UNBOUND + "symlink:" + hashlib.sha256(body).hexdigest()[:16]
-            elif stat.S_ISREG(info.st_mode):
-                digest = hashlib.sha256()
-                with open(full, "rb") as handle:
-                    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-                        digest.update(chunk)
-                out[path] = digest.hexdigest()
-            else:
-                # 중첩 저장소는 `git ls-files` 가 `sub/` 한 줄로만 내고 그 lstat 값은 안 바뀐다.
-                out[path] = UNBOUND + f"nonregular:{stat.S_IFMT(info.st_mode):o}"
-        except OSError:
-            out[path] = "<missing>"
-    return out
-
-
-def _symlink_on_the_way(root, entry):
-    """선언한 경로에 닿기까지 거치는 칸 중 첫 심링크 — 없으면 빈 문자열."""
-    parts = entry.split("/")
-    for depth in range(1, len(parts) + 1):
-        branch = "/".join(parts[:depth])
-        if os.path.islink(os.path.join(root, branch)):
-            return branch
-    return ""
-
-
-def _symlinks_under(root, entry):
-    """선언한 자리 아래의 심링크 경로들 (저장소 상대). 파일 선언이면 빈 목록."""
-    out = []
-    for parent, dirs, files in os.walk(os.path.join(root, entry), followlinks=False):
-        for name in dirs + files:
-            full = os.path.join(parent, name)
-            if os.path.islink(full):
-                out.append(os.path.relpath(full, root).replace("\\", "/"))
-    return out
-
-
-def _bound_map_page(path):
-    """`.asgard` 아래에서 판정 해시가 유일하게 다시 읽는 자리인가 — 지도 바로 아래의 `*.md`.
-    `diff_state` 의 지도 대조와 같은 폭이다 (readonly_guard 의 `_within_managed_map` 도 같다)."""
-    return path.startswith(".asgard/map/") and path.endswith(".md") and path.count("/") == 2
-
-
-def unbound_artifacts(root, scope):
-    """선언은 결속을 약속하는데 해시가 못 따라가는 산출물 — quest_log.py 의 같은 함수와 동일 유지.
-
-    심링크는 링크 신원만 해시되고 (대상 파일을 고쳐도 값이 안 움직인다), 중첩 저장소는
-    `git ls-files` 가 안으로 안 내려가 디렉터리 한 줄만 나온다. 둘 다 안 묶이므로 미충족이다."""
-    reasons = {}
-    for entry in scope:
-        # 하네스 상태는 어느 트리에도 안 들어간다 (`current_tree_ref` 와 `ignored_state` 가 둘 다
-        # `.asgard` 를 뺀다). 지도의 `*.md` 만 예외로 다시 읽힌다 — 나머지는 존재만 확인될 뿐
-        # 내용이 어디에도 안 묶인다.
-        if entry == ".asgard" or (entry.startswith(".asgard/") and not _bound_map_page(entry)):
-            reasons[entry] = "under .asgard — the verdict hash excludes harness state"
-            continue
-        # 선언한 경로 자신뿐 아니라 **거쳐 가는 칸마다** 본다. 중간 칸이 링크면 (`out -> /tmp`,
-        # 선언은 `out/x.json`) `os.path.exists` 는 링크를 따라가 "있다"고 답하는데 git 은 링크
-        # 하나만 저장하고 그 안으로 안 내려간다 — 저장소 밖 파일이 계약을 채운다.
-        ancestor = _symlink_on_the_way(root, entry)
-        if ancestor:
-            reasons[entry] = f"reached through the symlink `{ancestor}` — git stores the link, not what is behind it"
-            continue
-        # 선언한 디렉터리 **안의** 링크도 같은 자리다. 추적 여부로 갈리면 안 되므로
-        # (추적 링크는 무시 파일 열거에, 새 링크는 어느 열거에도 안 나온다) 걸어서 본다.
-        for rel in _symlinks_under(root, entry):
-            reasons.setdefault(rel, "symlink — the gate hashes the link, not the file it points at")
-    for path, value in ignored_state(root, scope).items():
-        if isinstance(value, str) and value.startswith(UNBOUND):
-            reasons.setdefault(
-                path,
-                "symlink — the gate hashes the link, not the file it points at"
-                if "symlink" in value
-                else "not a regular file — git does not enumerate inside it (a nested repository?)",
-            )
-    return [f"{path} ({reason})" for path, reason in sorted(reasons.items())]
-
-
-def diff_state(root, base_ref, ignored_base=None, scope=()):
-    # nontest_lines 4번째 원소 — quest_log.py와 동일 유지 (테스트 추가 ≠ 리스크 질량)
-    if not base_ref or base_ref == "NONE":
-        return EMPTY, [], 0, 0
-    current_ref = current_tree_ref(root)
-    if not current_ref:
-        return hashlib.sha256(b"snapshot-unavailable").hexdigest(), ["<snapshot-unavailable>"], 0, 0
-    spec = [base_ref, current_ref, "--", ".", ":(exclude).asgard"]
-    rc, diff = git(root, "diff", "--binary", *spec, binary=True)
-    if rc != 0:
-        return EMPTY, [], 0, 0
-    if isinstance(diff, str):
-        diff = diff.encode()
-    _, names = git(root, "diff", "--name-only", *spec)
-    names = names.decode(errors="replace") if isinstance(names, bytes) else names
-    _, base_maps = git(root, "ls-tree", "-r", "--name-only", base_ref, "--", ".asgard/map")
-    base_maps = base_maps.decode(errors="replace") if isinstance(base_maps, bytes) else base_maps
-    map_paths = {p for p in base_maps.splitlines() if p.strip()}
-    map_dir = os.path.join(root, ".asgard", "map")
-    try:
-        map_paths.update(
-            ".asgard/map/" + p
-            for p in os.listdir(map_dir)
-            if p.endswith(".md")
-            and (os.path.isfile(os.path.join(map_dir, p)) or os.path.islink(os.path.join(map_dir, p)))
-        )
-    except OSError:
-        pass
-    map_changed = []
-    for p in sorted(map_paths):
-        before_rc, before = git(root, "show", f"{base_ref}:{p}", binary=True)
-        if isinstance(before, str):
-            before = before.encode()
-        full_path = os.path.join(root, p)
-        is_link = os.path.islink(full_path)
-        try:
-            after = symlink_map_state(full_path) if is_link else _read_bytes(full_path)
-        except OSError:
-            after = None
-        if (before if before_rc == 0 else None) != after:
-            map_changed.append(p)
-            diff += p.encode("utf-8", "surrogateescape") + b"\0" + (after if after is not None else b"<deleted>")
-    _, num = git(root, "diff", "--numstat", *spec)
-    lines = 0
-    nt_lines = 0
-    for row in num.splitlines():
-        parts = row.split("\t")
-        if len(parts) >= 3 and parts[0].isdigit() and parts[1].isdigit():
-            n = int(parts[0]) + int(parts[1])
-            lines += n
-            if not _testfile(parts[2]):
-                nt_lines += n
-    h = hashlib.sha256(diff)
-    ignored_changed = reconcile_ignored(root, ignored_base, h, scope)
-    changed = sorted(set(n for n in names.splitlines() if n.strip()) | set(map_changed) | set(ignored_changed))
-    return (h.hexdigest() if changed else EMPTY), changed, lines, nt_lines
-
-
-def _testfile(p):
-    segs = p.lower().split("/")
-    return "tests" in segs or "test" in segs or segs[-1].startswith("test_") or segs[-1].endswith("_test.py")
-
-
-def deleted_tests(root, base_ref):
-    """quest_log.py의 deleted_tests와 동일 유지 (단일 출처 원칙) — 테스트를 지워 green을 사는
-    경로 차단 (anti-Goodhart). 삭제된 테스트 파일이 있으면 full-verify 강제.
-
-    현재 쪽도 트리로 맞댄다 — base_ref는 미추적 파일까지 담은 트리라 색인과 맞대면 디스크에
-    있는 미추적 테스트가 삭제로 잡힌다 (quest_log.deleted_tests와 같은 수리)."""
-    if not base_ref or base_ref == "NONE":
-        return []
-    current_ref = current_tree_ref(root)
-    refs = [base_ref, current_ref] if current_ref else [base_ref]
-    _, out = git(root, "diff", "--name-only", "--diff-filter=D", *refs, "--", ".", ":(exclude).asgard")
-    return [p for p in out.splitlines() if p.strip() and _testfile(p)]
-
-
-def _rel_to_root(root, path):
-    """quest_log.py의 _rel_to_root와 동일 유지 — write 저널 절대 경로를 리포 상대로."""
-    p = str(path)
-    if not os.path.isabs(p):
-        return p
-    rp = os.path.realpath(root)
-    ap = os.path.realpath(p)
-    return os.path.relpath(ap, rp) if ap == rp or ap.startswith(rp + os.sep) else p
-
-
-def quest_owned_files(root, events):
-    """quest_log.py의 quest_owned_files와 동일 유지 — 퀘스트 귀속 파일(work 관측 ∪ 세션 write 저널)."""
-    owned = {
-        _rel_to_root(root, p)
-        for e in events
-        if e.get("event") == "work"
-        for p in (e.get("changed_files") or [])
-        if str(p).strip()
-    }
-    for sid in {str(e.get("session_id")) for e in events if e.get("session_id")}:
-        try:
-            with open(os.path.join(root, ".asgard", "state", f"writes-{sid}.json"), encoding="utf-8") as handle:
-                journal = json.load(handle)
-            owned.update(_rel_to_root(root, p) for p in journal if str(p).strip())
-        except Exception:
-            pass
-    return owned
-
-
-def stale_pass_scope(root, last_pass, events, current_changed):
-    """quest_log.py의 stale_pass_scope와 동일 유지 (단일 출처 원칙) — 해시 불일치 시
-    PASS 시점 tree_ref ↔ 현재 트리 드리프트가 퀘스트 귀속 파일·관리 지도에 닿을 때만 stale.
-    tree_ref 없는 구 로그·귀속 공집합·트리 계산 실패는 종전 엄격 판정(stale) — fail-safe.
-
-    첫 값은 stale 을 만든 파일 목록이고 비었을 때 falsy 다. 게이트가 차단을 기록할 때 사유
-    코드만이 아니라 닿은 파일까지 남기려고 목록으로 받는다."""
-    pass_tree = str(last_pass.get("tree_ref") or "")
-    owned = quest_owned_files(root, events)
-    if not pass_tree or not owned:
-        return [UNSCOPED_DRIFT], []
-    cur_tree = current_tree_ref(root)
-    if not cur_tree:
-        return [UNSCOPED_DRIFT], []
-    rc, names = git(root, "diff", "--name-only", pass_tree, cur_tree)
-    if rc != 0:
-        return [UNSCOPED_DRIFT], []
-    drift = {n for n in names.splitlines() if n.strip()}
-    drift |= set(map(str, current_changed or [])) ^ {str(p) for p in (last_pass.get("changed_files") or [])}
-    hits = sorted(p for p in drift if p in owned or p == ".asgard/map" or p.startswith(".asgard/map/"))
-    return hits, sorted(drift - set(hits))
-
-
 def readonly(cmd, allow):
     c = str(cmd).strip()
     return any(c == a or c.startswith(a + " ") for a in allow)
 
 
-def trivial_evidence(cmd):
-    """quest_log.py의 trivial_evidence와 동일 유지 (단일 출처 원칙) — `true` 한 방이 PASS 증거로
-    성립하던 Goodhart 구멍 봉합: 무조건 exit 0 이거나 관찰만 하는 명령은 검증 증거가 아니다."""
-    try:
-        tokens = shlex.split(str(cmd), posix=True)
-    except ValueError:
-        return True
-    if not tokens:
-        return True
-    segments = [[]]
-    for token in tokens:
-        if token in {"|", "||", "&&", ";"}:
-            segments.append([])
-        else:
-            segments[-1].append(token)
-    observational = {
-        ":",
-        "awk",
-        "cat",
-        "date",
-        "echo",
-        "file",
-        "find",
-        "head",
-        "ls",
-        "od",
-        "printf",
-        "pwd",
-        "sed",
-        "sleep",
-        "stat",
-        "tail",
-        "tree",
-        "true",
-        "type",
-        "wc",
-        "which",
-        "whoami",
-        "xxd",
-    }
-    for segment in segments:
-        while segment and ("=" in segment[0] and not segment[0].startswith(("=", "-"))):
-            segment = segment[1:]
-        if not segment:
-            continue
-        head = os.path.basename(segment[0])
-        if head in {"sh", "bash", "zsh"} and any(flag in segment for flag in ("-c", "-lc")):
-            index = next(i for i, token in enumerate(segment) if token in ("-c", "-lc"))
-            if index + 1 < len(segment) and not trivial_evidence(segment[index + 1]):
-                return False
-            continue
-        if head == "git":
-            sub = next((token for token in segment[1:] if not token.startswith("-")), "")
-            if sub == "diff" and any(flag in segment for flag in ("--check", "--quiet", "--exit-code")):
-                return False
-            if sub in {"grep", "rev-parse"}:
-                return False
-            continue
-        if head not in observational and not (head == "exit" and segment[1:] == ["0"]):
-            return False
-    return True
-
-
-_GIT_INSPECT_SUBS = {"status", "diff", "log", "show", "ls-files"}
-
-
-def inspection_evidence(cmd):
-    """quest_log.py의 inspection_evidence와 동일 유지 (단일 출처 원칙) — 무변경(diff EMPTY)
-    퀘스트 한정 PASS 증거: 트리 관측(git status/diff)이 곧 검증. 아니면 no-op이 영구 FAIL."""
-    try:
-        tokens = shlex.split(str(cmd), posix=True)
-    except ValueError:
-        return False
-    segments = [[]]
-    for token in tokens:
-        if token in {"|", "||", "&&", ";"}:
-            segments.append([])
-        else:
-            segments[-1].append(token)
-    for segment in segments:
-        while segment and ("=" in segment[0] and not segment[0].startswith(("=", "-"))):
-            segment = segment[1:]
-        if not segment or os.path.basename(segment[0]) != "git":
-            continue
-        sub, rest, index = "", segment[1:], 0
-        while index < len(rest):
-            token = rest[index]
-            if token in {"-C", "-c", "--git-dir", "--work-tree", "--namespace"}:
-                index += 2  # 옵션 인자 스킵 — `git -C <path> status`의 <path> 를 sub로 오인 금지
-                continue
-            if token.startswith("-"):
-                index += 1
-                continue
-            sub = token
-            break
-        if sub in _GIT_INSPECT_SUBS:
-            return True
-    return False
-
-
-def pass_evidence(rec, no_change=False):
-    """PASS 레코드의 성공 명령 증거 — trivial 명령 제외 (quest_log.py와 동일 유지).
-    하네스가 직접 돌린 베이스라인 green·전 계약 성공(criteria_checks)은 그 자체가 물리 증거 —
-    trivial 필터는 모델이 고른 명령에만 적용한다 (둘 다 하네스 소유 기록, 모델 위조 불가).
-    no_change=True (하네스 관측 diff가 EMPTY) 면 트리 관측 명령도 증거다."""
-    if (rec.get("baseline") or {}).get("state") == "green":
-        return True
-    checks = [c for c in (rec.get("criteria_checks") or []) if isinstance(c, dict)]
-    if checks and all(c.get("exit_code") == 0 for c in checks):
-        return True  # 계약 명령 전부 성공 — 하네스가 직접 실행한 기록
-    if no_change and any(
-        isinstance(c, dict) and c.get("exit_code") == 0 and inspection_evidence(c.get("cmd", ""))
-        for c in (rec.get("commands") or [])
-    ):
-        return True
-    return any(
-        isinstance(c, dict) and c.get("exit_code") == 0 and not trivial_evidence(c.get("cmd", ""))
-        for c in (rec.get("commands") or [])
-    )
-
-
-# ── criteria verify 계약 — quest_log.py의 parse_criterion/criteria_contracts/unmet_contracts와
-# 동일 유지 (단일 출처 원칙). 게이트는 계약 명령을 재실행하지 않고(Stop 지연 예산) quest-log가
-# 기록한 criteria_checks를 대조하며, 산출물 존재만 라이브 재확인한다.
-
-
-def parse_criterion(text):
-    """ "설명 | verify: cmd | artifacts: a b" → {description, verify_cmd, artifacts}. 계약 없음 = 빈 값."""
-    desc, cmd, arts = str(text), None, []
-    parts = [p.strip() for p in str(text).split(" | ")]
-    if len(parts) > 1:
-        desc = parts[0]
-        for p in parts[1:]:
-            if p.startswith("verify:"):
-                cmd = p[len("verify:") :].strip() or None
-            elif p.startswith("artifacts:"):
-                arts = [a for a in p[len("artifacts:") :].split() if a]
-            else:
-                desc = desc + " | " + p  # 계약 키워드가 아닌 ' | '는 설명의 일부
-    if cmd and trivial_evidence(cmd):
-        cmd = None  # trivial 명령은 계약이 될 수 없다 — 증거 필터와 동일 기준 (Goodhart)
-    return {"description": desc, "verify_cmd": cmd, "artifacts": arts}
-
-
-def criteria_contracts(criteria):
-    """verify 계약이 선언된 기준만 — verify_cmd 또는 artifacts 보유."""
-    out = []
-    for t in criteria or []:
-        c = parse_criterion(t)
-        if c["verify_cmd"] or c["artifacts"]:
-            out.append(c)
-    return out[:5]  # 상한 — 계약 폭주가 verify 턴을 인질로 잡지 않게
-
-
-def contract_criteria(*sources):
-    """계약 추출 원본 — 문자열 항목을 실은 첫 후보. quest_log.py와 동일 유지.
-
-    계약은 문자열 기준에만 담긴다. 판정자가 기준별 판정을 객체로 실은 이벤트를 원본으로 쓰면
-    한쪽은 계약 0건(명령 미실행), 게이트는 계약 있음(미충족)으로 갈려 Stop이 영구 차단된다.
-
-    판정자가 같은 판정을 산문 **문자열**로 보내면 형태 판별만으로는 못 거른다 — 계약을 실은
-    원본을 먼저 고른다 (quest_log.contract_criteria와 동일 유지)."""
-    string_sources = [s for s in ([c for c in (src or []) if isinstance(c, str)] for src in sources) if s]
-    for strings in string_sources:
-        if any(c["verify_cmd"] for c in criteria_contracts(strings)):
-            return strings
-    return string_sources[0] if string_sources else []
-
-
-def _outside_repo(path):
-    """저장소 밖 산출물 선언인가 — `artifact_scope` 가 결속에서 빼는 것과 같은 술어를 쓴다.
-    (안 맞추면 해시에 안 묶인 저장소 밖 파일이 계약을 채운다 — quest_log.py 의 같은 함수 참고.)"""
-    normalized = os.path.normpath(str(path)).replace("\\", "/")
-    return (
-        not normalized or normalized in (".", "..") or normalized.startswith(("../", "/")) or os.path.isabs(str(path))
-    )
-
-
-def unmet_contracts(root, criteria, rec):
-    """PASS 레코드(rec) 기준 미충족 계약 목록. 명령은 하네스 기록(criteria_checks)의 exit 0만 인정,
-    산출물은 지금(호출 시점) 존재를 라이브 재확인 — 산출물은 .gitignore로 diff-hash 밖일 수 있어
-    stale 검사가 삭제를 못 잡는다. 계약이 있는데 기록이 없으면(구버전 이벤트) 미충족 — 재검증 유도.
-    있는데 **안 묶이는** 형상(`unbound_artifacts`)도 미충족이다 — quest_log.py 와 동일 유지."""
-    unmet = []
-    checks = {(" ".join(str(c.get("cmd", "")).split())): c.get("exit_code") for c in (rec.get("criteria_checks") or [])}
-    for c in criteria_contracts(criteria):
-        cmd = c["verify_cmd"]
-        if cmd and checks.get(" ".join(cmd.split())) != 0:
-            unmet.append("verify: " + cmd)
-        for a in c["artifacts"]:
-            if _outside_repo(a):
-                unmet.append(f"artifact: {a} (outside the repository — declare a repo-relative path)")
-            elif not os.path.exists(os.path.join(root, a)):
-                unmet.append("artifact: " + a)
-    scope = artifact_scope(criteria)
-    unmet += [f"artifact: {item}" for item in (unbound_artifacts(root, scope) if scope else [])]
-    return unmet
+# 게이트는 계약 명령을 재실행하지 않는다 (Stop 지연 예산) — quest-log 가 기록한 criteria_checks 를
+# 대조하고 산출물 존재만 라이브 재확인한다. 판정 술어 자체는 `asgard_hooklib.contracts` 하나다.
 
 
 def block_counter_path(root, sid):
@@ -960,7 +231,7 @@ def quest_pointer(root, sid, kind="active"):
     sessions = os.path.join(root, ".asgard", "quest", "sessions")
     session_path = os.path.join(sessions, name + "." + kind)
     try:
-        qid = _read_text(session_path).strip()
+        qid = read_text(session_path).strip()
         if qid:
             return qid
     except Exception:
@@ -970,7 +241,7 @@ def quest_pointer(root, sid, kind="active"):
             return None  # 이 세션은 이미 닫혔음 — 다른 세션으로 fallback 금지
         try:
             active = {
-                _read_text(os.path.join(sessions, entry)).strip()
+                read_text(os.path.join(sessions, entry)).strip()
                 for entry in os.listdir(sessions)
                 if entry.endswith(".active")
             }
@@ -984,30 +255,12 @@ def quest_pointer(root, sid, kind="active"):
     # kind="last": 승인된 close는 legacy LAST도 항상 기록한다 — 세션 포인터 부재 시 안전 폴백
     for path in [os.path.join(root, ".asgard", "quest", "ACTIVE" if kind == "active" else "LAST")]:
         try:
-            qid = _read_text(path).strip()
+            qid = read_text(path).strip()
             if qid:
                 return qid
         except Exception:
             continue
     return None
-
-
-_SESSION_ENV = (
-    "CLAUDE_CODE_SESSION_ID",  # Claude Code 가 실제로 내보내는 이름
-    "CLAUDE_SESSION_ID",  # 종전에 이 파일이 찾던 이름 — 다른 호스트가 줄 수 있으니 남긴다
-    "CURSOR_SESSION_ID",
-    "CODEX_SESSION_ID",
-)
-
-
-def host_session_id():
-    """호스트가 준 세션 신원. 없으면 `"-"`. quest_log.py의 같은 이름 함수와 동일 유지 —
-    포인터를 쓰는 쪽과 읽는 쪽이 다른 이름을 보면 게이트가 남의 quest를 판정한다."""
-    for name in _SESSION_ENV:
-        value = (os.environ.get(name) or "").strip()
-        if value:
-            return value
-    return "-"
 
 
 def session_candidates(data, protocol):
@@ -1051,7 +304,7 @@ def _pointer_file(root, name, kind="active"):
     """세션 포인터 파일만 읽는다 — 승계 휴리스틱 없이."""
     sessions = os.path.join(root, ".asgard", "quest", "sessions")
     try:
-        return _read_text(os.path.join(sessions, name + "." + kind)).strip() or None
+        return read_text(os.path.join(sessions, name + "." + kind)).strip() or None
     except Exception:
         return None
 
@@ -1197,25 +450,7 @@ def main():
         unsafe_maps = unsafe_map_links(root)
         if unsafe_maps:
             block(root, sid, "unsafe-map", targets=", ".join(unsafe_maps[:3]))
-        policy = dict(DEFAULT_POLICY)
-        # 신규 통합 설정 우선, 구 파일 폴백 — quest_log.load_policy와 동일 유지 (단일 출처 원칙)
-        loaded = False
-        try:
-            with open(os.path.join(root, ".asgard", "asgard-setting-project.json"), encoding="utf-8") as handle:
-                cfg = json.load(handle)
-            pol = cfg.get("trinity_policy") if isinstance(cfg, dict) else None
-            if isinstance(pol, dict):
-                policy.update(pol)
-                loaded = True
-        except Exception:
-            pass
-        if not loaded:
-            try:
-                with open(os.path.join(root, ".asgard", "trinity-policy.json"), encoding="utf-8") as handle:
-                    policy.update(json.load(handle))
-            except Exception:
-                pass
-
+        policy = load_policy(root)
         ignored_base = next(
             (event.get("ignored_snapshot") for event in events if isinstance(event.get("ignored_snapshot"), dict)), None
         )
@@ -1291,7 +526,7 @@ def main():
         small = policy["small_write"]
         sensitive = [f for f in changed if sensitive_path(f, policy["sensitive_paths"])]
         dts = deleted_tests(root, base_ref)
-        nt_files = [f for f in changed if not _testfile(f)]  # 테스트 추가 ≠ 리스크 질량
+        nt_files = [f for f in changed if not is_testfile(f)]  # 테스트 추가 ≠ 리스크 질량
         full_required = full_verify_required(
             policy, bool(sensitive) or bool(dts) or len(nt_files) > small["max_files"] or nt_lines > small["max_lines"]
         )

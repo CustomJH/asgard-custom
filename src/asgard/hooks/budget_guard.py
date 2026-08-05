@@ -67,8 +67,14 @@ for _stream in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
+# 와이어 포맷은 공용 라이브러리가 쥔다. 정책(어느 호스트에 무엇을 낼지)은 이 파일에 남는다 —
+# 아래 emit 이 다른 주입 훅과 다른 것은 드리프트가 아니라 호스트가 강제한 것이다.
+_HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
+if _HOOK_DIR not in sys.path:
+    sys.path.append(_HOOK_DIR)
 
-CLIENTS = {"claude-code", "codex", "cursor"}
+from asgard_hooklib.inject import client, cursor_context, host_context  # noqa: E402
+
 ACTIONS = {"prompt", "task"}
 
 # 표준 상대 단가 — 입력 1 기준. 설정 budget.weights로 덮어쓴다.
@@ -348,11 +354,6 @@ def load_limits(root: str) -> dict:
 
 
 # ── 훅 배선 ─────────────────────────────────────────────────────────────────────
-def client() -> str:
-    raw = str(sys.argv[1] if len(sys.argv) > 1 else "claude-code")
-    return raw if raw in CLIENTS else "claude-code"
-
-
 def action() -> str:
     raw = str(sys.argv[2] if len(sys.argv) > 2 else "prompt").lower()
     return raw if raw in ACTIONS else "prompt"
@@ -368,15 +369,9 @@ def emit(current_client: str, text: str, event: str, current_action: str = "prom
     if current_client == "cursor":
         if current_action == "prompt":
             return
-        sys.stdout.write(json.dumps({"additional_context": text}, ensure_ascii=False) + "\n")
+        cursor_context(text)
     elif current_client == "codex":
-        sys.stdout.write(
-            json.dumps(
-                {"hookSpecificOutput": {"hookEventName": event, "additionalContext": text}},
-                ensure_ascii=False,
-            )
-            + "\n"
-        )
+        host_context(event, text)
     else:
         sys.stdout.write(text)
 

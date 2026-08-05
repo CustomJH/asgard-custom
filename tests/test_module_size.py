@@ -8,10 +8,10 @@
 기준선은 여기 안 적는다 — 두 자리에 적으면 하나가 낡고, 낡은 쪽이 계약처럼 보인다. 정본은
 `pyproject.toml` 의 `[tool.asgard.health-gate]` 다.
 
-지금 상한을 넘는 둘은 훅이다 (`hooks/quest_log.py` · `hooks/verifier_gate.py`). 분해 대상이
-아니라 계약이다: `hooks/__init__.py` 의 `script()` 가 파일 **하나**를 그대로 사용자 저장소에
-쓰므로, 모듈로 가르면 스캐폴딩이 깰 파일을 못 찾는다. 그래서 수만 세지 않고 이름까지 본다 —
-훅 하나를 쪼갠 자리에 다른 파일이 자라 들어오면 수는 그대로라 초록으로 남는다.
+수만 세지 않고 이름까지 보는 이유: 한 파일을 쪼갠 자리에 다른 파일이 자라 들어오면 수는
+그대로라 초록으로 남는다. 26-08-06 까지 그 이름 검사는 훅 둘(`quest_log.py`·`verifier_gate.py`)을
+면제하고 있었다 — 단일 파일 배포 계약 때문이었다. 그 계약이 바뀌어(공용 라이브러리가 훅과 같은
+폴더에 함께 깔린다) 면제도 사라졌다. 지금은 상한을 넘는 파일이 없어야 한다.
 
 실행: uv run pytest tests/test_module_size.py
 """
@@ -51,12 +51,13 @@ class TestFileSize(unittest.TestCase):
             "함께 pyproject 의 기준선을 올려라",
         )
 
-    def test_only_the_hooks_are_allowed_past_the_line(self):
-        strays = [path for path in _oversized() if not path.startswith("src/asgard/hooks/")]
+    def test_no_source_file_is_past_the_line(self):
+        strays = _oversized()
         self.assertEqual(
             strays,
             [],
-            f"훅이 아닌 파일이 {FILE_LINES_SEVERE}줄을 넘었다: {strays} — 훅만 단일 파일 계약에 묶여 있다",
+            f"{FILE_LINES_SEVERE}줄을 넘긴 소스 파일: {strays} — 면제는 없다. 쪼개거나, 왜 넘겨야 "
+            "했는지와 함께 pyproject 의 기준선을 올려라",
         )
 
 

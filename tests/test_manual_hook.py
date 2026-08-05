@@ -20,6 +20,8 @@ import sys
 import tempfile
 import unittest
 
+from hookscaffold import deploy_library
+
 from asgard.manual import MANUAL_NAMES, note
 
 HOOK_SRC = os.path.join(
@@ -39,6 +41,7 @@ class ManualHookBase(unittest.TestCase):
         self.hooks = os.path.join(self.root, ".claude", "hooks")
         os.makedirs(self.hooks)
         shutil.copy(HOOK_SRC, os.path.join(self.hooks, "manual-activate.py"))
+        deploy_library(self.hooks)  # 배포본 배치 — 훅 옆에 공용 라이브러리가 함께 선다
         # 훅과 정본이 같은 글로벌 설정을 보도록 HOME을 빈 임시 디렉터리로 고정 (양쪽 동일 조건).
         self.home = tempfile.TemporaryDirectory()
 

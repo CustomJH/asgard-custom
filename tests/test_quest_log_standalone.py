@@ -23,6 +23,8 @@ import sys
 import tempfile
 import unittest
 
+from asgard.hooks import library_files, script
+
 SRC = os.path.join(os.path.dirname(__file__), "..", "src", "asgard", "hooks", "quest_log.py")
 COMMANDS = (
     "open",
@@ -47,10 +49,17 @@ class TestDeployedCopyRunsWithoutAsgard(unittest.TestCase):
         os.makedirs(blocked)
         with open(os.path.join(blocked, "__init__.py"), "w", encoding="utf-8") as handle:
             handle.write('raise ImportError("asgard is not installed in this environment")\n')
-        # setup이 쓰는 이름 그대로 복사한다 — 배포되는 것은 `.claude/hooks/quest-log.py`다.
-        self.tool = os.path.join(self.tmp, "hooks", "quest-log.py")
-        os.makedirs(os.path.dirname(self.tool))
-        shutil.copyfile(os.path.abspath(SRC), self.tool)
+        # setup이 쓰는 이름 그대로, setup이 쓰는 목록 그대로 깐다 — 배포되는 것은
+        # `.claude/hooks/quest-log.py` **와** 그 옆의 `asgard_hooklib/` 다. 목록을 여기 손으로
+        # 적으면 배포 표에 파일이 하나 늘 때 이 시험만 옛 배치를 계속 증명한다.
+        hooks_dir = os.path.join(self.tmp, "hooks")
+        self.tool = os.path.join(hooks_dir, "quest-log.py")
+        os.makedirs(hooks_dir)
+        for path, body in [("quest-log.py", script("quest-log")), *library_files()]:
+            full = os.path.join(hooks_dir, *path.split("/"))
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            with open(full, "w", encoding="utf-8") as handle:
+                handle.write(body)
         self.root = os.path.join(self.tmp, "repo")
         os.makedirs(self.root)
         with open(os.path.join(self.root, "app.py"), "w", encoding="utf-8") as handle:

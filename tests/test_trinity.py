@@ -19,6 +19,8 @@ import time
 import unittest
 from unittest import mock
 
+from hookscaffold import deploy_library
+
 SRC = os.path.join(os.path.dirname(__file__), "..", "src", "asgard", "hooks")
 QLOG = os.path.abspath(os.path.join(SRC, "quest_log.py"))
 GATE = os.path.abspath(os.path.join(SRC, "verifier_gate.py"))
@@ -398,13 +400,15 @@ class TestQuestLog(TrinityBase):
         self.assertEqual(self.qlog("close").returncode, 1)
 
     def test_ignored_enumeration_failure_blocks_open_and_close(self):
+        # 스냅샷은 선언된 산출물에만 걸린다 (artifact_scope) — 열거 실패도 그 자리에서만 판정된다.
+        from asgard_hooklib import scope as scope_module
+
         from asgard.hooks import quest_log, verifier_gate
 
-        # 스냅샷은 선언된 산출물에만 걸린다 (artifact_scope) — 열거 실패도 그 자리에서만 판정된다.
         marker = {"<snapshot-unavailable>": "ignored-enumeration-failed"}
-        with mock.patch.object(quest_log, "git", return_value=(1, b"")):
+        # 패치는 열거를 실제로 도는 자리에 건다 — 두 훅은 그 함수를 재수출할 뿐이다.
+        with mock.patch.object(scope_module, "git", return_value=(1, b"")):
             self.assertEqual(quest_log.ignored_state(self.root, ("workspace",)), marker)
-        with mock.patch.object(verifier_gate, "git", return_value=(1, b"")):
             self.assertEqual(verifier_gate.ignored_state(self.root, ("workspace",)), marker)
 
         with (
@@ -498,7 +502,7 @@ class TestQuestLog(TrinityBase):
         self.open_quest()
         self.write("app.py", "print('ok')\n")
         self.verify()
-        real_write_pointer = quest_log._write_pointer
+        real_write_pointer = quest_log.write_pointer
 
         def fail_last(path, qid):
             if path.endswith(".last") or os.path.basename(path) == "LAST":
@@ -508,7 +512,7 @@ class TestQuestLog(TrinityBase):
         stdout, stderr = io.StringIO(), io.StringIO()
         with mock.patch.dict(os.environ, {"CLAUDE_PROJECT_DIR": self.root}):
             with mock.patch.object(sys, "argv", ["quest_log.py", "close", "q1", "--session", "s1"]):
-                with mock.patch.object(quest_log, "_write_pointer", side_effect=fail_last):
+                with mock.patch.object(quest_log, "write_pointer", side_effect=fail_last):
                     with mock.patch("sys.stdout", stdout), mock.patch("sys.stderr", stderr):
                         rc = quest_log.main()
         self.assertEqual(rc, 1)
@@ -602,13 +606,14 @@ class TestQuestLog(TrinityBase):
         self.assertEqual(state["diff_hash"], before)
         self.assertFalse(state["pass_hash_match"])
 
+        from asgard_hooklib import scope as scope_module
+
         from asgard.hooks import quest_log, verifier_gate
 
         link = os.path.join(self.root, ".asgard", "map", "area.md")
-        with mock.patch.object(quest_log.os, "open", side_effect=AssertionError("external target opened")):
-            self.assertIn(os.fsencode(outside), quest_log.symlink_map_state(link))
-        with mock.patch.object(verifier_gate.os, "open", side_effect=AssertionError("external target opened")):
-            self.assertIn(os.fsencode(outside), verifier_gate.symlink_map_state(link))
+        with mock.patch.object(scope_module.os, "open", side_effect=AssertionError("external target opened")):
+            self.assertIn(os.fsencode(outside), scope_module.symlink_map_state(link))
+        self.assertIs(verifier_gate.diff_state, quest_log.diff_state)  # 같은 판정을 두 훅이 나눠 갖지 않는다
 
     def test_gate_blocks_map_symlink_added_after_clean_pass(self):
         self.open_quest()
@@ -1224,6 +1229,7 @@ class TestFailureEscalation(TrinityBase):
         os.makedirs(hooks, exist_ok=True)
         shutil.copy2(TRACKER, os.path.join(hooks, "failure-tracker.py"))
         shutil.copy2(os.path.join(SRC, "quest_log.py"), os.path.join(hooks, "quest-log.py"))
+        deploy_library(hooks)  # 배포본 배치 — 훅 옆에 공용 라이브러리가 함께 선다
         payload = {
             "tool_name": "Bash",
             "session_id": "s1",
@@ -1644,9 +1650,10 @@ class TestDetectChecks(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = self.tmp.name
-        from asgard.hooks import quest_log
+        from asgard_hooklib import runners
 
-        self.detect = quest_log.detect_checks
+        self.runners = runners
+        self.detect = runners.detect_checks
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -1714,8 +1721,8 @@ class TestDetectChecks(unittest.TestCase):
         `templates/worker.py` 에 적은 Filesystem 결정론 규칙을 시험 자신이 어기게 된다."""
         with (
             self.which("uv", "mvn"),
-            mock.patch("asgard.hooks.quest_log._maven_local_repo", return_value=local_repo),
-            mock.patch("asgard.hooks.quest_log._runner_starts", return_value=runner_starts),
+            mock.patch("asgard_hooklib.runners._maven_local_repo", return_value=local_repo),
+            mock.patch("asgard_hooklib.runners._runner_starts", return_value=runner_starts),
         ):
             yield
 
@@ -1742,13 +1749,12 @@ class TestDetectChecks(unittest.TestCase):
 
     def test_detected_jvm_commands_pass_the_deterministic_lane(self):
         """감지 레인과 검증 레인이 같은 답을 들어야 한다 — 내준 명령이 게이트를 세워야 한다."""
-        from asgard.hooks import quest_log
 
         self.module("svc", gradlew=True)
         with self.which("uv"):
             for cmd in self.detect(self.root, {}):
-                self.assertTrue(quest_log.jvm_behavior_check(cmd), cmd)
-            self.assertTrue(quest_log.gate_first_checks_available(self.root, {}))
+                self.assertTrue(self.runners.jvm_behavior_check(cmd), cmd)
+            self.assertTrue(self.runners.gate_first_checks_available(self.root, {}))
 
     def test_explicit_policy_wins(self):
         self.touch("uv.lock")
@@ -1791,12 +1797,11 @@ class TestDetectChecks(unittest.TestCase):
             self.assertFalse(self.accepted(cmd), cmd)
 
     def test_rejected_checks_are_reported_rather_than_dropped_in_silence(self):
-        from asgard.hooks import quest_log
 
         policy = {"baseline_checks": ["pytest -q", "./evil.sh", "bash -c pytest"]}
-        self.assertEqual(quest_log.rejected_checks(policy), ["./evil.sh", "bash -c pytest"])
-        self.assertEqual(quest_log.configured_checks(policy)[0], ["pytest -q"])
-        self.assertEqual(quest_log.rejected_checks({"baseline_checks": ["pytest -q"]}), [])
+        self.assertEqual(self.runners.rejected_checks(policy), ["./evil.sh", "bash -c pytest"])
+        self.assertEqual(self.runners.configured_checks(policy)[0], ["pytest -q"])
+        self.assertEqual(self.runners.rejected_checks({"baseline_checks": ["pytest -q"]}), [])
 
     # ── JS/TS 레인 — 자동감지가 pytest 전용이던 탓에 JS 저장소는 하네스 실행 증거가 통째로 꺼져
     #    있었다 (26-07-26 helios 실측). 의존성이 설치된 경우에만 감지 — 미설치 러너 실패(exit 1)는
@@ -1836,17 +1841,15 @@ class TestDetectChecks(unittest.TestCase):
             self.assertEqual(self.detect(self.root, {}), ["pytest -x -q"])
 
     def test_node_test_counts_as_a_behavior_runner(self):
-        from asgard.hooks import quest_log
 
         self.package({"test": "vitest run"}, "pnpm-lock.yaml")
         with self.which("pnpm", "npm"):
-            self.assertTrue(quest_log.gate_first_checks_available(self.root, {}))
+            self.assertTrue(self.runners.gate_first_checks_available(self.root, {}))
 
     # ── JVM 레인 — 서비스마다 래퍼를 두는 모노레포는 루트에 gradlew 가 없다 (26-08-04 hvami-mono:
     #    gradlew 3개가 전부 하위 디렉터리). 안전 표와 게이트-우선 판정이 같은 자를 써야 설정이
     #    통과했는데 레인은 안 서는 상태가 안 생긴다.
     def test_jvm_wrappers_are_accepted_at_any_depth_inside_the_repository(self):
-        from asgard.hooks import quest_log
 
         for cmd in (
             "./gradlew test",
@@ -1859,11 +1862,10 @@ class TestDetectChecks(unittest.TestCase):
             "./gradlew test --tests SomeTest",  # 필터가 붙어도 태스크는 돈다
         ):
             policy = {"baseline_checks": [cmd]}
-            self.assertEqual(quest_log.configured_checks(policy)[0], [cmd], cmd)
-            self.assertTrue(quest_log.gate_first_checks_available(self.root, policy), cmd)
+            self.assertEqual(self.runners.configured_checks(policy)[0], [cmd], cmd)
+            self.assertTrue(self.runners.gate_first_checks_available(self.root, policy), cmd)
 
     def test_jvm_runners_outside_the_repository_or_without_a_test_task_are_refused(self):
-        from asgard.hooks import quest_log
 
         for cmd in (
             "/opt/evil/gradlew test",  # 저장소 밖 실행 파일
@@ -1882,9 +1884,9 @@ class TestDetectChecks(unittest.TestCase):
             "mvn verify -Dmaven.test.skip=true",
         ):
             policy = {"baseline_checks": [cmd]}
-            self.assertEqual(quest_log.configured_checks(policy)[0], [], cmd)
-            self.assertIn(cmd, quest_log.rejected_checks(policy), cmd)
-            self.assertFalse(quest_log.gate_first_checks_available(self.root, policy), cmd)
+            self.assertEqual(self.runners.configured_checks(policy)[0], [], cmd)
+            self.assertIn(cmd, self.runners.rejected_checks(policy), cmd)
+            self.assertFalse(self.runners.gate_first_checks_available(self.root, policy), cmd)
 
 
 class TestStandardTransition(TrinityBase):
@@ -2756,6 +2758,47 @@ class TestSubagentGate(TrinityBase):
             name = fname.removesuffix(".md")
             self.assertIn(name, AGENT_TARGETS, f"{name} 이 위임 표에 없어 무제한이다")
 
+    def test_the_delegation_table_satisfies_its_two_invariants(self):
+        """표가 아니라 불변식이 경계다 — 항목을 손으로 넓히면 오탐과 구멍이 번갈아 난다.
+
+        층위 단조가 재귀·순환·무한 깊이를 한꺼번에 막고, 읽기 봉인이 검증 독립성을 진다."""
+        from asgard.hooks.subagent_gate import closure_violations
+
+        self.assertEqual(closure_violations(), [])
+
+    def test_every_specialist_can_open_its_own_dispatch(self):
+        """ "각 서브에이전트가 스스로 에이전트를 부른다" 는 계약 — ullr 만 종점이다."""
+        from asgard.hooks.subagent_gate import AGENT_RANK, AGENT_TARGETS
+
+        terminal = [name for name, targets in AGENT_TARGETS.items() if not targets]
+        self.assertEqual(terminal, ["asgard-ullr"])
+        # 사슬 길이는 층위 수가 못박는다 — 깊이 카운터가 없는 것이 여기서 안전한 이유다.
+        self.assertEqual(max(AGENT_RANK.values()) - min(AGENT_RANK.values()), 4)
+
+    def test_a_specialist_dispatches_downward_but_never_sideways(self):
+        """thor → loki 는 통과, thor → thor 는 거절 — 같은 층끼리 못 부르는 것이 재귀를 끊는다."""
+        self.open_quest()
+        for agent, target in (
+            ("asgard-thor", "asgard-loki"),
+            ("asgard-freyja", "asgard-ullr"),
+            ("asgard-eitri", "asgard-mimir"),
+            ("asgard-loki", "asgard-ullr"),
+            ("asgard-mimir", "asgard-ullr"),
+        ):
+            p = self.sg(agent, event="PreToolUse", tool_input={"subagent_type": target, "prompt": "go"})
+            self.assertEqual(p.returncode, 0, f"{agent} → {target} 이 막혔다: {p.stderr}")
+        for agent, target in (
+            ("asgard-thor", "asgard-thor"),
+            ("asgard-thor", "asgard-thor-lead"),
+            ("asgard-freyja", "asgard-freyja"),
+            ("asgard-loki", "asgard-loki"),
+            ("asgard-ullr", "asgard-ullr"),
+            ("asgard-ullr", "asgard-loki"),
+            ("asgard-mimir", "asgard-thor"),
+        ):
+            p = self.sg(agent, event="PreToolUse", tool_input={"subagent_type": target, "prompt": "go"})
+            self.assertEqual(p.returncode, 2, f"{agent} → {target} 이 통과했다")
+
     def test_read_only_roles_cannot_dispatch_a_write_capable_hand(self):
         """검증 독립성은 판정자가 고치는 손을 못 부르는 데서 나온다 — 계획자도 같다."""
         self.open_quest()
@@ -3111,9 +3154,15 @@ class TestSubagentGate(TrinityBase):
             )
             self.assertEqual(denied.returncode, 2, target)
 
-    def test_sub_thor_dispatch_fully_sealed(self):
+    def test_sub_thor_cannot_form_a_squad_of_its_own(self):
+        """sub-Thor 는 아래층 읽기 전용만 연다 — 편대의 편대도, 옆 표면의 쓰기 손도 못 부른다."""
         self.open_quest()
-        for target in ("asgard-thor", "asgard-loki", "asgard-freyja", ""):
+        for target in ("asgard-loki", "asgard-ullr", "asgard-mimir"):
+            allowed = self.sg(
+                "asgard-thor", event="PreToolUse", tool_input={"subagent_type": target, "prompt": "nested"}
+            )
+            self.assertEqual(allowed.returncode, 0, allowed.stderr)
+        for target in ("asgard-thor", "asgard-thor-lead", "asgard-freyja", "asgard-eitri", ""):
             denied = self.sg(
                 "asgard-thor", event="PreToolUse", tool_input={"subagent_type": target, "prompt": "nested"}
             )
@@ -3468,29 +3517,54 @@ class TestPipelineVerification(TrinityBase):
 
 
 class TestGateCopyParity(TrinityBase):
-    """게이트 사본이 로그 정본과 같은 답을 내는가 — 같은 트리에 두 코드를 나란히 세워 본다."""
+    """게이트와 로그가 같은 판정을 쓰는가 — 이제 '같은 답'이 아니라 '같은 함수'를 본다.
 
-    def test_stale_pass_scope_agrees_across_both_copies(self):
-        """반환 형상까지 같아야 한다. 첫 값이 목록에서 bool 로 되돌아가면 게이트의 `stale[:10]` 이
-        TypeError 로 죽고, 훅 계약이 fail-open 이라 그 죽음은 조용하다 — 판정 없이 통과한다."""
-        from asgard.hooks import quest_log, verifier_gate
+    26-08-06 까지 이 자리는 두 사본을 나란히 세워 답을 대조했다. 대조가 통과해도 사본은 사본이라
+    다음 편집에서 다시 갈라졌고, 실제로 공유 정의 49개 중 9개가 갈라져 있었다. 판정 기반이
+    `asgard_hooklib` 한 자리로 간 뒤로 대조할 두 답이 없다 — 대신 두 훅이 그 한 자리를 가리키는지
+    본다. 이름 하나가 다시 사본으로 돌아오면 여기서 걸린다."""
+
+    # 이름은 같은데 물건이 달라도 되는 자리 — 각 훅이 자기 진입점과 자기 폴더를 갖는다.
+    OWN = {"main", "_HOOK_DIR"}
+
+    def test_no_name_is_shared_by_copy(self):
+        """두 훅이 같은 이름을 들고 있으면 그것은 **같은 물건**이어야 한다.
+
+        목록을 손으로 적지 않는 이유는 그 목록이 낡기 때문이다 — 26-08-04 에 새로 복제된 넷이
+        어떤 목록에도 안 올라가 주석으로만 묶여 있었다. 교집합 전수를 보면 새 사본은 생기는
+        순간 걸린다."""
+        from asgard.hooks import quest_log, subagent_gate, verifier_gate
+
+        for left, right in ((quest_log, verifier_gate), (quest_log, subagent_gate)):
+            names = {n for n in vars(left) if not n.startswith("__")} & {
+                n for n in vars(right) if not n.startswith("__")
+            }
+            shared = sorted(names - self.OWN)
+            self.assertTrue(shared, f"{left.__name__}↔{right.__name__} — 공유 이름이 하나도 없다")
+            for name in shared:
+                self.assertIs(
+                    getattr(left, name),
+                    getattr(right, name),
+                    f"{name} — {left.__name__} 와 {right.__name__} 가 각자의 사본을 들었다",
+                )
+
+    def test_stale_pass_scope_keeps_its_return_shape(self):
+        """반환 형상은 여전히 시험 대상이다. 첫 값이 목록에서 bool 로 되돌아가면 게이트의
+        `stale[:10]` 이 TypeError 로 죽고, 훅 계약이 fail-open 이라 그 죽음은 조용하다 —
+        판정 없이 통과한다."""
+        from asgard_hooklib.scope import reconcile_ignored
+        from asgard_hooklib.tree import stale_pass_scope
 
         self.open_quest()
         self.write("app.py", "print('ok')\n")
         events = [{"role": "worker", "event": "work", "changed_files": ["app.py"]}]
         last_pass = {"tree_ref": "", "changed_files": ["app.py"]}  # tree_ref 없음 = fail-safe 갈래
-        self.assertEqual(
-            quest_log.stale_pass_scope(self.root, last_pass, events, ["app.py"]),
-            verifier_gate.stale_pass_scope(self.root, last_pass, events, ["app.py"]),
-        )
-        digests = []
-        for module in (quest_log, verifier_gate):
-            digest = hashlib.sha256()
-            changed = module.reconcile_ignored(
-                self.root, {"build/out.o": "1", "src/kept.py": "1"}, digest, ("build", "src")
-            )
-            digests.append((changed, digest.hexdigest()))
-        self.assertEqual(digests[0], digests[1])
+        stale, drift = stale_pass_scope(self.root, last_pass, events, ["app.py"])
+        self.assertIsInstance(stale, list)
+        self.assertIsInstance(drift, list)
+        digest = hashlib.sha256()
+        changed = reconcile_ignored(self.root, {"build/out.o": "1", "src/kept.py": "1"}, digest, ("build", "src"))
+        self.assertIsInstance(changed, list)
 
 
 class TestPolicyMirror(unittest.TestCase):
@@ -3517,55 +3591,79 @@ class TestPolicyMirror(unittest.TestCase):
             self.assertIn(key, quest_log.DEFAULT_POLICY)
             self.assertEqual(value, quest_log.DEFAULT_POLICY[key], key)
 
-    def test_verifier_gate_shared_helpers_answer_like_quest_log(self):
-        """두 훅이 같은 이름으로 품은 판정 함수는 같은 입력에 같은 답을 내야 한다.
+    def test_verifier_gate_shares_quest_logs_helpers(self):
+        """두 훅이 같은 이름으로 품던 판정 함수 — 이제 같은 객체다.
 
-        verifier_gate 는 자기완결 배포라 quest_log 를 임포트하지 못하고 사본을 가진다. 사본이
-        갈라지면 게이트가 센 diff 해시와 로그가 적은 해시가 달라져 PASS 가 영구 stale 이 된다.
-        봉인은 DEFAULT_POLICY 하나뿐이라, 26-08-04 에 새로 복제된 넷은 주석으로만 묶여 있었다.
-        본문 대조가 아니라 답 대조인 이유는 두 사본의 표기가 원래 다르기 때문이다 — 훅 사본은
-        3.9 에서도 파싱돼야 해서 타입 주석을 안 단다."""
+        사본이던 시절 이 시험은 '같은 입력에 같은 답'을 봤다. 그 대조는 통과하면서도 사본을
+        사본으로 남겨 뒀고, 26-08-04 에 새로 복제된 넷은 주석으로만 묶여 있었다. 갈라지면
+        게이트가 센 diff 해시와 로그가 적은 해시가 달라져 PASS 가 영구 stale 이 된다."""
         from asgard.hooks import quest_log, verifier_gate
 
-        self.assertEqual(quest_log._GENERATED_DIRS, verifier_gate._GENERATED_DIRS)
-        self.assertEqual(quest_log.UNSCOPED_DRIFT, verifier_gate.UNSCOPED_DRIFT)
-        paths = [
-            "target/debug/app",  # 무시 산출물 — 양쪽 다 제외
-            "build/x.py",
-            "src/app.py",  # 평범한 소스 — 양쪽 다 포함
-            "coverage/lcov.info",
-            "src/__pycache__/app.pyc",
-            "notbuild/app.py",  # 세그먼트 경계 — 접두사만 겹치는 이름은 산출물이 아니다
-        ]
-        for path in paths:
-            self.assertEqual(quest_log._generated(path), verifier_gate._generated(path), path)
+        self.assertIs(quest_log.host_session_id, verifier_gate.host_session_id)
+        self.assertIs(quest_log.DEFAULT_POLICY, verifier_gate.DEFAULT_POLICY)
+        self.assertIs(quest_log.diff_state, verifier_gate.diff_state)
+
+    def test_generated_paths_stop_at_a_segment_boundary(self):
+        """산출물 판정의 경계 — 접두사만 겹치는 이름을 산출물로 세면 소스가 해시에서 사라진다."""
+        from asgard_hooklib.paths import is_generated
+
+        for path in ("target/debug/app", "build/x.py", "coverage/lcov.info", "src/__pycache__/app.pyc"):
+            self.assertTrue(is_generated(path), path)
+        for path in ("src/app.py", "notbuild/app.py"):
+            self.assertFalse(is_generated(path), path)
+
+    def test_host_session_id_reads_every_client(self):
+        from asgard_hooklib.session import host_session_id
+
         for name in ("CLAUDE_CODE_SESSION_ID", "CLAUDE_SESSION_ID", "CURSOR_SESSION_ID", "CODEX_SESSION_ID"):
             with mock.patch.dict(os.environ, {name: "sid-" + name}, clear=True):
-                self.assertEqual(quest_log.host_session_id(), verifier_gate.host_session_id(), name)
+                self.assertEqual(host_session_id(), "sid-" + name, name)
         with mock.patch.dict(os.environ, {}, clear=True):
-            self.assertEqual(quest_log.host_session_id(), verifier_gate.host_session_id())
+            self.assertTrue(host_session_id())
 
-    def test_subagent_gate_verifiable_units_mirrors_quest_log(self):
-        from asgard.hooks import quest_log, subagent_gate
+    def test_pipeline_eligibility_has_one_definition_and_one_ticket_shape(self):
+        """조기 검증 적격 판정 — 함수도 하나, 티켓 형상도 하나.
+
+        26-08-06 까지 subagent-gate 는 자기 `verifiable_units` 사본과 자기 티켓 뷰를 갖고 있었고,
+        그 뷰는 단위 식별자를 `unit` 으로, 로그 정본(`fold_tickets`)은 `id` 로 적었다. 같은 개념에
+        키가 둘이라 이 시험은 한쪽 입력을 손으로 번역해 대조하고 있었다 — 그 번역이 사라졌다."""
+        from asgard_hooklib.ledger import fold_tickets, verifiable_units
+
+        from asgard.hooks import subagent_gate
+
+        self.assertIs(subagent_gate.verifiable_units, verifiable_units)
+        self.assertIs(subagent_gate.fold_tickets, fold_tickets)
 
         cases = [
-            [{"unit": 1, "status": "done", "files": ["a.py"]}, {"unit": 2, "status": "todo", "files": ["b.py"]}],
-            [
-                {"unit": 1, "status": "done", "files": ["shared.py"]},
-                {"unit": 2, "status": "todo", "files": ["shared.py"]},
-            ],
-            [{"unit": 1, "status": "done", "files": ["a.py"]}, {"unit": 2, "status": "todo", "files": []}],
-            [
-                {"unit": 1, "status": "done", "files": ["./a.py"]},
-                {"unit": 2, "status": "in_progress", "files": ["a.py"]},
-            ],
+            ([{"id": 1, "status": "done", "files": ["a.py"]}, {"id": 2, "status": "todo", "files": ["b.py"]}], ["1"]),
+            # 열린 단위와 파일이 겹치면 done 이어도 아직 못 본다 (같은 파일을 두 판정이 나눠 갖는다)
+            (
+                [
+                    {"id": 1, "status": "done", "files": ["shared.py"]},
+                    {"id": 2, "status": "todo", "files": ["shared.py"]},
+                ],
+                [],
+            ),
+            # 파일을 안 밝힌 열린 단위가 있으면 겹침을 알 수 없다 → 아무도 조기 검증 못 한다
+            ([{"id": 1, "status": "done", "files": ["a.py"]}, {"id": 2, "status": "todo", "files": []}], []),
+            # 경로 표기 차이는 겹침을 못 피한다 (`./a.py` == `a.py`)
+            (
+                [
+                    {"id": 1, "status": "done", "files": ["./a.py"]},
+                    {"id": 2, "status": "in_progress", "files": ["a.py"]},
+                ],
+                [],
+            ),
         ]
-        for tickets in cases:
-            self.assertEqual(
-                quest_log.verifiable_units([{**t, "id": t["unit"]} for t in tickets]),
-                subagent_gate.verifiable_units(tickets),
-                tickets,
-            )
+        for tickets, expected in cases:
+            self.assertEqual(verifiable_units(tickets), expected, tickets)
+
+        # 게이트가 실제로 먹이는 형상 — 로그 이벤트를 접은 결과가 그대로 들어간다.
+        events = [
+            {"event": "ticket", "unit": 1, "ticket_status": "done", "changed_files": ["a.py"]},
+            {"event": "ticket", "unit": 2, "ticket_status": "todo", "changed_files": ["b.py"]},
+        ]
+        self.assertEqual(verifiable_units(list(fold_tickets(events).values())), ["1"])
 
 
 class TestNativeLoopTendsMemory(unittest.TestCase):
@@ -3585,34 +3683,36 @@ class TestNativeLoopTendsMemory(unittest.TestCase):
         run._hd = types.SimpleNamespace(root="/repo", on_text=out.append)
         return run
 
-    def _run(self, norn_line, pattern_line):
+    def _run(self, norn_line, pattern_line, project_line=None):
         out: list[str] = []
         with (
             mock.patch("asgard.memory.norn.wake", return_value=norn_line) as wake,
-            mock.patch("asgard.memory.pattern.nudge_line", return_value=pattern_line) as nudge,
+            mock.patch("asgard.memory.pattern.wake", return_value=pattern_line) as pattern_wake,
+            mock.patch("asgard.project_memory.evolve.wake", return_value=project_line) as project_wake,
         ):
             self._bare_run(out)._tend_memory()
-        return out, wake, nudge
+        return out, wake, pattern_wake, project_wake
 
-    def test_both_signals_reach_the_user(self):
-        out, wake, nudge = self._run("노른 통합 시작", "패턴 학습 대기")
-        self.assertEqual(wake.call_args[0][0], "/repo")
-        self.assertEqual(nudge.call_args[0][0], "/repo")
-        self.assertTrue(any("노른 통합 시작" in line for line in out))
-        self.assertTrue(any("패턴 학습 대기" in line for line in out))
+    def test_every_signal_reaches_the_user(self):
+        out, wake, pattern_wake, project_wake = self._run("노른 통합 시작", "관측 학습 시작", "2차 진화 시작")
+        for call in (wake, pattern_wake, project_wake):
+            self.assertEqual(call.call_args[0][0], "/repo")
+        for line in ("노른 통합 시작", "관측 학습 시작", "2차 진화 시작"):
+            self.assertTrue(any(line in shown for shown in out), line)
 
     def test_silence_is_the_normal_outcome(self):
-        out, _wake, _nudge = self._run(None, None)
+        out, *_calls = self._run(None, None, None)
         self.assertEqual(out, [])
 
     def test_a_broken_signal_never_blocks_quest_close(self):
         out: list[str] = []
         with (
             mock.patch("asgard.memory.norn.wake", side_effect=RuntimeError("boom")),
-            mock.patch("asgard.memory.pattern.nudge_line", return_value="패턴 학습 대기"),
+            mock.patch("asgard.memory.pattern.wake", return_value="관측 학습 시작"),
+            mock.patch("asgard.project_memory.evolve.wake", return_value=None),
         ):
             self._bare_run(out)._tend_memory()  # 던지면 퀘스트 종료가 막힌다
-        self.assertTrue(any("패턴 학습 대기" in line for line in out))  # 성한 신호는 계속 온다
+        self.assertTrue(any("관측 학습 시작" in line for line in out))  # 성한 신호는 계속 온다
 
 
 if __name__ == "__main__":

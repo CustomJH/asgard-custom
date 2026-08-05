@@ -10,14 +10,16 @@ import subprocess
 import sys
 import time
 
-MODES = {"claude-code", "codex", "cursor"}
+# 주입 스키마는 훅과 함께 깔리는 공용 라이브러리가 쥔다 — 이 훅이 정하는 것은 어느 이벤트에
+# 무엇을 실을지(정책)뿐이다.
+_HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
+if _HOOK_DIR not in sys.path:
+    sys.path.append(_HOOK_DIR)
+
+from asgard_hooklib.inject import client, emit_context  # noqa: E402
+
 NEVER_INJECT = {"asgard-verifier", "asgard-loki"}
 REFRESH_SECONDS = 6 * 60 * 60
-
-
-def mode():
-    raw = str(sys.argv[1] if len(sys.argv) > 1 else "claude-code")
-    return raw if raw in MODES else "claude-code"
 
 
 def event(data):
@@ -48,26 +50,6 @@ def query(data):
     return str(
         data.get("prompt") or tool_input.get("prompt") or tool_input.get("description") or tool_input.get("task") or ""
     ).strip()
-
-
-def emit(current_mode, current_event, text):
-    if current_mode == "cursor":
-        sys.stdout.write(json.dumps({"additional_context": text}, ensure_ascii=False) + "\n")
-    elif current_event in {"UserPromptSubmit", "SubagentStart"}:
-        sys.stdout.write(
-            json.dumps(
-                {
-                    "hookSpecificOutput": {
-                        "hookEventName": current_event,
-                        "additionalContext": text,
-                    }
-                },
-                ensure_ascii=False,
-            )
-            + "\n"
-        )
-    else:
-        sys.stdout.write(text + "\n")
 
 
 def maintain(exe, root, stop=False):
@@ -116,7 +98,7 @@ def main():
     except Exception:
         data = {}
     try:
-        current_mode = mode()
+        current_mode = client()
         current_event = event(data)
         current_agent = agent(data)
         if current_agent in NEVER_INJECT:
@@ -138,7 +120,7 @@ def main():
         )
         note = (result.stdout or "").strip()
         if result.returncode == 0 and note:
-            emit(current_mode, current_event, note)
+            emit_context(current_mode, note, current_event)
     except Exception:
         pass
     return 0

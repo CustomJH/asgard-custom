@@ -32,6 +32,13 @@ for _stream in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
+# 주입 스키마는 훅과 함께 깔리는 공용 라이브러리가 쥔다. 이 훅에 남는 정책은 Stop 갈래 하나다 —
+# 되짚기 문장은 컨텍스트가 아니라 사람에게 보이는 채널로 나간다 (systemMessage/followup_message).
+_HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
+if _HOOK_DIR not in sys.path:
+    sys.path.append(_HOOK_DIR)
+
+from asgard_hooklib.inject import emit_context  # noqa: E402
 
 NEVER_INJECT = ("asgard-verifier", "asgard-loki")  # 게이트·반례 탐색 오염 방지 — 매처가 바뀌어도 불변
 MODES = {"claude-code", "codex", "cursor"}
@@ -250,8 +257,11 @@ def main():
             preview = str((result.get("proposal") or {}).get("preview") or "")
             if preview:
                 messages.append("⠶ Project memory approval proposal\n" + preview)
-            # 턴 끝 넛지 넷 — 자가발전·노른 wake·패턴 학습·시맨틱 준비. 판정과 latch 는 전부
-            # CLI 소유고 (`asgard memory tick`), 훅은 낸 줄을 전달만 한다. 넷을 각각 띄우던
+            automation = str(result.get("automation") or "").strip()
+            if automation:
+                messages.append("⠶ " + automation)
+            # 턴 끝 신호 — 자가발전·노른·패턴·2차 진화·프로젝트 학습·시맨틱 준비. 판정과 latch는
+            # 전부 CLI 소유고 (`asgard memory tick`), 훅은 낸 줄을 전달만 한다. 넷을 각각 띄우던
             # 동안 값의 대부분이 인터프리터 부팅이었다 — 26-08-04 실측 460ms → 218ms.
             try:
                 n = subprocess.run(
@@ -281,23 +291,7 @@ def main():
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=10, encoding="utf-8", errors="replace")
         note = (r.stdout or "").strip()
         if r.returncode == 0 and note:
-            if mode == "cursor":
-                sys.stdout.write(json.dumps({"additional_context": note}, ensure_ascii=False) + "\n")
-            elif event == "UserPromptSubmit":
-                sys.stdout.write(
-                    json.dumps(
-                        {
-                            "hookSpecificOutput": {
-                                "hookEventName": "UserPromptSubmit",
-                                "additionalContext": note,
-                            }
-                        },
-                        ensure_ascii=False,
-                    )
-                    + "\n"
-                )
-            else:
-                sys.stdout.write(note + "\n")
+            emit_context(mode, note, event)
     except Exception:
         pass  # fail-open — 메모리 불능이 세션을 막지 않는다
     sys.exit(0)

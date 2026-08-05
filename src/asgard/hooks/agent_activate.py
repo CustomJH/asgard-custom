@@ -27,6 +27,13 @@ for _stream in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
+# 주입 스키마는 훅과 함께 깔리는 공용 라이브러리가 쥔다 — 아홉 훅이 같은 JSON 리터럴을 손으로
+# 적던 자리다 (스키마 오타는 호스트가 조용히 버려서 주입이 통째로 사라진다).
+_HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
+if _HOOK_DIR not in sys.path:
+    sys.path.append(_HOOK_DIR)
+
+from asgard_hooklib.inject import client, emit_context  # noqa: E402
 
 # profiles.py 상수와 동일 유지
 DEFAULT = "default"
@@ -189,29 +196,6 @@ def label_for(name):
     return display if display == name else "%s (%s)" % (display, name)
 
 
-CLIENTS = {"claude-code", "codex", "cursor"}
-
-
-def client():
-    raw = str(sys.argv[1] if len(sys.argv) > 1 else "claude-code")
-    return raw if raw in CLIENTS else "claude-code"
-
-
-def emit(current_client, agent, text):
-    """주입 스키마는 클라이언트마다 다르다 — manual/charter/map-activate와 동일 유지 (단일 규약)."""
-    if current_client == "cursor":
-        sys.stdout.write(json.dumps({"additional_context": text}, ensure_ascii=False) + "\n")
-    elif agent:  # SubagentStart — JSON additionalContext
-        sys.stdout.write(
-            json.dumps(
-                {"hookSpecificOutput": {"hookEventName": "SubagentStart", "additionalContext": text}},
-                ensure_ascii=False,
-            )
-        )
-    else:  # SessionStart/UserPromptSubmit — 평문 stdout
-        sys.stdout.write(text)
-
-
 def main():
     try:
         data = json.load(sys.stdin)
@@ -230,7 +214,7 @@ def main():
         body = note(name)
         if not body:
             sys.exit(0)  # 정체성 미작성 — 무개입 (프롬프트가 이 계층 도입 전과 같다)
-        emit(current, agent_type, "[agent]\n\n%s" % body)
+        emit_context(current, "[agent]\n\n%s" % body, "SubagentStart" if agent_type else "SessionStart")
     except Exception:
         pass  # fail-open — 어떤 실패도 세션을 막지 않는다
     sys.exit(0)

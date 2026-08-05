@@ -49,6 +49,9 @@ import os
 import unittest
 
 SRC = os.path.join(os.path.dirname(__file__), "..", "src", "asgard")
+# 훅과 같은 폴더에 함께 깔리는 공용 라이브러리의 이름. 이름이 곧 임포트 경로라서 상수로 둔다 —
+# 여기와 `hooks/__init__.py` 의 `LIBRARY` 가 어긋나면 배포본이 임포트에서 죽는다.
+HOOK_LIBRARY = "asgard_hooklib"
 
 LAYERS: list[tuple[str, frozenset[str]]] = [
     (
@@ -133,6 +136,9 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 "thor_rules",
                 "thor_lex",
                 "tutor",
+                # review_agent — 튜터 사실을 입력으로 삼되, 오딘 승인 뒤에만 제안을 저장하는
+                # 선택형 리뷰 층. 모델 호출은 함수 안 lazy라 domain 경계를 올리지 않는다.
+                "review_agent",
                 "tutor_probes",
                 "tutor_growth",
                 # tutor_debt — 인지적 항복의 신호를 세는 계량기. tutor_growth(기록)만 읽고
@@ -315,6 +321,8 @@ SUBTIERS: dict[str, list[tuple[str, frozenset[str]]]] = {
         ("판정", frozenset({"craft", "tutor_teach"})),
         # 결론을 소비한다 — 막고(thor_gate·freyja_gate) 고치고(craft_fix) 되짚는다(tutor).
         ("적용", frozenset({"craft_fix", "freyja_gate", "thor_gate", "tutor"})),
+        # 적용 결과와 튜터의 결정론적 사실을 읽어 승인형 제안 기록으로 만든다. 자동 적용은 없다.
+        ("승인형 제안", frozenset({"review_agent"})),
     ],
     "application": [("실행", frozenset({"agent"}))],
     "interface": [
@@ -352,7 +360,9 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
         ("바닥", frozenset({"policy", "fence", "temporal"})),
         ("저장", frozenset({"store", "manager"})),
         # 저장 위의 파생 — 색인·계기·vault·외부 포맷 어댑터. 지워도 정본에서 다시 만든다.
-        ("파생", frozenset({"index", "usage", "vault", "okf"})),
+        # graph — 페이지의 링크를 인접 리스트로 펴는 자리. 같은 성격이다: 정본에서 매번
+        # 다시 만들고, 지워도 답이 안 바뀐다.
+        ("파생", frozenset({"index", "usage", "vault", "okf", "graph"})),
         ("회수", frozenset({"recall"})),
         ("조립", frozenset({"assemble", "pages"})),
         ("쓰기", frozenset({"propose", "contradiction"})),
@@ -433,7 +443,20 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
         (
             "그룹",
             frozenset(
-                {"root", "agent", "map", "role", "siege", "skills", "memory", "ticket", "evolve", "office", "k6"}
+                {
+                    "root",
+                    "review",
+                    "agent",
+                    "map",
+                    "role",
+                    "siege",
+                    "skills",
+                    "memory",
+                    "ticket",
+                    "evolve",
+                    "office",
+                    "k6",
+                }
             ),
         ),
         ("파사드", frozenset({"__init__", "__main__"})),
@@ -484,6 +507,8 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
                     # 자기는 설정만 읽고 쓰지만 저장소 뿌리를 health 에서 받아 온다.
                     "orchestrate",
                     "plan_api",
+                    # review — health의 프로젝트 경계와 review_agent 도메인을 조립하는 승인 표면.
+                    "review",
                     # siege(장부 읽기)·siege_act(장부 몰기) — 형제를 안 부른다. 둘 다 저장소 뿌리를
                     # health 에서 직접 받으므로 같은 등급이고, 그래서 서로를 부르면 빨개진다.
                     "siege",
@@ -511,7 +536,7 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
     # 위인 이유는 하나뿐이다 — 재색인 안내 문구를 `backends` 의 플래그에서 읽는다.
     "commands.memory": (
         ("바닥", frozenset({"_core"})),
-        ("표면", frozenset({"autosave", "backends", "evolution", "hygiene", "project"})),
+        ("표면", frozenset({"autosave", "backends", "evolution", "graph", "hygiene", "project"})),
         ("개인", frozenset({"personal"})),
         ("파사드", frozenset({"__init__"})),
     ),
@@ -525,9 +550,16 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
         ("파사드", frozenset({"__init__"})),
     ),
     "hooks": (
-        # 등급이 하나다 — 그게 배포 계약이다. 훅은 `.claude/hooks/`로 단일 파일 복사되므로 형제를
-        # 부르면 복사본에서 죽는다. 같은 등급끼리 금지라 임포트 하나만 생겨도 이 표가 잡는다
-        # (상대 임포트는 test_hooks_are_self_contained 가, 절대 임포트는 여기가 본다).
+        # 훅끼리는 여전히 서로를 안 부른다 — 그게 배포 계약이다. 훅은 `.claude/hooks/`로 복사되므로
+        # 형제를 이름으로 부르면 복사본에서 죽는다. 같은 등급끼리 금지라 임포트 하나만 생겨도 이
+        # 표가 잡는다 (상대 임포트는 test_hooks_are_self_contained 가, 절대 임포트는 여기가 본다).
+        #
+        # 아래 한 등급이 그 계약의 예외가 아니라 그 계약을 지키는 방법이다: `asgard_hooklib` 은
+        # 훅과 **같은 폴더에** 함께 깔리므로 배포본에서도 임포트가 선다. 다만 훅은 그것을 배포
+        # 이름(`import asgard_hooklib.…`)으로 부르지 `asgard.hooks.asgard_hooklib` 으로 부르지
+        # 않으므로 이 표의 엣지 추출기에는 그 방향이 안 보인다. 보이지 않는 방향은 표가 아니라
+        # test_hook_library_only_leans_downward 가 지킨다.
+        ("라이브러리", frozenset({"asgard_hooklib"})),
         (
             "훅",
             frozenset(
@@ -556,6 +588,21 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
                 }
             ),
         ),
+        ("파사드", frozenset({"__init__"})),
+    ),
+    # 훅이 함께 지고 다니는 공용 라이브러리. 여기 등급은 실측 임포트 방향의 위상 정렬 그대로다
+    # (26-08-06: 엣지 26건, 순환 0). 이 패키지가 생긴 이유가 곧 이 표가 필요한 이유다 — 같은
+    # 코드가 훅 셋에 사본으로 살던 동안 49개 중 9개가 의미까지 갈라졌고, 사본에는 방향이 없었다.
+    "hooks.asgard_hooklib": (
+        # 아무것도 안 부른다 — 파일·git 원시 연산, 해시, 증거 술어, 정책 표.
+        # siege — 배차 장부에 한 줄 적으라고 CLI 프로세스를 띄우는 문. asgard 를 임포트하지
+        # 않는 것이 요점이라(배포 인터프리터에는 없다) 여기 바닥에 선다.
+        ("바닥", frozenset({"evidence", "inject", "integrity", "paths", "policy", "siege", "workspace"})),
+        # 바닥 하나씩만 얹는다. 서로는 안 부른다.
+        ("한 단", frozenset({"ledger", "runners", "scope", "session", "shell", "transition"})),
+        ("두 단", frozenset({"contracts", "readonly", "tickets", "tree"})),
+        # 실행과 관측 — `summary` 가 아래를 거의 다 부르는 유일한 자리다 (관측을 한 함수로 모은다).
+        ("조립", frozenset({"baseline", "summary"})),
         ("파사드", frozenset({"__init__"})),
     ),
     "map_graph": (
@@ -608,7 +655,7 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
         # backend IO 를 모르는 절반 — 정책·토큰화·합성.
         ("순수", frozenset({"records", "terms", "reflect"})),
         ("정본", frozenset({"canonical", "scan", "ingest", "documents"})),
-        ("파생", frozenset({"projection", "retain", "evolve", "learning"})),
+        ("파생", frozenset({"projection", "retain", "evolve", "learning", "automation"})),
         ("파사드", frozenset({"__init__"})),
     ),
     "studio": (
@@ -965,11 +1012,16 @@ class TestLayeredArchitecture(unittest.TestCase):
         )
 
     def test_hooks_are_self_contained(self):
-        """훅 배포 계약 — hooks/*.py는 단일 파일로 `.claude/hooks/`에 복사 배포된다.
+        """훅 배포 계약 — hooks/*.py는 `.claude/hooks/`에 복사 배포된다 (asgard 설치와 무관하게 돈다).
 
         따라서 asgard 임포트는 ① 상대 임포트 금지(복사본에서 즉사) ② 절대 `asgard.*` 임포트는
         try 블록 안 lazy만 허용(미설치 환경에서 fail-open 되는 선택적 강화 — 예: code_map 갱신,
-        quest 요약). 무방비 임포트가 하나라도 생기면 복사 배포본이 죽는다."""
+        quest 요약). 무방비 임포트가 하나라도 생기면 복사 배포본이 죽는다.
+
+        `asgard_hooklib` 은 이 금지의 예외가 아니다 — asgard 패키지가 아니라 훅과 **같은 폴더에**
+        함께 깔리는 사본이라서 배포본에서도 그대로 선다. 다만 저장소 안에서 임포트될 때를 위한
+        sys.path 부트스트랩이 그 파일에 함께 있어야 하고, 그 짝을 여기서 본다: 임포트만 있고
+        부트스트랩이 없으면 라이브러리 면(`asgard.hooks.<훅>`)이 ImportError 로 죽는다."""
         violations: list[str] = []
         hooks_dir = os.path.join(SRC, "hooks")
 
@@ -991,9 +1043,44 @@ class TestLayeredArchitecture(unittest.TestCase):
         for f in sorted(os.listdir(hooks_dir)):
             if not f.endswith(".py") or f == "__init__.py":
                 continue
-            tree = ast.parse(open(os.path.join(hooks_dir, f), encoding="utf-8").read())
-            scan(tree, f, guarded=False)
+            src = open(os.path.join(hooks_dir, f), encoding="utf-8").read()
+            scan(ast.parse(src), f, guarded=False)
+            if HOOK_LIBRARY in src and "sys.path.append(_HOOK_DIR)" not in src:
+                violations.append(f"hooks/{f} — {HOOK_LIBRARY} 를 부르는데 sys.path 부트스트랩이 없다")
         self.assertFalse(violations, "훅 자립 계약 위반:\n" + "\n".join(violations))
+
+    def test_hook_library_only_leans_downward(self):
+        """공용 라이브러리는 아래만 본다 — 훅을 부르지 않고 asgard 도 부르지 않는다.
+
+        이 방향은 PACKAGE_TIERS 가 못 본다: 훅은 라이브러리를 **배포 이름**(`asgard_hooklib.…`)
+        으로 부르므로 엣지 추출기가 `asgard.*` 로 인식하지 않는다. 그 사각을 여기서 막는다.
+        거꾸로 라이브러리가 훅 하나를 부르는 순간 배포본은 그 훅이 같이 깔릴 때만 살아나고,
+        훅 계약이 fail-open 이라 그 죽음은 조용하다. `asgard.*` 는 훅과 같은 조건으로만 허용한다:
+        try 안 lazy — 미설치 환경에서 조용히 꺼지는 선택적 강화(자가발전 채굴·배차 장부)."""
+        library_dir = os.path.join(SRC, "hooks", HOOK_LIBRARY)
+        hook_modules = {
+            f[:-3] for f in os.listdir(os.path.join(SRC, "hooks")) if f.endswith(".py") and f != "__init__.py"
+        }
+        violations: list[str] = []
+
+        def scan(node: ast.AST, fname: str, guarded: bool) -> None:
+            for child in ast.iter_child_nodes(node):
+                targets: list[str] = []
+                if isinstance(child, ast.ImportFrom) and child.level == 0:
+                    targets = [(child.module or "").split(".")[0]]
+                elif isinstance(child, ast.Import):
+                    targets = [a.name.split(".")[0] for a in child.names]
+                for target in targets:
+                    if target == "asgard" and not guarded:
+                        violations.append(f"{HOOK_LIBRARY}/{fname}:{child.lineno} — try 밖 asgard 임포트")
+                    elif target in hook_modules:
+                        violations.append(f"{HOOK_LIBRARY}/{fname}:{child.lineno} — 훅({target})을 부른다 (방향 역전)")
+                scan(child, fname, guarded or isinstance(child, ast.Try))
+
+        for f in sorted(os.listdir(library_dir)):
+            if f.endswith(".py"):
+                scan(ast.parse(open(os.path.join(library_dir, f), encoding="utf-8").read()), f, guarded=False)
+        self.assertFalse(violations, "공용 라이브러리 방향 위반:\n" + "\n".join(violations))
 
     def test_hooks_parse_on_old_python(self):
         """훅 문법 바닥 — hooks/*.py는 asgard의 venv가 아니라 그 기계가 내주는 파이썬으로 돈다.
@@ -1017,14 +1104,18 @@ class TestLayeredArchitecture(unittest.TestCase):
         floor = (3, 9)
         hooks_dir = os.path.join(SRC, "hooks")
         broken: list[str] = []
-        for f in sorted(os.listdir(hooks_dir)):
-            if not f.endswith(".py"):
-                continue
-            src = open(os.path.join(hooks_dir, f), encoding="utf-8").read()
+        # 라이브러리도 같은 바닥을 진다 — 훅이 임포트 첫 줄에서 그것을 부르므로, 여기 문법 하나가
+        # 낡은 인터프리터에서 걸리면 그 훅은 통째로 안 돈다 (같은 침묵).
+        listing = [(hooks_dir, f) for f in sorted(os.listdir(hooks_dir)) if f.endswith(".py")]
+        library_dir = os.path.join(hooks_dir, HOOK_LIBRARY)
+        listing += [(library_dir, f) for f in sorted(os.listdir(library_dir)) if f.endswith(".py")]
+        for directory, f in listing:
+            rel = os.path.relpath(os.path.join(directory, f), os.path.join(SRC, "hooks")).replace(os.sep, "/")
+            src = open(os.path.join(directory, f), encoding="utf-8").read()
             try:
                 ast.parse(src, filename=f, feature_version=floor)
             except SyntaxError as exc:
-                broken.append(f"hooks/{f}:{exc.lineno} — {exc.msg}")
+                broken.append(f"hooks/{rel}:{exc.lineno} — {exc.msg}")
         self.assertFalse(
             broken,
             f"훅이 python {floor[0]}.{floor[1]} 에서 파싱되지 않는다 (조용히 죽는다):\n" + "\n".join(broken),

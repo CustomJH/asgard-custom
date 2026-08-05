@@ -15,6 +15,8 @@ import sys
 import tempfile
 import unittest
 
+from hookscaffold import deploy_library
+
 SRC = os.path.join(os.path.dirname(__file__), "..", "src", "asgard", "hooks")
 ACTIVATE = os.path.abspath(os.path.join(SRC, "lagom_activate.py"))
 TRACKER = os.path.abspath(os.path.join(SRC, "lagom_tracker.py"))
@@ -35,6 +37,7 @@ class LagomBase(unittest.TestCase):
         os.makedirs(self.hooks)
         for script in (ACTIVATE, TRACKER, SUBAGENT):
             shutil.copy(script, self.hooks)
+        deploy_library(self.hooks)  # 배포본 배치 — 훅 옆에 공용 라이브러리가 함께 선다
         with open(os.path.join(self.hooks, "lagom-canon.md"), "w", encoding="utf-8") as f:
             f.write(LAGOM_CANON)
 

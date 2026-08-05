@@ -14,6 +14,13 @@ import tempfile
 
 import pytest
 
+# 훅의 공용 라이브러리는 배포 이름(`asgard_hooklib`)으로 산다 — 훅이 자기 폴더를 sys.path 에
+# 얹어 그 이름을 세우고, 배포본에서는 스크립트 폴더가 곧 그 자리다. 스위트도 같은 이름을 써야
+# 한다: `asgard.hooks.asgard_hooklib` 로 임포트하면 모듈 정체가 둘이 되고, 시험이 그쪽을
+# 패치하면 훅이 쓰는 쪽은 그대로라 패치가 조용히 빗나간다. import 시점에 세우는 이유는 순서다 —
+# 훅을 먼저 임포트한 시험만 성립하는 규칙은 규칙이 아니다.
+import asgard.hooks  # noqa: F401 — sys.path 에 훅 폴더를 얹는 부작용이 목적이다
+
 _ENV = "ASGARD_MEMORY_SEMANTIC"
 _STUDIO_STATE = "ASGARD_STUDIO_STATE"
 _STUDIO_HOME = "ASGARD_STUDIO_HOME"

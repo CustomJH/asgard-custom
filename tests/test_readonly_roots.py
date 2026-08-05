@@ -16,6 +16,8 @@ import tempfile
 import unittest
 from unittest import mock
 
+from asgard_hooklib import workspace as workspace_lib
+
 from asgard.hooks import readonly_guard
 
 
@@ -133,7 +135,7 @@ class TestStudioWorkspaceIsAWorkTarget(Sandboxed):
         # 여기서 보려는 것은 **기본 배치**(`~/.asgard/studio/workspace`)라 그 우회를 걷는다 —
         # HOME 자체가 이미 임시 자리라 실제 홈은 여전히 안 건드린다.
         os.environ.pop("ASGARD_STUDIO_STATE", None)
-        self.workspace = readonly_guard._studio_workspace()
+        self.workspace = workspace_lib._studio_workspace()
         os.makedirs(self.workspace, exist_ok=True)
 
     def test_workspace_is_under_a_control_directory(self) -> None:
@@ -280,7 +282,7 @@ class TestHostScratchpadIsAWorkTarget(Sandboxed):
             self.assertEqual(self.edit(os.path.join(self._scratch("someone-else"), "probe.py"))[0], 2)
 
     def test_without_a_session_identity_nothing_opens(self) -> None:
-        env = {name: "" for name in readonly_guard._HOST_SESSION_ENV}
+        env = {name: "" for name in workspace_lib._HOST_SESSION_ENV}
         with mock.patch.dict(os.environ, env, clear=False):
             self.assertEqual(self.edit(os.path.join(self._scratch("mine"), "probe.py"))[0], 2)
 
