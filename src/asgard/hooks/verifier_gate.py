@@ -1040,19 +1040,45 @@ def _pointer_file(root, name, kind="active"):
         return None
 
 
+def _session_writes(root, names):
+    """이 세션 이름들이 write-sentinel 에 남긴 경로 목록 — 기록이 없으면 None.
+
+    자리가 둘이다: 신규 `state/writes-<이름>.json` 이 먼저고 구버전 평면 자리가 폴백이다."""
+    for name in names:
+        for rel in (os.path.join("state", "writes-" + name + ".json"), "writes-" + name + ".json"):
+            try:
+                with open(os.path.join(root, ".asgard", rel), encoding="utf-8") as handle:
+                    return json.load(handle)
+            # 없거나 깨진 기록은 "기록 없음"이다 — 이 게이트는 IO 실패에 fail-open 이고
+            # (`orphan_writes` 도 같은 자리를 같은 방식으로 읽는다), 그 판단이 이제 승계까지
+            # 지배한다: None 이면 `resolve_session` 이 남의 quest 를 안 물려받는다.
+            except Exception:
+                continue  # 위 주석이 근거다 — 기록 부재와 읽기 실패를 같게 다룬다
+    return None
+
+
 def resolve_session(root, candidates):
     """(quest id, 그 quest를 소유한 세션 이름).
 
     **엄격 조회를 먼저** 한 바퀴 돈다. `quest_pointer`의 "활성이 정확히 1개면 승계" 규칙을 후보마다
     적용하면, 포인터 파일이 애초에 없는 합성 이름(Cursor의 `"cursor"`)이 1순위에 서는 순간 곧장
     남의 quest를 물려받아 오차단한다 (26-07-31 실측). 승계는 **모든 후보가 답을 못 냈을 때만**
-    쓰는 마지막 수단이다 — 종전 동작은 그 자리에 그대로 남는다."""
+    쓰는 마지막 수단이다.
+
+    그 마지막 수단도 **이 세션이 쓴 흔적이 있을 때만** 쓴다. 승계가 막는 것은 session_id 를 바꿔
+    Stop 게이트를 벗어나는 경로인데, 그 경로는 write 를 남기므로 센티널 기록이 함께 남는다. 기록이
+    아예 없는 세션 — 커밋만 하는 seal 턴이 그렇다 — 은 막을 write 가 없는데도 마침 하나 열려 있던
+    남의 quest 를 물려받아 그 quest 의 판정을 요구받았다 (26-08-05 실측: seal 세션이 발표자료
+    quest 에 묶여 Stop 이 네 번 연속 차단). 기록이 없으면 `orphan_writes` 백스톱만 돌고, 그쪽도
+    같은 센티널을 보므로 실제 write 는 여전히 잡힌다."""
     for name in candidates:
         qid = _pointer_file(root, name)
         if qid:
             return qid, name
         if session_settled(root, name):
             return None, name  # 이 세션은 자기 quest를 닫았다 — 남의 활성을 승계하지 않는다
+    if _session_writes(root, candidates) is None:
+        return None, candidates[0]
     return quest_pointer(root, candidates[0]), candidates[0]
 
 
@@ -1062,20 +1088,9 @@ def orphan_writes(root, sid, candidates=None):
     되돌린 write(경로 clean)·사용자 기존 dirt(기록에 없음)는 차단하지 않는다.
     예외: 직전 close 된 quest(LAST)의 PASS가 현재 워킹트리 hash와 일치하면 이미 검증된 상태 —
     close 직후 Stop이 방금 검증한 write를 오차단하지 않게 한다."""
-    writes = None
     # 센티널도 세션 이름으로 갈린다 — 게이트가 신원 연결을 따라갔다면 백스톱도 같은 연결을 봐야
     # 한다. 안 그러면 quest 포인터가 안 풀린 바로 그 경우에 백스톱까지 같이 눈이 먼다.
-    names = list(dict.fromkeys([sid, *(candidates or [])]))
-    for name in names:
-        for rel in (os.path.join("state", "writes-" + name + ".json"), "writes-" + name + ".json"):  # 신규 state/ 우선
-            try:
-                with open(os.path.join(root, ".asgard", rel), encoding="utf-8") as handle:
-                    writes = json.load(handle)
-                break
-            except Exception:
-                continue
-        if writes is not None:
-            break
+    writes = _session_writes(root, list(dict.fromkeys([sid, *(candidates or [])])))
     if writes is None:
         return  # 이 세션의 write 기록 없음 → 게이트 대상 아님
     dirty = []

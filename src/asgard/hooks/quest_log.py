@@ -1211,14 +1211,18 @@ def _timed_out_before(events: list[dict], cmd: str) -> bool:
     return any(_timed_out_row((event.get("baseline") or {}).get("results"), cmd, 120) for event in events)
 
 
-def _timed_out_row(rows, cmd: str, width: int) -> bool:
-    """기록된 실행 행 중 이 명령이 timeout 으로 끊긴 것이 있는가. width 는 그 표면의 cmd 절단 길이."""
-    return any(isinstance(r, dict) and r.get("timed_out") and r.get("cmd") == cmd[:width] for r in rows or [])
+def _timed_out_row(rows, cmd: str, width: int | None = None) -> bool:
+    """기록된 실행 행 중 이 명령이 timeout 으로 끊긴 것이 있는가.
+
+    `width` 는 그 표면이 cmd 를 자르는 길이다. 계약 표면은 안 자르므로 (`run_criteria_checks` 의
+    행은 로그가 아니라 결속 키다) None 이고, 베이스라인 표면만 120자를 넘긴다."""
+    target = cmd if width is None else cmd[:width]
+    return any(isinstance(r, dict) and r.get("timed_out") and r.get("cmd") == target for r in rows or [])
 
 
 def _contract_timed_out_before(events: list[dict], cmd: str) -> bool:
     """이 퀘스트에서 이미 timeout 으로 끊긴 계약 명령인가 (run_criteria_checks 쪽 기록 형상)."""
-    return any(_timed_out_row(event.get("criteria_checks"), cmd, 200) for event in events)
+    return any(_timed_out_row(event.get("criteria_checks"), cmd) for event in events)
 
 
 def run_baseline(root: str, policy: dict, events: list[dict], diff_hash: str) -> dict | None:
@@ -1536,13 +1540,16 @@ def run_criteria_checks(
         cmd = c["verify_cmd"]
         shared = (ran or {}).get(" ".join(cmd.split()))
         if shared and shared.get("exit_code") is not None:
-            results.append({**shared, "cmd": cmd[:200], "shared": True})
+            # `cmd` 는 자르지 않는다 — 이 행은 로그가 아니라 **결속 키**다. `unmet_contracts` 가
+            # 선언된 명령 원문으로 이 표를 찾으므로, 잘라 두면 그보다 긴 계약은 exit 0 을 받고도
+            # 영영 미충족으로 남는다 (26-08-05 실측: 207자 계약 하나가 판정을 무한 재판정으로).
+            results.append({**shared, "cmd": cmd, "shared": True})
             continue
         if _contract_timed_out_before(events, cmd):
             # 계약 명령이 timeout 보다 느리면 그 계약은 이 설정으로는 영영 충족될 수 없다. 미충족은
             # 그대로 두되(기준 유지) 같은 대기를 append 마다 다시 사지는 않는다 — 판정은 안 바뀌고
             # 재검증 턴마다 timeout 만큼만 늘어나던 자리다.
-            results.append({"cmd": cmd[:200], "exit_code": None, "secs": 0.0, "timed_out": True, "memo": True})
+            results.append({"cmd": cmd, "exit_code": None, "secs": 0.0, "timed_out": True, "memo": True})
             continue
         t0 = time.time()
         code: int | None
@@ -1554,7 +1561,7 @@ def run_criteria_checks(
             code, timed_out = None, True
         except Exception:
             code = None  # 미충족 취급 (계약은 명시 선언이라 skip 면제 없음)
-        row: dict = {"cmd": cmd[:200], "exit_code": code, "secs": round(time.time() - t0, 1)}
+        row: dict = {"cmd": cmd, "exit_code": code, "secs": round(time.time() - t0, 1)}
         if timed_out:
             row["timed_out"] = True
         results.append(row)

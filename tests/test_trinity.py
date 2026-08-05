@@ -1257,6 +1257,25 @@ class TestQuestEnforcement(TrinityBase):
         b, _ = self.blocked(self.gate(session="s1"))
         self.assertFalse(b)
 
+    def test_a_session_that_wrote_nothing_does_not_inherit_another_sessions_quest(self):
+        """자기 포인터가 없고 쓴 흔적도 없는 세션은 남의 열린 quest 를 물려받지 않는다.
+
+        승계가 막는 것은 session_id 를 바꿔 Stop 을 벗어나는 경로인데, 그 경로는 write 를 남기므로
+        센티널 기록이 함께 남는다. 기록이 없는 세션 — 커밋만 하는 seal 턴이 그렇다 — 까지 승계하면
+        막을 write 가 없는데도 마침 하나 열려 있던 남의 quest 의 판정을 요구받는다 (26-08-05 실측:
+        seal 세션이 무관한 quest 에 묶여 Stop 이 네 번 연속 차단)."""
+        self.qlog("open", "q1", "--criteria", "app.py prints ok", "--session", "owner")
+        b, reason = self.blocked(self.gate(session="drive-by"))
+        self.assertFalse(b, reason)
+
+    def test_a_session_that_wrote_still_inherits_the_only_open_quest(self):
+        """흔적이 있으면 승계는 그대로다 — session_id 변주로 게이트를 벗어나지 못한다."""
+        self.qlog("open", "q1", "--criteria", "app.py prints ok", "--session", "owner")
+        self.write("app.py", "print('ok')\n")
+        self.sentinel("app.py", session="drive-by")
+        b, reason = self.blocked(self.gate(session="drive-by"))
+        self.assertTrue(b, reason)
+
     def test_closed_quest_pass_exempts_orphan_check(self):
         """close 직후 Stop — 방금 Verifier가 검증한 write를 orphan으로 오차단하면 안 된다."""
         self.open_quest()
@@ -2410,6 +2429,26 @@ class TestCriteriaContracts(TrinityBase):
         self.verify("PASS", commands=[{"cmd": "git status", "exit_code": 0}])
         ev = json.loads(open(os.path.join(self.root, ".asgard", "quest", "q1.jsonl")).read().splitlines()[-1])
         self.assertEqual(ev["criteria_checks"][0]["exit_code"], 0)  # 하네스 실행 기록
+        self.assertEqual(jout(self.qlog("next", "--write-expected"))["next_role"], "DONE")
+        self.assertEqual(self.qlog("close").returncode, 0)
+
+    def test_a_contract_longer_than_the_record_width_still_binds(self):
+        """계약 명령이 길어도 exit 0 이면 충족이다 — 결속은 명령 길이에 걸리지 않는다.
+
+        `run_criteria_checks` 가 실행 기록의 `cmd` 를 자르면 `unmet_contracts` 는 선언 원문으로 그
+        표를 찾으므로 잘린 길이보다 긴 계약이 통과하고도 영영 미충족으로 남고, 전이가 VERIFIER 를
+        계속 배정해 판정이 무한 재판정에 들어간다 (26-08-05 실측: 207자 계약 하나로 Stop 이 네 번
+        연속 차단). 길이는 종전 절단폭 200자를 넘기려고 고른 값이다."""
+        cmd = "python3 app.py #" + "x" * 220
+        self.assertGreater(len(cmd), 200)
+        self.open_with("app.py 정상 실행 | verify: " + cmd)
+        self.write("app.py", "print('ok')\n")
+        self.qlog("append", "--role", "worker", "--event", "work")
+        self.verify("PASS", commands=[{"cmd": "git status", "exit_code": 0}])
+        with open(os.path.join(self.root, ".asgard", "quest", "q1.jsonl")) as handle:
+            ev = json.loads(handle.read().splitlines()[-1])
+        self.assertEqual(ev["criteria_checks"][0]["exit_code"], 0)
+        self.assertFalse(jout(self.qlog("state"))["contracts_unmet"])
         self.assertEqual(jout(self.qlog("next", "--write-expected"))["next_role"], "DONE")
         self.assertEqual(self.qlog("close").returncode, 0)
 
