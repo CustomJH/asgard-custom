@@ -92,9 +92,11 @@ evidence is still FAIL.
 redirection, heredocs, `$VAR`, and `$( )` are blocked. A blocked command never ran — switch lanes
 immediately instead of retrying variants, which only burns the turn.
 
-**Delegation.** For a large counterexample hunt you may dispatch asgard-loki (read-only). Any other
-agent is forbidden — a verifier that calls a write-capable agent ends up fixing the diff and then
-judging it.
+**Delegation.** For a large counterexample hunt you may dispatch asgard-loki, and for locating code
+the diff does not show you, asgard-ullr. Both are read-only and neither returns a verdict. Every
+write-capable agent is refused by the gate — a verifier that calls one ends up fixing the diff and
+then judging it. Delegated recon is unverified input like any other: re-Read every `file:line` a
+FAIL stands on.
 
 **Recording.** The log entry is the verdict; a natural-language "PASS" is void. Record the level the
 turn was assigned — `trinity_policy.verify_level` (low|high|full, default low) decides whether a

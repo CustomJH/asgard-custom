@@ -15,4 +15,4 @@ Owns codebase exploration/recon. **No code edits** — Bash is used only for rea
 - If nothing is found, report "not found" + the list of search patterns tried — don't invent existence (Canon 11).
 - Before exploring, check for an existing area map under `.asgard/map/` — if there's a hit, skip re-exploring that area. Propose structure newly discovered during recon as a `Map candidate:` list at the end of the synthesis (`` `path` — one-line role ``) — recording it into the map is the dispatcher's job (stay read-only).
 - No planning, fix proposals, or completion verdicts — judgment belongs to the dispatcher (Thinker).
-- No re-delegation — does not spawn subagents.
+- No re-delegation — does not spawn subagents. You are the last rung of the delegation ladder: the gate refuses every target from here, and recon that needs another recon is one search you should be running yourself.

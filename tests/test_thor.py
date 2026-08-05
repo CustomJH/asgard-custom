@@ -119,7 +119,7 @@ class TestRoleBodies(unittest.TestCase):
         self.assertIn("Cap of 5", self.eitri)  # verify-fix 루프 상한
         self.assertIn("up to local artifact generation and verification", self.eitri)  # 릴리스 경계 (Codex #2)
         self.assertIn("belong to asgard-thor", self.eitri)  # 런타임 경계
-        self.assertIn("disallowedTools: Agent", self.eitri)
+        self.assertIn("Bounded re-delegation", self.eitri)  # 자기 배차는 열되 아래층 읽기 전용만
 
     def test_worker_routes_by_change_surface(self):
         # Codex #1 — Worker 라우팅 계약이 단일 소스: 이걸 안 고치면 과업이 계속 구 토르로 간다
@@ -378,7 +378,7 @@ class TestThorLead(unittest.TestCase):
         sub = self.roles["asgard-thor.md"]
         self.assertIn("When part of a squad", sub)  # 브리프 분계선·단위 한정 검증·반환 규격
         self.assertIn("Squad formation is asgard-thor-lead's surface", sub)  # 직접 편성 금지 — 판단 반환
-        self.assertIn("No re-delegation — does not spawn subagents", sub)  # 봉인 문구 보존
+        self.assertIn("Never another thor, never a write-capable agent", sub)  # 재위임 경계 보존
         self.assertIn("global builds/full test suites are the lead's job", sub)  # 전역 게이트 단일 실행 계약
 
     def test_heimdall_resolver_covers_lead(self):
@@ -391,10 +391,14 @@ class TestThorLead(unittest.TestCase):
         self.assertTrue(handlers["load_skill"]({"name": "asgard-thor-jarngreipr"}).strip())
 
     def test_subagent_gate_targets(self):
+        """편대장은 sub-Thor 를 편성하고, sub-Thor 는 다시 편성하지 못한다 — 편대의 편대 금지."""
         from asgard.hooks.subagent_gate import AGENT_TARGETS
 
-        self.assertEqual(AGENT_TARGETS["asgard-thor-lead"], frozenset({"asgard-thor", "asgard-loki"}))
-        self.assertEqual(AGENT_TARGETS["asgard-thor"], frozenset())  # 서브 토르 완전 봉인
+        self.assertIn("asgard-thor", AGENT_TARGETS["asgard-thor-lead"])
+        self.assertNotIn("asgard-thor", AGENT_TARGETS["asgard-thor"])
+        self.assertNotIn("asgard-thor-lead", AGENT_TARGETS["asgard-thor"])
+        # 자기가 방금 고친 표면의 반례는 스스로 찾는다 — 읽기 전용이라 독립성이 상하지 않는다.
+        self.assertEqual(AGENT_TARGETS["asgard-thor"], frozenset({"asgard-mimir", "asgard-loki", "asgard-ullr"}))
 
     def test_routing_agents_md_and_worker(self):
         from asgard.templates.agents import agents_md
@@ -402,7 +406,7 @@ class TestThorLead(unittest.TestCase):
         md = agents_md("p")
         self.assertIn("asgard-thor-lead", md)  # 대형 백엔드 과업 라우팅
         self.assertIn("asgard-thor-einherjar", md)  # 모드 A 편대 스킬 경로
-        self.assertIn("exception: asgard-thor-lead", md)  # 재위임 예외의 명시적 한정
+        self.assertIn("asgard-thor-lead forms its sub-Thor squad", md)  # 편성 권한의 명시적 소재
         worker = self.roles["asgard-worker.md"]
         self.assertIn("asgard-thor-lead", worker)
         self.assertIn("asgard-thor-einherjar", worker)

@@ -32,6 +32,17 @@ for _stream in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
+# 공용 라이브러리는 이 훅 옆에 깔린다 (setup 의 `library_files`). 이 훅이 여기서 집는 것은 증거
+# 판정 술어다 — 26-08-06 까지 `trivial_evidence` 는 여기서 `true`·`echo` 만 아는 두 줄짜리
+# 사본이었다. 같은 `ls` 한 줄이 Stop 게이트에서는 증거가 아니고 여기서는 증거였다는 뜻이다.
+_HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
+if _HOOK_DIR not in sys.path:
+    sys.path.append(_HOOK_DIR)
+
+from asgard_hooklib.evidence import pass_evidence, trivial_evidence  # noqa: E402,F401
+from asgard_hooklib.ledger import fold_tickets, norm_path, verifiable_units  # noqa: E402
+from asgard_hooklib.paths import read_text  # noqa: E402
+from asgard_hooklib.siege import ledger_call  # noqa: E402
 
 MAX_BLOCKS = 2  # 역할당 — 3번째는 통과 (최후 방벽은 verifier-gate)
 ROLE_EVENT = {"asgard-thinker": "plan", "asgard-worker": "work", "asgard-verifier": "verify"}
@@ -41,64 +52,104 @@ ROLE_EVENT = {"asgard-thinker": "plan", "asgard-worker": "work", "asgard-verifie
 # 안 받고 무엇이든 띄운다. 종전에는 thinker·worker·eitri·planner·mimir·loki·ullr 이 전부
 # 빠져 있어서, 읽기 전용인 Thinker 가 Worker 를 띄워 트리를 고칠 수 있었고 Worker 가 자기
 # 판정자를 띄울 수 있었다 — 검증 독립성이 프런트매터 산문에만 얹혀 있었다 (26-08-05 감사).
-# 빈 frozenset 은 "재위임 없음"이라는 **선언**이고, 항목이 없는 것과 뜻이 다르다.
+#
+# 표를 손으로 넓혀 온 이력이 있어(26-08-05 세 턴 연속 오탐↔구멍) 이제 표 자체는 판정 근거가
+# 아니다. 근거는 아래 두 불변식이고, 표는 그것을 만족하는 하나의 해다 —
+# `closure_violations()` 가 그 대조를 하고, 시험이 배포본 사본에서도 그것을 부른다.
+#
+#   층위 단조   rank[target] > rank[caller] 여야 한다. 이것 하나가 재귀와 순환을 동시에 막고
+#               위임이 이어지는 횟수를 층위 수로 못박는다 — 깊이 카운터가 필요 없다.
+#   읽기 봉인   부르는 쪽이 읽기 전용이면 불리는 쪽도 읽기 전용이어야 한다. 판정자·계획자가
+#               쓰기 가능한 손을 부르면 자기가 고친 diff 를 자기가 심판하게 된다.
+#
+# 층위. 같은 층끼리는 서로 못 부른다 (thor → thor 가 여기서 끊긴다).
+AGENT_RANK = {
+    "asgard-thinker": 1,  # Trinity — 전이 함수가 배정하는 자리
+    "asgard-worker": 1,
+    "asgard-verifier": 1,
+    "asgard-thor-lead": 2,  # 편대장
+    "asgard-thor": 3,  # 쓰기 가능한 딜리버리
+    "asgard-freyja": 3,
+    "asgard-eitri": 3,
+    "asgard-planner": 3,
+    "asgard-mimir": 4,  # 읽기 전용 분석
+    "asgard-loki": 4,
+    "asgard-ullr": 5,  # 정찰 — 종점
+}
+# 트리를 만지지 않는 역할. `tools:` 에 Write·Edit 이 없는 것과 같은 집합이어야 한다.
+READ_ONLY_AGENTS = frozenset({"asgard-verifier", "asgard-thinker", "asgard-mimir", "asgard-loki", "asgard-ullr"})
+# 전이 함수가 배정하는 자리 — 아무도 손으로 못 부른다. 자기 일을 심판·계획할 손을 자기가
+# 고르는 순간 판정도 계획도 자기 확인이 된다.
+UNDISPATCHABLE = frozenset({"asgard-thinker", "asgard-verifier"})
+
 AGENT_TARGETS = {
-    # Verifier 는 적대적 읽기 전용 하나만 — 쓰기 가능한 손을 부르면 자기가 고친 diff 를 자기가 심판한다.
-    "asgard-verifier": frozenset({"asgard-loki"}),
-    # Thinker 는 탐사 정찰 하나만. 계획하는 손은 트리를 만지지 않는다.
-    "asgard-thinker": frozenset({"asgard-ullr"}),
-    # Worker 는 변경 표면별 딜리버리와 코드 안내자, 그리고 반례 사냥까지.
-    # **판정자와 계획자는 자기가 부르지 않는다** — 자기 일을 심판할 손을 자기가 고르는 자리다.
-    # loki 는 다르다: 읽기 전용이고 판정을 내지 않아, 쓰기 가능한 역할이 자기 작업의 반례를
-    # 찾는 데 써도 독립성이 상하지 않는다. 깨지는 것은 **판정자가 쓰기 가능한 손을 부를 때**뿐이다.
+    # Verifier 는 읽기 전용·판정 없는 손만. loki 는 반례 사냥, ullr 은 사실 확인용 정찰이다.
+    "asgard-verifier": frozenset({"asgard-loki", "asgard-ullr"}),
+    # Thinker 는 계획에 필요한 읽기 전용 셋. 계획하는 손은 트리를 만지지 않는다.
+    "asgard-thinker": frozenset({"asgard-ullr", "asgard-mimir", "asgard-loki"}),
+    # Worker 는 변경 표면별 딜리버리와 코드 안내자, 정찰, 그리고 반례 사냥까지.
+    # loki·ullr·mimir 는 읽기 전용이고 판정을 내지 않아, 쓰기 가능한 역할이 자기 작업의
+    # 반례를 찾는 데 써도 독립성이 상하지 않는다.
     "asgard-worker": frozenset(
-        {"asgard-freyja", "asgard-thor", "asgard-thor-lead", "asgard-eitri", "asgard-mimir", "asgard-loki"}
+        {
+            "asgard-freyja",
+            "asgard-thor",
+            "asgard-thor-lead",
+            "asgard-eitri",
+            "asgard-mimir",
+            "asgard-loki",
+            "asgard-ullr",
+        }
     ),
-    # thor-lead 의 임무는 sub-Thor 편성이다 (깊이 1). 반례 사냥은 위와 같은 이유로 함께 연다.
-    "asgard-thor-lead": frozenset({"asgard-thor", "asgard-loki"}),
-    # 전문가는 재위임하지 않는다.
-    "asgard-freyja": frozenset(),
-    "asgard-thor": frozenset(),
-    "asgard-eitri": frozenset(),
-    "asgard-planner": frozenset(),
-    "asgard-mimir": frozenset(),
-    "asgard-loki": frozenset(),
+    # thor-lead 의 임무는 sub-Thor 편성이다. 층위가 갈라 놓아 sub-Thor 는 다시 편성하지 못한다.
+    "asgard-thor-lead": frozenset({"asgard-thor", "asgard-mimir", "asgard-loki", "asgard-ullr"}),
+    # 딜리버리 전문가도 자기 배차를 연다 — 읽기 전용 아래층만. 자기가 고친 표면의 반례를
+    # 스스로 찾고(loki), 남의 코드를 읽어야 할 때 정찰을 보낸다(ullr·mimir).
+    "asgard-freyja": frozenset({"asgard-mimir", "asgard-loki", "asgard-ullr"}),
+    "asgard-thor": frozenset({"asgard-mimir", "asgard-loki", "asgard-ullr"}),
+    "asgard-eitri": frozenset({"asgard-mimir", "asgard-loki", "asgard-ullr"}),
+    # 기획자는 근거를 모으는 손만 — 반례 사냥은 구현이 있어야 뜻이 있다.
+    "asgard-planner": frozenset({"asgard-mimir", "asgard-ullr"}),
+    # 읽기 전용 분석층은 정찰만 더 보낸다.
+    "asgard-mimir": frozenset({"asgard-ullr"}),
+    "asgard-loki": frozenset({"asgard-ullr"}),
+    # 종점. 빈 frozenset 은 "재위임 없음"이라는 **선언**이고, 항목이 없는 것과 뜻이 다르다.
     "asgard-ullr": frozenset(),
 }
+
+
+def closure_violations() -> list[str]:
+    """표가 두 불변식을 어긴 자리 — 없으면 빈 목록. 시험이 부르는 자리다.
+
+    **임포트 시점에 raise 하지 않는다.** 이 훅은 fail-open 이 계약이고, PreToolUse 가 예외로
+    죽으면 호스트는 그것을 거절로 읽어 모든 디스패치가 막힌다 — 표의 오타 하나가 세션을
+    통째로 세우는 교환은 성립하지 않는다. 대신 시험이 **배포본까지** 이 함수를 돌린다:
+    이 파일은 `.claude/hooks/` 로 복사돼 사는 사본이라 패키지만 태우면 사본의 표는 안 본다.
+    """
+    problems: list[str] = []
+    if set(AGENT_TARGETS) != set(AGENT_RANK):
+        problems.append("every agent needs both a rank and a target set")
+    for caller, targets in AGENT_TARGETS.items():
+        rank = AGENT_RANK.get(caller)
+        for target in sorted(targets):
+            if rank is None or AGENT_RANK.get(target, rank) <= rank:
+                problems.append(f"delegation rank must strictly increase: {caller} -> {target}")
+            if target in UNDISPATCHABLE:
+                problems.append(f"{target} is assigned by the transition function, not dispatched: {caller}")
+            if caller in READ_ONLY_AGENTS and target not in READ_ONLY_AGENTS:
+                problems.append(f"read-only {caller} cannot dispatch write-capable {target}")
+    return problems
+
+
 # 역할 이벤트의 "신선도" 기준점 — 이 이벤트 뒤에 자기 이벤트가 있어야 이번 턴 기록으로 인정.
 ANCHOR = {"plan": "verify", "work": "verify", "verify": "work"}
 # 이벤트 이름은 역할 이름이 아니다 — 기장 명령이 시키는 `role` 값은 여기서 온다.
 EVENT_ROLE = {"plan": "thinker", "work": "worker", "verify": "verifier"}
 
 
-def _read_text(path: str) -> str:
-    """파일을 통째로 읽는다. 오류는 그대로 올린다 — 호출부마다 삼킬 범위가 다르다. quest_log.py와 동일 유지.
-
-    핸들 수명을 여기서 끝내는 것이 요점이다. `open(p).read()`는 CPython의 참조 계수에 기대
-    곧장 닫히는 것이고, 그 기댐은 코드에 안 적혀 있어서 다른 런타임에서 조용히 깨진다."""
-    with open(path, encoding="utf-8") as handle:
-        return handle.read()
-
-
 def _load_json(path: str):
     with open(path, encoding="utf-8") as handle:
         return json.load(handle)
-
-
-def trivial_evidence(cmd):
-    """quest_log.py의 trivial_evidence와 동일 유지 (단일 출처 원칙)."""
-    c = " ".join(str(cmd).split())
-    return c in ("true", ":", "exit 0", "echo") or c.startswith("echo ")
-
-
-def pass_evidence(rec):
-    """verifier_gate.py의 pass_evidence와 동일 유지 (단일 출처 원칙)."""
-    if (rec.get("baseline") or {}).get("state") == "green":
-        return True
-    return any(
-        isinstance(c, dict) and c.get("exit_code") == 0 and not trivial_evidence(c.get("cmd", ""))
-        for c in (rec.get("commands") or [])
-    )
 
 
 def block(root, sid, agent, reason, *, protocol="claude"):
@@ -156,7 +207,7 @@ def quest_pointer(root: str, sid: str) -> str | None:
     sessions = os.path.join(root, ".asgard", "quest", "sessions")
     session_path = os.path.join(sessions, name + ".active")
     try:
-        qid = _read_text(session_path).strip()
+        qid = read_text(session_path).strip()
         if qid:
             return qid
     except Exception:
@@ -165,7 +216,7 @@ def quest_pointer(root: str, sid: str) -> str | None:
         return None
     try:
         active = {
-            _read_text(os.path.join(sessions, entry)).strip()
+            read_text(os.path.join(sessions, entry)).strip()
             for entry in os.listdir(sessions)
             if entry.endswith(".active")
         }
@@ -178,7 +229,7 @@ def quest_pointer(root: str, sid: str) -> str | None:
         return None
     for path in (os.path.join(root, ".asgard", "quest", "ACTIVE"),):
         try:
-            qid = _read_text(path).strip()
+            qid = read_text(path).strip()
             if qid:
                 return qid
         except Exception:
@@ -310,42 +361,6 @@ def load_quest_events(root: str, qid: str) -> list[dict]:
     return read_quest_events(root, qid)[0]
 
 
-def ticket_view(events: list[dict]) -> dict[str, dict]:
-    tickets = {}
-    for event in events:
-        if event.get("event") != "ticket" or event.get("unit") is None:
-            continue
-        key = str(event["unit"])
-        current = tickets.get(key, {})
-        tickets[key] = {
-            "unit": event["unit"],
-            "status": event.get("ticket_status") or current.get("status") or "todo",
-            "access": event.get("access") if isinstance(event.get("access"), list) else current.get("access") or [],
-            "files": event.get("changed_files") or current.get("files") or [],
-        }
-    return tickets
-
-
-def _norm_path(path) -> str:
-    return os.path.normpath(str(path)).replace("\\", "/")
-
-
-def verifiable_units(tickets: list[dict]) -> list[str]:
-    """quest_log.py의 verifiable_units와 동일 유지 (단일 출처 원칙, TestPolicyMirror로 정합 확인)."""
-    open_files: set[str] = set()
-    for ticket in tickets:
-        if ticket.get("status") in ("todo", "in_progress"):
-            files = [_norm_path(f) for f in (ticket.get("files") or [])]
-            if not files:
-                return []
-            open_files.update(files)
-    return [
-        str(ticket["unit"])
-        for ticket in tickets
-        if ticket.get("status") == "done" and open_files.isdisjoint(_norm_path(f) for f in (ticket.get("files") or []))
-    ]
-
-
 def unit_marker(tool_input: dict) -> str | None:
     """Verifier 조기(파이프라인) 디스패치의 [ASGARD_UNIT:<id>] 마커 — record_worker_dispatch와
     동일한 파싱 규칙(같은 unit이 같은 문자열 키로 귀결)을 독립적으로 미러링한다."""
@@ -373,6 +388,26 @@ def call_spec(tool_input: dict) -> str:
     return ""
 
 
+def quest_request(root: str, qid: str) -> str:
+    """이 퀘스트를 연 요청 한 줄 — Run 의 목표가 된다. 못 읽으면 퀘스트 id.
+
+    로그를 통째로 읽지 않고 `request` 를 든 첫 줄에서 멈춘다. 이 훅은 서브에이전트를 띄우는
+    길목이라 매 호출의 지연이 그대로 얹히고, 그 값은 언제나 `open` 이벤트에 있다.
+    """
+    try:
+        with open(os.path.join(root, ".asgard", "quest", qid + ".jsonl"), encoding="utf-8") as handle:
+            for line in handle:
+                try:
+                    request = json.loads(line).get("request")
+                except Exception:
+                    continue
+                if request:
+                    return str(request)[:500]
+    except Exception:
+        pass
+    return qid
+
+
 def siege_open(root: str, qid: str, caller: str, target: str, tool_input: dict) -> None:
     """호출된 에이전트를 배차 장부에 세운다 — 호스트 모드에서 이것이 적히는 유일한 자리.
 
@@ -383,24 +418,11 @@ def siege_open(root: str, qid: str, caller: str, target: str, tool_input: dict) 
     실패는 삼킨다. 장부는 퀘스트 로그에서 파생된 기록이고, 파생을 얻으려다 디스패치를 막는
     교환은 성립하지 않는다.
     """
-    try:
-        from asgard import orchestration as orc
-
-        # 목표는 Run 을 처음 열 때만 쓴다. 이미 열려 있으면 퀘스트 로그를 통째로 읽을 까닭이
-        # 없다 — 이 훅은 서브에이전트를 띄우는 길목이라 매 호출의 지연이 그대로 얹힌다.
-        objective = qid
-        if orc.run_for_quest(root, qid) is None:
-            objective = next((e.get("request") for e in load_quest_events(root, qid) if e.get("request")), "") or qid
-        orc.note_agent(
-            root,
-            qid,
-            target,
-            spec=call_spec(tool_input),
-            objective=str(objective),
-            caller=caller,
-        )
-    except Exception:
-        return
+    ledger_call(
+        root,
+        ["note", target, "--quest", qid, "--spec", call_spec(tool_input), "--objective", quest_request(root, qid)]
+        + (["--caller", caller] if caller else []),
+    )
 
 
 def siege_close(root: str, qid: str, agent: str, summary: str = "") -> None:
@@ -411,12 +433,7 @@ def siege_close(root: str, qid: str, agent: str, summary: str = "") -> None:
     판정의 옳고 그름은 다른 축이다 — 네이티브의 `bifrost.settle_turn` 도 턴이 예외로 죽었을
     때만 failed 를 적는다. Verifier 의 FAIL 은 `summary` 로 간다.
     """
-    try:
-        from asgard import orchestration as orc
-
-        orc.close_agent(root, qid, agent, "succeeded", summary=summary)
-    except Exception:
-        return
+    ledger_call(root, ["unnote", agent, "--quest", qid] + (["--summary", summary[:500]] if summary else []))
 
 
 def _role_summary(event: dict, want: str) -> str:
@@ -443,11 +460,11 @@ def pipeline_denial_reason(tickets: dict[str, dict], unit: str) -> str:
     if ticket["status"] != "done":
         return "unit %s is not done yet (status: %s)" % (unit, ticket["status"])
     open_tickets = [t for t in tickets.values() if t["status"] in ("todo", "in_progress")]
-    undeclared = sorted(str(t["unit"]) for t in open_tickets if not t.get("files"))
+    undeclared = sorted(str(t["id"]) for t in open_tickets if not t.get("files"))
     if undeclared:
         return "open unit(s) declared no files (disjointness unprovable): " + ", ".join(undeclared)
-    mine = {_norm_path(f) for f in ticket.get("files") or []}
-    overlapping = sorted(str(t["unit"]) for t in open_tickets if mine & {_norm_path(f) for f in t.get("files") or []})
+    mine = {norm_path(f) for f in ticket.get("files") or []}
+    overlapping = sorted(str(t["id"]) for t in open_tickets if mine & {norm_path(f) for f in t.get("files") or []})
     if overlapping:
         return "unit %s files overlap with still-open unit(s): %s" % (unit, ", ".join(overlapping))
     return "unit %s is not yet early-verifiable" % unit
@@ -589,7 +606,7 @@ def main():
                 if not record_worker_dispatch(root, qid, sid, str(data.get("tool_use_id") or ""), tool_input):
                     deny_pretool(protocol, "Asgard Mode B: Worker Agent prompt requires [ASGARD_UNIT:<id>] marker")
             elif target == "asgard-verifier":
-                tickets = ticket_view(load_quest_events(root, qid))
+                tickets = fold_tickets(load_quest_events(root, qid))
                 unit = unit_marker(tool_input)
                 if unit is not None:
                     # 유닛 단위 조기(파이프라인) 검증 — 전 티켓 done 배리어와 동시성 감사
@@ -597,9 +614,7 @@ def main():
                     if unit not in verifiable_units(list(tickets.values())):
                         deny_pretool(protocol, "Asgard Mode B: " + pipeline_denial_reason(tickets, unit))
                 else:
-                    unfinished = sorted(
-                        str(ticket["unit"]) for ticket in tickets.values() if ticket["status"] != "done"
-                    )
+                    unfinished = sorted(str(ticket["id"]) for ticket in tickets.values() if ticket["status"] != "done")
                     if unfinished:
                         deny_pretool(protocol, "Asgard Mode B: unfinished ticket(s): " + ", ".join(unfinished))
                     problem = physical_worker_problem(root, qid, sid, tickets)

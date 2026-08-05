@@ -816,15 +816,27 @@ class TestDeliveryAgents(unittest.TestCase):
         self.assertIn("A PASS trapped in the diff is void", v)
         self.assertIn("even a 0-result finding is evidence", v)
 
-    def test_delivery_frontmatter_blocks_redelegation(self):
-        # freyja/thor/eitri: write 가능하되 Agent 금지. loki: read-only allowlist (Agent·Write·Edit 부재).
-        for n in ("freyja", "thor", "eitri"):
-            self.assertIn("disallowedTools: Agent", self._tpl(f"asgard-{n}.md"))
-        # loki/ullr/mimir: read-only allowlist (Agent·Write·Edit 부재) — 재위임·수정 불가 정찰·안내 계층.
-        for n in ("loki", "ullr", "mimir"):
-            fm = self._tpl(f"asgard-{n}.md").split("---")[1]
-            self.assertIn("tools: Read, Grep, Glob, Bash", fm)
-            self.assertNotIn("Agent", fm.split("tools:")[1].splitlines()[0])
+    def test_delivery_frontmatter_matches_the_delegation_table(self):
+        """도구 허용목록과 위임 표는 같은 사실을 두 자리에 적는다 — 갈리면 한쪽이 거짓말이다.
+
+        표가 목표를 가진 역할에 `Agent` 가 없으면 계약만 있고 문이 없고, 표가 빈 역할에
+        `Agent` 가 있으면 문만 있고 계약이 없다. 종전에는 프런트매터가 `disallowedTools: Agent`
+        로 딜리버리 전문가를 봉인했고 표도 빈 집합이었다 — 이제 둘 다 아래층을 연다."""
+        from asgard.hooks.subagent_gate import AGENT_TARGETS
+        from asgard.templates.roles import ROLE_AGENTS
+
+        for fname, body in ROLE_AGENTS:
+            name = fname.removesuffix(".md")
+            fm = body.split("---")[1]
+            tools = fm.split("tools:")[1].splitlines()[0] if "tools:" in fm else ""
+            self.assertNotIn("disallowedTools", fm, f"{name}: 봉인 대신 위임 표가 경계를 진다")
+            has_agent = "Agent" in tools
+            self.assertEqual(has_agent, bool(AGENT_TARGETS[name]), f"{name}: tools 의 Agent 유무와 위임 표가 어긋난다")
+        # 읽기 전용 층은 Write·Edit 을 계속 못 든다 — 위임이 열려도 손은 안 열린다.
+        for n in ("loki", "ullr", "mimir", "verifier", "thinker"):
+            tools = self._tpl(f"asgard-{n}.md").split("---")[1].split("tools:")[1].splitlines()[0]
+            self.assertNotIn("Write", tools)
+            self.assertNotIn("Edit", tools)
 
     def test_trinity_agents_can_nest(self):
         # 모든 역할은 canonical least-privilege allowlist를 명시한다. Worker는 mutation + Agent,

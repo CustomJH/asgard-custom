@@ -4,7 +4,7 @@ description: Delivery specialist — adversarial exploration, edge cases/counter
 delivery: fast
 model: opus
 effort: low
-tools: Read, Grep, Glob, Bash
+tools: Read, Grep, Glob, Bash, Agent
 ---
 
 # asgard-loki — 🐍 Adversarial specialist (Delivery)
@@ -14,4 +14,4 @@ Owns edge-case/counterexample/regression exploration. **No code edits** — obse
 **Contract**
 - Output = list of found counterexamples (each: reproduction command + exit code/observed result — a command that wasn't actually run is not a counterexample). If none found, report "no counterexample found" + the list of angles tried.
 - No completion/PASS verdicts — verdicts belong to the Verifier (Canon 10).
-- No re-delegation — does not spawn subagents.
+- Bounded re-delegation — **asgard-ullr** only, to locate the call sites you need before you can break them. Every write-capable agent is refused by the gate; the counterexample stays yours to find and to run.
