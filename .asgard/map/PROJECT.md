@@ -8,7 +8,7 @@
 
 - Project root: `./`
 - Languages by observed source files: Python (527), JavaScript (6), Rust (2)
-- Evidence scan: 731 files; 35 landmarks
+- Evidence scan: 729 files; 35 landmarks
 
 ## Landmarks
 
@@ -57,8 +57,6 @@
 
 ## Documents
 
-- `AGENTS.md` — doc: asgard-custom — Agent Guide · sections: Asgard — Identity (Worldview); Asgard — Canon (Common Laws); Asgard — Trinity Loop (Heimdall Orchestration); Asgard — Codebase Map (.asgard/map/); Asgard — Lagom (Minimalism Contract); Asgard — Bragi (Human Voice)
-- `MANUAL.md` — doc: MANUAL · sections: API; Database; Naming
 - `README.md` — doc: Asgard · sections: Install; Local or isolated execution; Tool Kernel; Skill and Plugin Registry; Documents (Sága); Project Map
 - `docker/README.md` — doc: 컨테이너 하나 = 에이전트 하나 · sections: 먼저 — 이 폴더에 이미지가 둘 있고, 서로 다른 것이에요; 가르는 것은 두 줄이에요; 1. 호스트의 에이전트를 그대로 컨테이너에 (_asgard start_); 2. 컨테이너 전용 에이전트 여럿 (compose); 자격증명은 기본으로 안 넘어가요; 알아둘 것
 - `studio-shell/README.md` — doc: Asgard Studio native shell · sections: Run; Build; Icons
