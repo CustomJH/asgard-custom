@@ -26,6 +26,8 @@ from contextlib import redirect_stdout
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+from hookscaffold import deploy_cli, until  # noqa: E402
+
 from asgard import orchestration as orc  # noqa: E402
 from asgard.commands import siege  # noqa: E402
 from asgard.orchestration import store  # noqa: E402
@@ -186,17 +188,34 @@ class TestTheHostHookRecordsTheCall(RosterBase):
             timeout=120,
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
+        # 훅은 장부를 임포트가 아니라 CLI 프로세스로 적는다 — 배포 인터프리터에 asgard 가
+        # 없기 때문이다. PATH 의 `asgard` 가 이 저장소의 코드가 되게 얹는다.
+        self.bin = os.path.join(self.root, "bin")
+        deploy_cli(self.bin)
 
     def hook(self, payload: dict) -> subprocess.CompletedProcess:
         return subprocess.run(
             [sys.executable, "-m", "asgard.hooks.subagent_gate"],
             cwd=self.root,
-            env=dict(os.environ, PYTHONPATH=self.src, CLAUDE_PROJECT_DIR=self.root),
+            env=dict(
+                os.environ,
+                PYTHONPATH=self.src,
+                CLAUDE_PROJECT_DIR=self.root,
+                PATH=self.bin + os.pathsep + os.environ.get("PATH", ""),
+            ),
             input=json.dumps({"session_id": "host-mode", "cwd": self.root, **payload}),
             capture_output=True,
             text=True,
             timeout=120,
         )
+
+    def settled(self, count: int = 1) -> list[dict]:
+        """장부에 시도가 `count` 건 설 때까지 기다린 뒤 그 Run 의 Task 를 돌려준다."""
+        until(lambda: bool(orc.run_list(self.root)))
+        runs = orc.run_list(self.root)
+        self.assertEqual(len(runs), 1, "디스패치가 장부에 아무것도 안 남겼다")
+        until(lambda: len(orc.task_list(self.root, runs[0]["id"])) >= count)
+        return orc.task_list(self.root, runs[0]["id"])
 
     def dispatch_payload(self, target: str, prompt: str, caller: str = "") -> dict:
         return {
@@ -208,18 +227,19 @@ class TestTheHostHookRecordsTheCall(RosterBase):
 
     def test_a_dispatch_puts_the_agent_on_the_ledger(self):
         self.hook(self.dispatch_payload("asgard-thor", "결제 API 를 손봐라"))
-        runs = orc.run_list(self.root)
-        self.assertEqual(len(runs), 1, "디스패치가 장부에 아무것도 안 남겼다")
-        attempts = orc.live_agents(self.root, runs[0]["id"])
+        tasks = self.settled()
+        attempts = orc.live_agents(self.root, orc.run_list(self.root)[0]["id"])
         self.assertEqual([a["agent"] for a in attempts], ["asgard-thor"])
-        self.assertEqual(orc.task_list(self.root, runs[0]["id"])[0]["spec"], "결제 API 를 손봐라")
+        self.assertEqual(tasks[0]["spec"], "결제 API 를 손봐라")
 
     def test_a_specialist_stop_closes_its_row(self):
         """딜리버리 전문가는 로그 규율의 대상이 아니다. 그래도 접어야 한다 — 안 접으면
         이미 끝난 에이전트가 `siege show` 에서 영영 '도는 중' 으로 남는다."""
         self.hook(self.dispatch_payload("asgard-freyja", "화면을 손봐라"))
-        self.hook({"hook_event_name": "SubagentStop", "agent_type": "asgard-freyja"})
+        self.settled()
         run = orc.run_list(self.root)[0]
+        self.hook({"hook_event_name": "SubagentStop", "agent_type": "asgard-freyja"})
+        until(lambda: not orc.live_agents(self.root, run["id"]))
         self.assertEqual(orc.live_agents(self.root, run["id"]), [], "끝난 에이전트가 도는 중으로 남았다")
         self.assertEqual(orc.task_list(self.root, run["id"])[0]["status"], "completed")
 
@@ -227,12 +247,12 @@ class TestTheHostHookRecordsTheCall(RosterBase):
         """단위 마커가 붙은 호출의 수명은 ticket-claim/finish 가 쥔다. 훅이 또 열면 한 Task 를
         둘이 연다."""
         self.hook(self.dispatch_payload("asgard-worker", "[ASGARD_UNIT:u-1]\n스키마를 옮겨라"))
+        until(lambda: bool(orc.run_list(self.root)), timeout=3.0)
         self.assertEqual(orc.run_list(self.root), [], "단위 호출을 훅이 장부에 또 열었다")
 
     def test_the_first_line_of_the_prompt_becomes_the_task(self):
         self.hook(self.dispatch_payload("asgard-thor", "\n\n결제 경로 정리\n\n자세한 지시는 아래에"))
-        run = orc.run_list(self.root)[0]
-        self.assertEqual(orc.task_list(self.root, run["id"])[0]["spec"], "결제 경로 정리")
+        self.assertEqual(self.settled()[0]["spec"], "결제 경로 정리")
 
     def test_a_unit_ticket_names_the_agent_that_claimed_it(self):
         """티켓은 워커 id 만 든다(`w-1`). 어떤 에이전트가 그 id 로 돌았는지는 디스패치 시점에만
@@ -251,9 +271,13 @@ class TestTheHostHookRecordsTheCall(RosterBase):
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.hook(self.dispatch_payload("asgard-worker", "[ASGARD_UNIT:u-1]\n스키마를 옮겨라"))
+        os.environ["PATH"] = self.bin + os.pathsep + os.environ.get("PATH", "")
+        self.addCleanup(os.environ.__setitem__, "PATH", os.environ["PATH"].split(os.pathsep, 1)[1])
         code, _ = quest_log.ticket_runtime(self.root, self.qid, "ticket-claim", unit="u-1", session="s", worker="w-1")
         self.assertEqual(code, 0)
+        until(lambda: bool(orc.run_list(self.root)))
         run = orc.run_list(self.root)[0]
+        until(lambda: orc.task_for_unit(self.root, run["id"], "u-1") is not None)
         task = _shown(orc.task_for_unit(self.root, run["id"], "u-1"))
         self.assertEqual(_shown(orc.dispatch_show(self.root, task_id=task["id"]))["agent"], "asgard-worker")
 
@@ -261,6 +285,7 @@ class TestTheHostHookRecordsTheCall(RosterBase):
         """활성 퀘스트가 없으면 DIRECT·탐사 디스패치다 — 장부를 열 자리가 아니다."""
         os.remove(os.path.join(self.root, ".asgard", "quest", "sessions", "host-mode.active"))
         self.hook(self.dispatch_payload("asgard-thor", "그냥 찾아보기"))
+        until(lambda: orc.exists(self.root), timeout=3.0)
         self.assertFalse(orc.exists(self.root), "퀘스트 밖 디스패치가 장부를 만들었다")
 
 

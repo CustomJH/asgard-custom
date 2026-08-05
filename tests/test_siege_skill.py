@@ -52,8 +52,13 @@ def _siege_command() -> Any:
 
 
 def _siege_group():
-    """typer 가 등록한 `siege` 하위 명령 표 — 스킬이 맞춰야 할 정본."""
-    return _subcommands(_siege_command())
+    """typer 가 등록한 `siege` 하위 명령 표 — 스킬이 맞춰야 할 정본.
+
+    숨긴 동사는 뺀다. `note`·`unnote`·`mirror` 는 훅이 장부에 한 줄 적으려고 부르는 문이고
+    (배포 인터프리터에서 `asgard` 를 임포트할 수 없어 프로세스로 부른다), 사람이나 에이전트가
+    치는 표면이 아니다 — 스킬 본문에 적으면 코디네이터가 수명 계약을 손으로 흉내 내게 된다.
+    """
+    return {name: command for name, command in _subcommands(_siege_command()).items() if not command.hidden}
 
 
 def _documented() -> dict[str, set[str]]:

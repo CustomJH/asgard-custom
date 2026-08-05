@@ -583,6 +583,116 @@ def run_heartbeat(run_id: str, task_id: str, dispatch_id: str, *, phase: str = "
     return _emit(message, json_out, f"살아 있음을 알렸어요 — {task_id}")
 
 
+def run_note(
+    quest_id: str,
+    agent: str,
+    *,
+    spec: str = "",
+    objective: str = "",
+    caller: str = "",
+    json_out: bool = False,
+) -> int:
+    """호출된 에이전트 하나를 장부에 세운다 — 디스패치 훅이 부르는 문.
+
+    사람이 쓸 자리가 아니라 훅 전용이다(`asgard siege note`, 숨김). 네이티브 루프는 같은
+    조합을 프로세스 **안에서** 부르지만, 호스트 모드의 훅은 `asgard` 를 임포트할 수 없는
+    인터프리터에서 돌아 이 문 말고는 장부에 닿을 길이 없다.
+
+    Returns:
+        0 이면 세웠고, 2 면 도메인이 거절했다(빈 이름·닫힌 Run·이미 활성 시도).
+    """
+    ui.set_quiet(json_out)
+    try:
+        dispatch = orc.note_agent(_root(), quest_id, agent, spec=spec, objective=objective or quest_id, caller=caller)
+    except orc.OrchestrationError as exc:
+        return _fail(exc)
+    return _emit(dispatch, json_out, f"장부에 세웠어요 — {agent} ({dispatch['id']})")
+
+
+def run_unnote(quest_id: str, agent: str, *, summary: str = "", json_out: bool = False) -> int:
+    """그 에이전트의 살아 있는 시도를 접는다 — 디스패치 훅이 종료에서 부르는 문.
+
+    결과는 언제나 `succeeded` 다. 이 자리가 아는 것은 호출이 답을 들고 돌아왔다는 사실뿐이고,
+    판정의 옳고 그름은 다른 축이다 — 판정자의 FAIL 은 `summary` 로 간다.
+
+    Returns:
+        0 이면 접었고, 2 면 접을 시도가 없었다(장부를 안 거친 디스패치의 종료 — 정상이다).
+    """
+    ui.set_quiet(json_out)
+    try:
+        settled = orc.close_agent(_root(), quest_id, agent, "succeeded", summary=summary)
+    except orc.OrchestrationError as exc:
+        return _fail(exc)
+    return _emit(settled, json_out, f"시도를 접었어요 — {agent}")
+
+
+def run_mirror(quest_id: str, cmd: str, unit: str, payload_json: str = "{}", json_out: bool = False) -> int:
+    """티켓 전이 하나를 장부에 옮긴다 — 티켓 훅이 부르는 문.
+
+    `run_note` 와 같은 이유로 여기 있다: 이 몸통은 종전에 배포본 훅
+    (`asgard_hooklib/tickets._siege_mirror`) 안에서 `from asgard import orchestration` 으로
+    시작했고, 그 임포트는 배포 인터프리터에서 한 번도 선 적이 없다. 계약은 그대로 두고
+    부르는 자리만 asgard 가 임포트되는 프로세스로 옮긴 것이다.
+
+    단위 Task 는 `access` 를 의존으로 삼아 DAG 로 세운다 — 훅 쪽의 `_siege_register` 가
+    그것을 이미 알고 있어 그대로 쓴다(그 함수는 asgard 를 안 부르는 순수 조합이다).
+
+    Returns:
+        0 이면 옮겼거나 옮길 것이 없었고, 2 면 도메인이 거절했다.
+    """
+    ui.set_quiet(json_out)
+    from ..hooks.asgard_hooklib.ledger import fold_tickets, load_events
+    from ..hooks.asgard_hooklib.tickets import _siege_register, _unit_agent
+
+    try:
+        payload = json.loads(payload_json or "{}")
+    except json.JSONDecodeError as exc:
+        ui.fail(f"--payload는 JSON 객체여야 해요: {exc}")
+        return 2
+    root = _root()
+    events = load_events(root, quest_id)
+    tickets = fold_tickets(events)
+    objective = next((event.get("request") for event in events if event.get("request")), "") or quest_id
+    try:
+        run = orc.run_bind(root, quest_id, str(objective)[:500], coordinator="heimdall")
+        task_id = _siege_register(orc, root, run["id"], tickets).get(str(unit))
+        if not task_id:
+            return _emit({"unit": unit, "mirrored": False}, json_out, f"장부에 세울 단위가 없어요 — {unit}")
+        if cmd == "ticket-claim":
+            orc.open_dispatch(
+                root,
+                task_id,
+                worker=str(payload.get("worker_id") or ""),
+                role="worker",
+                agent=_unit_agent(root, quest_id, unit),
+            )
+            return _emit({"unit": unit, "task": task_id, "mirrored": True}, json_out, f"단위를 잡았어요 — {unit}")
+        live = orc.dispatch_show(root, task_id=task_id)
+        if live is None or live["state"] != "ready":
+            return _emit({"unit": unit, "mirrored": False}, json_out, f"살아 있는 시도가 없어요 — {unit}")
+        if cmd == "ticket-heartbeat":
+            orc.heartbeat(root, run["id"], task_id, live["id"])
+            return _emit({"unit": unit, "mirrored": True}, json_out, f"살아 있음을 알렸어요 — {unit}")
+        if cmd == "ticket-finish":
+            ticket = tickets.get(str(unit)) or {}
+            outcome = "succeeded" if payload.get("status") == "done" else "failed"
+            orc.worker_done(
+                root,
+                run["id"],
+                task_id,
+                live["id"],
+                outcome,
+                subject=str(ticket.get("error") or "")[:200] or outcome,
+                files_modified=[str(path) for path in (ticket.get("files") or [])][:50],
+                sender=str(ticket.get("worker_id") or ""),
+            )
+            return _emit({"unit": unit, "outcome": outcome, "mirrored": True}, json_out, f"단위를 접었어요 — {unit}")
+    except orc.OrchestrationError as exc:
+        return _fail(exc)
+    ui.fail(f"모르는 티켓 명령이에요: {cmd}")
+    return 2
+
+
 def run_gate(
     run_id: str,
     question: str,

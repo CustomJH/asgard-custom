@@ -377,3 +377,49 @@ def siege_close(
     from ..commands.siege_act import run_close_cmd
 
     raise typer.Exit(run_close_cmd(run_id, json_out=json_))
+
+
+# ── 훅이 부르는 두 문 — 사람 표면이 아니라 숨긴다 ────────────────────────────────────
+#
+# 호스트 모드(Claude Code·Cursor·Codex)에서 에이전트 호출을 아는 자리는 디스패치 훅뿐인데,
+# 그 훅은 `uv run --no-project python` 으로 도는 자기완결 스크립트라 `asgard` 를 임포트하지
+# 못한다 (26-08-06 실측: 배포본에서 `find_spec('asgard')` 가 None). 훅 안의
+# `from asgard import orchestration` 이 늘 실패해 왔고, fail-open 이라 조용히 넘어가서
+# 세 호스트 모드의 장부는 언제나 비어 있었다. 훅은 이 두 문을 프로세스로 부른다.
+@siege_app.command("note", hidden=True, help="for hooks: stand one dispatched agent up on the ledger")
+def siege_note(
+    agent: str = typer.Argument(..., metavar="<agent>"),
+    quest: str = typer.Option(..., "--quest"),
+    spec: str = typer.Option("", "--spec"),
+    objective: str = typer.Option("", "--objective"),
+    caller: str = typer.Option("", "--caller"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from ..commands.siege_act import run_note
+
+    raise typer.Exit(run_note(quest, agent, spec=spec, objective=objective, caller=caller, json_out=json_))
+
+
+@siege_app.command("mirror", hidden=True, help="for hooks: carry one ticket transition onto the ledger")
+def siege_mirror(
+    cmd: str = typer.Argument(..., metavar="<ticket-claim|ticket-heartbeat|ticket-finish>"),
+    quest: str = typer.Option(..., "--quest"),
+    unit: str = typer.Option(..., "--unit"),
+    payload: str = typer.Option("{}", "--payload"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from ..commands.siege_act import run_mirror
+
+    raise typer.Exit(run_mirror(quest, cmd, unit, payload, json_out=json_))
+
+
+@siege_app.command("unnote", hidden=True, help="for hooks: close that agent's live attempt on the ledger")
+def siege_unnote(
+    agent: str = typer.Argument(..., metavar="<agent>"),
+    quest: str = typer.Option(..., "--quest"),
+    summary: str = typer.Option("", "--summary"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from ..commands.siege_act import run_unnote
+
+    raise typer.Exit(run_unnote(quest, agent, summary=summary, json_out=json_))

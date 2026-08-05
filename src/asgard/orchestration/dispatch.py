@@ -62,6 +62,27 @@ def _consecutive_failures(conn: sqlite3.Connection, task_id: str) -> int:
     return int(row["count"])
 
 
+def _attempt_digest(conn: sqlite3.Connection, task_id: str, limit: int = 5) -> str:
+    """이 Task 의 지난 시도를 한 줄로 — 회로가 끊긴 자리에서 같이 내미는 값.
+
+    끊긴 회로는 막다른 길처럼 읽힌다: "세 번 실패했어요" 뒤에 남는 선택지가 없어 보인다.
+    그런데 세 번의 결과는 이미 장부에 있고, 그중 하나가 나머지보다 멀리 갔을 수 있다 —
+    SWE-agent 의 재시도 루프가 상한에 닿았을 때 하는 일이 정확히 그것이다(시도를 버리지 않고
+    **그중 최선을 고른다**). 여기서 점수를 매기지는 않는다. 판정은 코디네이터 몫이고, 이
+    자리가 할 수 있는 것은 고를 것이 있다는 사실을 refusal 문구에 넣는 것이다.
+    """
+    rows = conn.execute(
+        "SELECT attempt, agent, outcome, summary FROM dispatches WHERE task_id=? ORDER BY attempt DESC LIMIT ?",
+        (task_id, max(1, limit)),
+    ).fetchall()
+    parts = []
+    for row in reversed(rows):
+        summary = (row["summary"] or "").strip().replace("\n", " ")
+        head = f"{row['attempt']}회 {row['agent'] or row['outcome'] or 'ready'}"
+        parts.append(f"{head} — {summary[:80]}" if summary else head)
+    return " · ".join(parts) or "기록 없음"
+
+
 def _dispatch_dict(row: sqlite3.Row) -> dict:
     found = dict(row)
     found["files_modified"] = json.loads(found.get("files_modified") or "[]")
@@ -91,7 +112,10 @@ def open_dispatch(
         if task is None:
             raise OrchestrationError(f"없는 Task예요: {task_id}")
         if task["status"] in _UNDISPATCHABLE:
-            raise OrchestrationError(f"배차할 수 없는 Task예요: {task_id} ({task['status']})")
+            # 회로가 끊겨 접힌 Task 는 여기로 온다 (아래 회로 검사보다 이 상태 검사가 먼저다).
+            # 그 거절이 지난 시도를 같이 말해야 코디네이터가 처음부터 다시 짜지 않는다.
+            tried = f" 지난 시도: {_attempt_digest(conn, task_id)}" if task["status"] == "failed" else ""
+            raise OrchestrationError(f"배차할 수 없는 Task예요: {task_id} ({task['status']}).{tried}")
         run = conn.execute("SELECT status FROM runs WHERE id=?", (task["run_id"],)).fetchone()
         if run is not None and run["status"] != "open":
             raise OrchestrationError(f"닫힌 Run에는 배차할 수 없어요: {task['run_id']}")
@@ -104,7 +128,10 @@ def open_dispatch(
             raise OrchestrationError(f"이미 활성 Dispatch가 있어요: {task_id} → {active['id']}")
         failures = _consecutive_failures(conn, task_id)
         if circuit_broken(failures, _max_attempts(conn)):
-            raise OrchestrationError(f"회로 차단 — {task_id}의 최근 결과가 {failures}회 연속 실패했어요")
+            raise OrchestrationError(
+                f"회로 차단 — {task_id}의 최근 결과가 {failures}회 연속 실패했어요. "
+                f"지난 시도: {_attempt_digest(conn, task_id)}"
+            )
         attempts = int(task["attempts"]) + 1
         try:
             conn.execute(

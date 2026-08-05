@@ -29,6 +29,8 @@ from typing import Any
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+from hookscaffold import deploy_cli, until  # noqa: E402
+
 from asgard import orchestration as orc  # noqa: E402
 from asgard.commands import siege, siege_act  # noqa: E402
 from asgard.orchestration import store  # noqa: E402
@@ -140,6 +142,28 @@ class TestOneSiegeByCommandAlone(ActBase):
         self.assertEqual(self.task_of(task_id)["status"], "failed")
         self.assertEqual(self.quiet(lambda: siege_act.run_open(task_id)), 2, "회로가 끊긴 뒤에도 배차가 열린다")
 
+    def test_the_broken_circuit_names_what_was_already_tried(self):
+        """끊긴 회로가 막다른 길로 읽히면 코디네이터는 지난 시도를 안 보고 처음부터 다시 짠다.
+
+        시도의 결과는 이미 장부에 있다 — 거절 문구가 그것을 같이 내밀어야 고를 것이 있다는
+        사실이 보인다 (SWE-agent 의 재시도 루프가 상한에서 최선을 고르는 것과 같은 자리).
+        """
+        run_id = self.start_run()
+        task_id = self.add_task(run_id, "붙지 않는 일감")
+        for index in range(orc.MAX_ATTEMPTS):
+            dispatch = self.json_of(lambda: siege_act.run_open(task_id, agent="asgard-thor", json_out=True))
+            self.quiet(
+                lambda: siege_act.run_done(
+                    dispatch["id"], "failed", run_id=run_id, task_id=task_id, body=f"{index}번째 시도의 남은 것"
+                )
+            )
+        with self.assertRaises(orc.OrchestrationError) as caught:
+            orc.open_dispatch(self.root, task_id)
+        message = str(caught.exception)
+        self.assertIn("지난 시도", message)
+        self.assertIn("asgard-thor", message, "누가 시도했는지가 거절 문구에 없다")
+        self.assertIn(f"{orc.MAX_ATTEMPTS}회", message, "몇 번째 시도까지 갔는지가 안 보인다")
+
 
 class TestTheDomainRefusalsSurviveTheCommandLayer(ActBase):
     """도메인이 지키는 계약을 표면이 무르게 만들지 않는다. 전부 종료 코드 2 다."""
@@ -219,6 +243,19 @@ class TestTheHostModesFillTheLedgerOnTheirOwn(ActBase):
         for pair in (("user.email", "t@t"), ("user.name", "t")):
             subprocess.run(["git", "-C", self.root, "config", *pair], check=True)
         subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "seed"], cwd=self.root, check=True)
+        # 티켓 전이는 장부를 임포트가 아니라 CLI 프로세스로 적는다 — 배포 인터프리터에
+        # asgard 가 없기 때문이다. PATH 의 `asgard` 를 이 저장소의 코드로 세운다.
+        previous = os.environ.get("PATH", "")
+        os.environ["PATH"] = deploy_cli(os.path.join(self.root, "bin")).rsplit(os.sep, 1)[0] + os.pathsep + previous
+        self.addCleanup(os.environ.__setitem__, "PATH", previous)
+
+    def mirrored(self, expect: int = 1) -> str:
+        """장부가 채워질 때까지 기다린 뒤 그 Run id — 기록은 떼어 낸 프로세스가 적는다."""
+        until(lambda: bool(orc.run_list(self.root)))
+        runs = orc.run_list(self.root)
+        self.assertEqual(len(runs), 1, "티켓 전이가 배차 장부에 Run 을 안 열었다")
+        until(lambda: len(orc.task_list(self.root, runs[0]["id"])) >= expect)
+        return runs[0]["id"]
 
     def tool(self, *args: str, stdin: str = "") -> dict:
         """호스트 모드의 에이전트가 실제로 치는 경로 — `quest-log.py` 를 프로세스로 부른다.
@@ -266,10 +303,8 @@ class TestTheHostModesFillTheLedgerOnTheirOwn(ActBase):
         code, claimed = self.ticket(qid, "ticket-claim", unit="u-schema", worker="w-1")
         self.assertEqual(code, 0, claimed)
 
-        runs = orc.run_list(self.root)
-        self.assertEqual(len(runs), 1, "티켓 전이가 배차 장부에 Run 을 안 열었다")
-        run_id = runs[0]["id"]
-        self.assertEqual(runs[0]["quest_id"], qid, "Run 이 퀘스트에 안 묶였다")
+        run_id = self.mirrored(2)
+        self.assertEqual(orc.run_list(self.root)[0]["quest_id"], qid, "Run 이 퀘스트에 안 묶였다")
 
         schema = self.unit_of(run_id, "u-schema")
         api = self.unit_of(run_id, "u-api")  # 아직 안 잡은 단위도 DAG 에 서야 의존을 그린다
@@ -279,6 +314,7 @@ class TestTheHostModesFillTheLedgerOnTheirOwn(ActBase):
 
         code, _ = self.ticket(qid, "ticket-finish", unit="u-schema", claim_token=claimed["claim_token"], status="done")
         self.assertEqual(code, 0)
+        until(lambda: self.task_of(schema["id"])["status"] == "completed")
         self.assertEqual(self.task_of(schema["id"])["status"], "completed")
         self.assertEqual(self.task_of(api["id"])["status"], "ready", "앞 단위가 끝났는데 뒤가 안 풀렸다")
         self.assertEqual(
@@ -293,6 +329,7 @@ class TestTheHostModesFillTheLedgerOnTheirOwn(ActBase):
         self.open_quest(qid, request="결제 모듈 손보기")
         self.declare_units(qid, [{"unit": "u-1", "subtask": "하나"}])
         self.ticket(qid, "ticket-claim", unit="u-1", worker="w-1")
+        self.mirrored()
         self.assertEqual(orc.run_list(self.root)[0]["objective"], "결제 모듈 손보기")
 
     def test_a_failed_unit_comes_back_ready_for_the_next_attempt(self):
@@ -300,8 +337,10 @@ class TestTheHostModesFillTheLedgerOnTheirOwn(ActBase):
         self.open_quest(qid)
         self.declare_units(qid, [{"unit": "u-1", "subtask": "붙지 않는 일감"}])
         _, claimed = self.ticket(qid, "ticket-claim", unit="u-1", worker="w-1")
+        self.mirrored()
         self.ticket(qid, "ticket-finish", unit="u-1", claim_token=claimed["claim_token"], status="failed")
         run_id = orc.run_list(self.root)[0]["id"]
+        until(lambda: self.unit_of(run_id, "u-1")["status"] == "ready")
         task = self.unit_of(run_id, "u-1")
         self.assertEqual(task["status"], "ready", "실패한 시도가 재배차를 못 받는다")
         self.assertEqual(len(orc.dispatch_history(self.root, task["id"])), 1)
@@ -313,6 +352,7 @@ class TestTheHostModesFillTheLedgerOnTheirOwn(ActBase):
         self.declare_units(qid, [{"unit": "u-1", "subtask": "하나"}])
         code, claimed = self.ticket(qid, "ticket-claim", unit="u-1", worker="native:sid-1:u-1")
         self.assertEqual(code, 0, claimed)
+        until(lambda: bool(orc.run_list(self.root)), timeout=3.0)
         self.assertEqual(orc.run_list(self.root), [], "네이티브 claim 이 훅에서도 장부를 열었다")
 
     def test_the_native_worker_prefix_is_the_one_ticket_lease_sends(self):
@@ -323,13 +363,15 @@ class TestTheHostModesFillTheLedgerOnTheirOwn(ActBase):
         """
         import inspect
 
+        from asgard_hooklib import tickets as tickets_lib
+
         from asgard.agent.heimdall import ticket_lease
 
         source = inspect.getsource(ticket_lease.TicketLease._claim)
         self.assertIn('f"native:', source, "ticket_lease 가 더 이상 native: 접두사를 안 보낸다")
-        self.assertTrue(self.quest_log._native_loop_owns_the_ledger("native:sid:u-1"))
-        self.assertFalse(self.quest_log._native_loop_owns_the_ledger("w-1"))
-        self.assertFalse(self.quest_log._native_loop_owns_the_ledger(None))
+        self.assertTrue(tickets_lib._native_loop_owns_the_ledger("native:sid:u-1"))
+        self.assertFalse(tickets_lib._native_loop_owns_the_ledger("w-1"))
+        self.assertFalse(tickets_lib._native_loop_owns_the_ledger(None))
 
     def test_a_broken_ledger_never_costs_a_ticket_transition(self):
         """장부는 파생이다 — 못 적더라도 정본의 전이는 그대로 성공해야 한다."""
