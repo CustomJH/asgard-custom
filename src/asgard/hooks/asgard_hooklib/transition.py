@@ -10,6 +10,10 @@ from __future__ import annotations
 from .integrity import EMPTY
 from .policy import full_verify_required, verify_strength
 
+# 깊은 변경의 증거 하한 — 하나로는 못 닫는다. 2 는 "계약 한 줄"과 "그 밖의 무엇"을 가르는
+# 최소값이고, 작은 변경은 이 하한을 지지 않는다 (기본 low 의 속도 선택 유지).
+MIN_DEEP_EVIDENCE = 2
+
 
 # ── 완료 판정 단일 퍼널 — 승인 경로의 유일한 출처 ──
 def completion_decision(s: dict) -> tuple[str, str, str]:
@@ -36,6 +40,17 @@ def completion_decision(s: dict) -> tuple[str, str, str]:
         return "REJECTED", "criteria-unverified", "criteria verify contract unmet: %s" % "; ".join(map(str, unmet[:3]))
     if not s.get("pass_evidence"):
         return "REJECTED", "no-evidence", "PASS has no successful verification-command evidence"
+    if s.get("full_verify_risk") and (s.get("pass_evidence_breadth") or 0) < MIN_DEEP_EVIDENCE:
+        # 증거가 '있는가'만 물으면 계약 한 줄이 어떤 크기의 변경도 닫는다. 실패가 안 나면 재계획도
+        # 안 돌므로, 안 깨진 깊은 변경은 얕은 채로 종결된다 (26-08-06 라이브: 5파일 리팩터가
+        # 명령 1개로 PASS). 위험 축은 raw(full_verify_risk)를 쓴다 — verify_level 기본값 low 에서
+        # full_required 가 항상 False 라, 설정 강도에 얹으면 이 하한도 같이 꺼진다.
+        return (
+            "REJECTED",
+            "thin-evidence",
+            "deep change (sensitive path / large diff / deleted tests) verified by %d evidence item(s) — "
+            "needs %d independent ones" % (s.get("pass_evidence_breadth") or 0, MIN_DEEP_EVIDENCE),
+        )
     if not s.get("pass_hash_match"):
         return "REJECTED", "stale-pass", "working tree changed after PASS (stale PASS) — re-verification required"
     if s.get("execution_id") and not s.get("verification_identity_match"):
@@ -172,6 +187,12 @@ def _verdict_step(s: dict, flags, priors: dict | None, axes: dict) -> tuple[str,
     if code == "baseline-red":
         # 하네스가 직접 돌린 프로젝트 체크가 실패 — 판정이 아니라 코드가 깨져 있다
         return "WORKER_RETRY", "harness baseline check is red — repair the failing check first (Canon 10)"
+    if code == "thin-evidence":
+        # 판정이 아니라 검증 폭이 모자라다 — 같은 diff 를 다른 표면에서 한 번 더 짚게 한다
+        return (
+            "VERIFIER",
+            why + " — run a second, independent check (project baseline or a different surface) and re-judge",
+        )
     if code == "no-evidence":
         # 증거 없는 PASS는 판정이 아니다 — 게이트가 어차피 차단하므로 전이가 먼저 재검증을 보낸다
         # (판정 불일치 금지). close 우회 구멍의 전이측 봉합 (깊이 테스트 발견).

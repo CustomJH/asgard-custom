@@ -12,7 +12,7 @@ import json
 import os
 
 from .contracts import quest_events_scope, unmet_contracts
-from .evidence import pass_evidence
+from .evidence import evidence_breadth, evidence_items, pass_evidence
 from .integrity import EMPTY, verification_identity
 from .ledger import TICKET_STATUSES, fold_tickets, load_events, replay_ledger, verifiable_units
 from .paths import fsync_dir, is_testfile, mtime
@@ -239,6 +239,10 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
         # PASS의 성공 명령 증거 — 게이트와 동일 기준 (없으면 전이·close가 거부 — 깊이 테스트가 발견한 구멍)
         # 무변경(diff EMPTY) 퀘스트는 관측 명령이 곧 증거 (no-op 교착 봉합)
         "pass_evidence": bool(last_pass and pass_evidence(last_pass, no_change=cur == EMPTY)),
+        # 증거의 폭 — 깊은 변경(full_verify_risk)이 증거 하나로 닫히지 않게 하는 하한의 입력
+        "pass_evidence_breadth": evidence_breadth(last_pass) if last_pass else 0,
+        # 증거의 출처 구성 — 판정 입력이자 관측 표면 (무엇으로 통과했는지가 로그에 남는다)
+        "pass_evidence_kinds": evidence_items(last_pass) if last_pass else {},
         # 하네스 베이스라인 상태 — 기록 없음(구 로그·체크 미설정) = none = 요건 면제 (fail-open)
         "baseline_state": ((last_pass or {}).get("baseline") or {}).get("state") or "none",
         # criteria verify 계약 미충족 목록 — 계약 없는 기준은 빈 리스트 (하위호환, 요건 면제)

@@ -102,7 +102,14 @@ class TrinityBase(unittest.TestCase):
         body = {
             "role": "verifier",
             "event": "verify",
-            "commands": commands if commands is not None else [{"cmd": "python3 app.py", "exit_code": 0}],
+            # 기본 증거는 둘 — 깊은 변경의 증거 하한(MIN_DEEP_EVIDENCE)을 지나가야 다른 축을
+            # 보는 시험들이 그 하한에 걸려 넘어지지 않는다. 하한 자체는 TestDeepEvidenceFloor 가 본다.
+            "commands": commands
+            if commands is not None
+            else [
+                {"cmd": "python3 app.py", "exit_code": 0},
+                {"cmd": "python3 -m compileall -q .", "exit_code": 0},
+            ],
         }
         args = ["append", "--verdict", verdict, "--session", session]
         if level:
@@ -2434,6 +2441,73 @@ class TestCompletionFunnel(TrinityBase):
         self.assertFalse(closed["forced"])
         self.assertFalse(closed["gate_exempt"])
         self.assertFalse(os.path.exists(os.path.join(self.root, ".asgard", "quest", "LAST")))
+
+
+class TestDeepEvidenceFloor(TrinityBase):
+    """깊은 변경은 증거 하나로 닫히지 않는다 — 안 깨지면 얕은 채로 끝나던 구멍 봉합.
+
+    26-08-06 라이브에서 5파일 리팩터가 계약 명령 `python3 test_basic.py` exit 0 하나로
+    PASS 했다. 실패가 안 났으니 3-실패 재계획도 안 돌아, 가장 어려운 과업이 가장 얕게
+    종결됐다. 하한은 위험 축(full_verify_risk)에만 걸고 작은 변경은 종전 그대로 둔다."""
+
+    def deep_write(self):
+        """non-test 파일 3개 초과 — small_write(2파일) 위 = full_verify_risk."""
+        for i in range(4):
+            self.write("mod_%d.py" % i, "v = %d\n" % i)
+
+    def test_deep_change_with_one_evidence_item_is_rejected(self):
+        self.open_quest()
+        self.deep_write()
+        self.verify(commands=[{"cmd": "python3 -c 'import mod_0'", "exit_code": 0}])
+        state = jout(self.qlog("state"))
+        self.assertEqual(state["pass_evidence_breadth"], 1)
+        nxt = jout(self.qlog("next"))
+        self.assertEqual(nxt["next_role"], "VERIFIER")
+        self.assertIn("evidence item", nxt["why"])
+        self.assertNotEqual(self.qlog("close", "q1").returncode, 0)
+
+    def test_a_second_independent_command_closes_it(self):
+        self.open_quest()
+        self.deep_write()
+        self.verify(
+            commands=[
+                {"cmd": "python3 -c 'import mod_0'", "exit_code": 0},
+                {"cmd": "python3 -m compileall -q .", "exit_code": 0},
+            ]
+        )
+        self.assertEqual(jout(self.qlog("state"))["pass_evidence_breadth"], 2)
+        self.assertEqual(jout(self.qlog("next"))["next_role"], "DONE")
+        self.assertEqual(self.qlog("close", "q1").returncode, 0)
+
+    def test_the_same_command_twice_is_one_evidence_item(self):
+        """되풀이 실행은 새 증거가 아니다 — 하한을 명령 복사로 넘기지 못한다."""
+        self.open_quest()
+        self.deep_write()
+        self.verify(
+            commands=[
+                {"cmd": "python3 -c 'import mod_0'", "exit_code": 0},
+                {"cmd": "python3 -c 'import mod_0'", "exit_code": 0},
+            ]
+        )
+        self.assertEqual(jout(self.qlog("state"))["pass_evidence_breadth"], 1)
+        self.assertEqual(jout(self.qlog("next"))["next_role"], "VERIFIER")
+
+    def test_small_change_keeps_the_single_evidence_path(self):
+        """작은 비민감 변경은 하한을 지지 않는다 — 기본 low 의 속도 선택 유지."""
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.verify(commands=[{"cmd": "python3 app.py", "exit_code": 0}])
+        self.assertEqual(jout(self.qlog("next"))["next_role"], "DONE")
+        self.assertEqual(self.qlog("close", "q1").returncode, 0)
+
+    def test_gate_blocks_the_same_thin_pass(self):
+        """전이·close 와 Stop 게이트가 같은 판정을 낸다 (단일 출처)."""
+        self.open_quest()
+        self.deep_write()
+        self.verify(commands=[{"cmd": "python3 -c 'import mod_0'", "exit_code": 0}])
+        out = jout(self.gate())
+        self.assertEqual(out["decision"], "block")
+        self.assertEqual(out["code"], "thin-evidence")
 
 
 class TestVerifyCostControls(TrinityBase):

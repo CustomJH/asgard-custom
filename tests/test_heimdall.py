@@ -150,7 +150,13 @@ def worker(files: dict[str, str] | None = None, root: str = "", text: str = "don
 def verifier(verdict="PASS", observed=True, structural=False, sig=None, why="", no_tool=False, commands=None):
     tool_calls = []
     if not no_tool:
-        inp = {"verdict": verdict, "criteria": CLS_WRITE["criteria"], "commands": [{"cmd": "fake", "exit_code": 0}]}
+        # 증거 둘 — 다중 파일 웨이브는 깊은 변경이라 증거 하한(MIN_DEEP_EVIDENCE)에 걸린다.
+        # 하한 자체는 TestDeepEvidenceFloor 가 보고, 여기 시험들은 웨이브 배선을 본다.
+        inp = {
+            "verdict": verdict,
+            "criteria": CLS_WRITE["criteria"],
+            "commands": [{"cmd": "fake", "exit_code": 0}, {"cmd": "pytest -q", "exit_code": 0}],
+        }
         if structural:
             inp["structural"] = True
         if sig:
@@ -159,7 +165,11 @@ def verifier(verdict="PASS", observed=True, structural=False, sig=None, why="", 
             inp["why"] = why
         tool_calls = [{"name": "verdict", "input": inp}]
     if commands is None:
-        commands = [{"cmd": "pytest -q", "exit_code": 0}] if observed else []
+        commands = (
+            [{"cmd": "pytest -q", "exit_code": 0}, {"cmd": "python3 -m compileall -q .", "exit_code": 0}]
+            if observed
+            else []
+        )
     return FakeSession(
         SessionResult(
             text="verified",
@@ -603,7 +613,8 @@ class TestTrinityLoop(Base):
         h.handle("w1.txt 만들어")
         events = [json.loads(ln) for ln in self.quest_log_text().splitlines() if ln.strip()]
         ver = [e for e in events if e.get("event") == "verify"][-1]
-        self.assertEqual([c["cmd"] for c in ver["commands"]], ["pytest -q"])  # 관측만, 자가보고 아님
+        # 관측만, 자가보고 아님 — 하네스가 본 명령이 그대로 오고 verifier 가 신고한 "fake" 는 없다
+        self.assertEqual([c["cmd"] for c in ver["commands"]], ["pytest -q", "python3 -m compileall -q ."])
 
     def test_gate_same_reason_twice_escalates(self):
         # 무수리 fail-open 위장 제거 — 동일 사유 2회 차단 → 정직한 ESCALATE

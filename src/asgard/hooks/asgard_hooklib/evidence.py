@@ -135,3 +135,32 @@ def pass_evidence(rec: dict, *, no_change: bool = False) -> bool:
         isinstance(c, dict) and c.get("exit_code") == 0 and not trivial_evidence(c.get("cmd", ""))
         for c in (rec.get("commands") or [])
     )
+
+
+def evidence_items(rec: dict) -> dict[str, list[str]]:
+    """PASS 를 떠받치는 성공 증거를 출처별로 모은다 — baseline / contract / adhoc.
+
+    출처를 나누는 이유는 셋의 위조 난이도가 다르기 때문이다. `baseline` 은 하네스가 프로젝트
+    소유 체크를 직접 돌린 기록, `contract` 는 criteria 에 선언해 하네스가 다시 돌린 명령,
+    `adhoc` 은 Verifier 가 그 자리에서 고른 명령이다. 앞의 둘은 모델이 결과를 못 바꾼다.
+
+    같은 명령 문자열은 한 번만 센다 — 되풀이 실행은 새 증거가 아니다."""
+    items: dict[str, list[str]] = {"baseline": [], "contract": [], "adhoc": []}
+    if (rec.get("baseline") or {}).get("state") == "green":
+        items["baseline"].append("baseline green")
+    for check in rec.get("criteria_checks") or []:
+        if isinstance(check, dict) and check.get("exit_code") == 0:
+            items["contract"].append(str(check.get("cmd", "")))
+    for command in rec.get("commands") or []:
+        if isinstance(command, dict) and command.get("exit_code") == 0 and not trivial_evidence(command.get("cmd", "")):
+            items["adhoc"].append(str(command.get("cmd", "")))
+    return {kind: sorted(set(cmds)) for kind, cmds in items.items()}
+
+
+def evidence_breadth(rec: dict) -> int:
+    """서로 다른 성공 증거의 수. `pass_evidence` 가 '있는가'면 이건 '몇 개인가'다.
+
+    있는가만 물으면 계약 명령 하나로 어떤 크기의 변경도 닫힌다 — 26-08-06 실측에서 5파일
+    리팩터가 `python3 test_basic.py` exit 0 하나로 PASS 했다. 계약을 한 줄로 쓰는 건 어려운
+    과업일수록 쉬우므로, 있는가만 보는 문턱은 난이도가 올라갈수록 낮아진다."""
+    return sum(len(cmds) for cmds in evidence_items(rec).values())

@@ -50,6 +50,11 @@ GATE_MESSAGES: dict[str, str] = {
         "The Verifier must run verification commands directly (always-succeeding commands like "
         "true/echo are not evidence)."
     ),
+    "thin-evidence": (
+        "Deep change (sensitive path / large diff / deleted tests) rests on {have} evidence item(s); "
+        "{need} independent ones are required. Add a second, independent check — the project baseline "
+        "or a different surface — and re-verify."
+    ),
     "baseline-red": "Harness baseline checks red ({failing}) — fix the failing checks, then re-verify.",
     "micro-pass": (
         "full-verify required (sensitive paths {sensitive}{deleted} / diff {files} files·{lines} lines) "

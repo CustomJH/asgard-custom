@@ -52,7 +52,7 @@ from asgard_hooklib.contracts import (  # noqa: E402
     quest_events_scope,
     unmet_contracts,
 )
-from asgard_hooklib.evidence import pass_evidence  # noqa: E402
+from asgard_hooklib.evidence import evidence_breadth, pass_evidence  # noqa: E402
 from asgard_hooklib.integrity import EMPTY, ledger_integrity, verification_identity  # noqa: E402
 from asgard_hooklib.paths import git, is_testfile, read_text  # noqa: E402
 from asgard_hooklib.policy import (  # noqa: E402
@@ -69,6 +69,7 @@ from asgard_hooklib.scope import (  # noqa: E402
     unsafe_map_links,
 )
 from asgard_hooklib.session import host_session_id  # noqa: E402
+from asgard_hooklib.transition import MIN_DEEP_EVIDENCE  # noqa: E402
 from asgard_hooklib.tree import (  # noqa: E402
     current_tree_ref,  # noqa: F401
     deleted_tests,
@@ -156,6 +157,11 @@ GATE_MESSAGES = {
         "PASS lacks successful verification-command evidence (commands[{{cmd,exit_code==0}}]). "
         "The Verifier must run verification commands directly (always-succeeding commands like "
         "true/echo are not evidence)."
+    ),
+    "thin-evidence": (
+        "Deep change (sensitive path / large diff / deleted tests) rests on {have} evidence item(s); "
+        "{need} independent ones are required. Add a second, independent check — the project baseline "
+        "or a different surface — and re-verify."
     ),
     "baseline-red": "Harness baseline checks red ({failing}) — fix the failing checks, then re-verify.",
     "micro-pass": (
@@ -527,9 +533,14 @@ def main():
         sensitive = [f for f in changed if sensitive_path(f, policy["sensitive_paths"])]
         dts = deleted_tests(root, base_ref)
         nt_files = [f for f in changed if not is_testfile(f)]  # 테스트 추가 ≠ 리스크 질량
-        full_required = full_verify_required(
-            policy, bool(sensitive) or bool(dts) or len(nt_files) > small["max_files"] or nt_lines > small["max_lines"]
-        )
+        full_risk = bool(sensitive) or bool(dts) or len(nt_files) > small["max_files"] or nt_lines > small["max_lines"]
+        breadth = evidence_breadth(p)
+        if full_risk and breadth < MIN_DEEP_EVIDENCE:
+            # 깊은 변경이 증거 하나로 닫히는 구멍 — transition.completion_decision과 동일 기준
+            # (단일 출처 원칙). 위험 축은 raw 를 쓴다: verify_level 기본 low 에서 full_required 는
+            # 항상 False 라, 설정 강도에 얹으면 이 하한이 기본 설정에서 통째로 꺼진다.
+            block(root, sid, "thin-evidence", have=breadth, need=MIN_DEEP_EVIDENCE)
+        full_required = full_verify_required(policy, full_risk)
         if full_required and p.get("level") != "full":
             block(
                 root,
