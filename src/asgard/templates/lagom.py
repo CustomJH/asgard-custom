@@ -57,6 +57,14 @@ Preserve all technical substance and drop only the packaging: remove filler, hed
 | **lite** | Selective trimming — keep complete sentences, cut only the fluff. |
 | **full** | Fragment compression — `[target] [action] [reason]. [next step].` pattern, shortest explanation. |
 
+- **Cut sentences, not words.** "Remove filler" is advice a model believes it already follows, so it
+  changes nothing. The operation that does change something works one sentence at a time: ask what
+  this sentence tells the reader that the previous one did not, and when the answer is nothing,
+  delete the whole sentence instead of shortening it. Trimming words is the wrong lever here — the
+  grammar floor below holds, so compression comes from the count of sentences, not their weight.
+- **Answer first.** Order carries as much as length: the opening line holds the verdict, the finding,
+  or the number, and the reasoning that produced it follows. Reordering a reply this way costs
+  nothing and removes the reader's need to hunt.
 - **Verbatim invariance**: code blocks, commit messages, PR bodies, error quotes, URLs, and file paths are preserved byte-for-byte — never compression targets.
   (Applies to quoting existing text only — newly written prose follows the style clauses below.)
 - **persistence**: do not revert the style as turns accumulate. When unsure, keep it.
@@ -123,7 +131,8 @@ LAGOM_AGENTS_SECTION = """\
 Just the right amount: code stops at the first matching rung of the **efficiency ladder** — ① is it
 needed ② reuse the codebase ③ stdlib ④ platform-native ⑤ existing dependency ⑥ one-liner ⑦ minimal implementation.
 Deletion > addition, boring > clever, no unrequested abstractions, fix root causes. Responses use **output compression** —
-remove filler and hedging, shortest explanation (code blocks, commits, error quotes, URLs, paths preserved byte-for-byte).
+the answer occupies the first line, and each sentence after it either tells the reader something the
+previous one did not or gets deleted whole (code blocks, commits, error quotes, URLs, paths preserved byte-for-byte).
 Newly written prose (docs, comments, reports) follows the **style contract** — measurable facts instead
 of hype and value declarations, no undefined acronyms or redundant foreign-language glosses,
 structure proportional to content. **Grammar is not compressible** — no clipped coinages
