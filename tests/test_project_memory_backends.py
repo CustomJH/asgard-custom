@@ -657,6 +657,59 @@ class TestBackendSelection(unittest.TestCase):
 
 
 class TestHindsightBackend(unittest.TestCase):
+    def test_post_rejects_a_non_object_json_response(self):
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return None
+
+            def read(self, size=-1):
+                return b"[]"
+
+        backend = get_backend({"server": "http://memory:8888", "bank": "demo"})
+        with (
+            mock.patch("urllib.request.urlopen", return_value=Response()),
+            self.assertRaisesRegex(ValueError, "malformed object"),
+        ):
+            backend.recall("query")
+
+    def test_namespace_count_uses_the_document_listing_total(self):
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return None
+
+            def read(self, size=-1):
+                return b'{"items": [{"id": "existing"}], "limit": 1, "offset": 0, "total": 1}'
+
+        backend = get_backend({"server": "http://memory:8888", "bank": "demo"})
+        with mock.patch("urllib.request.urlopen", return_value=Response()) as urlopen:
+            self.assertEqual(backend.namespace_document_count(), 1)
+
+        self.assertTrue(urlopen.call_args.args[0].full_url.endswith("/documents?limit=1&offset=0"))
+
+    def test_namespace_count_rejects_a_boolean_document_listing_total(self):
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return None
+
+            def read(self, size=-1):
+                return b'{"items": [], "limit": 1, "offset": 0, "total": true}'
+
+        backend = get_backend({"server": "http://memory:8888", "bank": "demo"})
+        with (
+            mock.patch("urllib.request.urlopen", return_value=Response()),
+            self.assertRaisesRegex(ValueError, "invalid namespace document listing"),
+        ):
+            backend.namespace_document_count()
+
     def test_binding_roundtrip_uses_exact_document_api(self):
         binding = ProjectMemoryBinding(
             project_uid="11111111-1111-4111-8111-111111111111",
@@ -1035,6 +1088,25 @@ class TestHindsightBackend(unittest.TestCase):
             ["POST", "GET", "POST", "PATCH", "POST"],
         )
         self.assertEqual(json.loads(requests[0].data), {"observation_scopes": [["record"]]})
+
+
+@unittest.skipUnless(
+    os.environ.get("ASGARD_HINDSIGHT_LIVE_ENDPOINT") and os.environ.get("ASGARD_HINDSIGHT_LIVE_BANK"),
+    "set ASGARD_HINDSIGHT_LIVE_ENDPOINT and ASGARD_HINDSIGHT_LIVE_BANK for the read-only live check",
+)
+class TestHindsightLiveConnection(unittest.TestCase):
+    def test_remote_namespace_is_ready_and_countable(self):
+        endpoint = str(os.environ["ASGARD_HINDSIGHT_LIVE_ENDPOINT"])
+        bank = str(os.environ["ASGARD_HINDSIGHT_LIVE_BANK"])
+        backend = get_backend({"engine": "hindsight", "endpoint": endpoint, "project_id": bank, "timeout": 15})
+        assert isinstance(backend, HindsightBackend)
+        try:
+            self.assertEqual(backend.readiness().status, "ready")
+            self.assertGreaterEqual(backend.namespace_document_count(), 0)
+            self.assertIn("content", backend.retain_fields())
+            self.assertIn("document_id", backend.retain_fields())
+        finally:
+            backend.close()
 
 
 class TestConnectIdempotence(unittest.TestCase):

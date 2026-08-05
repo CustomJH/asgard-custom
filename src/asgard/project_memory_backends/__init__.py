@@ -262,7 +262,9 @@ class HindsightBackend:
         )
         with urllib.request.urlopen(request, timeout=self.timeout) as response:
             decoded = json.loads(self._read_bounded(response).decode() or "{}")
-        return decoded if isinstance(decoded, dict) else {}
+        if not isinstance(decoded, dict):
+            raise ValueError("project memory backend returned a malformed object")
+        return decoded
 
     def _get(self, path: str, *, missing_ok: bool = False) -> dict | None:
         project_path = urllib.parse.quote(self.project_id, safe="")
@@ -549,10 +551,12 @@ class HindsightBackend:
         )
 
     def namespace_document_count(self) -> int:
-        stats = self._get("/stats")
-        count = stats.get("total_documents") if isinstance(stats, dict) else None
-        if not isinstance(count, int) or count < 0:
-            raise ValueError("project memory backend returned invalid namespace statistics")
+        # Hindsight 0.8.4의 /stats.total_documents는 retain 직후 0을 돌려준 뒤 늦게 수렴했다.
+        # connect의 ownership gate는 그 사이에도 기존 문서를 놓치면 안 되므로 목록의 total을 쓴다.
+        listing = self._get("/documents?limit=1&offset=0")
+        count = listing.get("total") if isinstance(listing, dict) else None
+        if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+            raise ValueError("project memory backend returned invalid namespace document listing")
         return count
 
     def close(self) -> None:
