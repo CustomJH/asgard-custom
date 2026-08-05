@@ -42,6 +42,20 @@ class Base(unittest.TestCase):
 
 
 class TestMapContext(Base):
+    def test_partial_graph_coverage_is_carried_into_the_bounded_agent_slice(self):
+        from asgard.code_map import refresh_map
+        from asgard.map_context import build_map_context
+        from asgard.map_graph import scan_graph
+
+        self.seed()
+        refresh_map(self.root)
+        scan_graph(self.root)
+
+        context = build_map_context(self.root, "PublicAPI")
+
+        self.assertIn("coverage가 partial", context.text)
+        self.assertIn("asgard map scan --json", context.text)
+
     def test_query_matched_trace_seeds_ride_with_command_routing(self):
         from asgard.code_map import refresh_map
         from asgard.map_context import build_map_context

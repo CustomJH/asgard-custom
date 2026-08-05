@@ -8,8 +8,10 @@ MAP_INDEX_MD = """\
 # Codebase Map — .asgard/map/
 
 Team-shared (git-tracked) codebase map. `PROJECT.md` holds the project's directions and landmarks,
-drawn by `asgard map update` from current on-disk evidence. Deep knowledge lives in per-area
-`<area>.md` files (e.g. `cli.md`, `frontend.md`), created by agents as they explore.
+drawn by `asgard map update` from current on-disk evidence. `GRAPH.md` projects source-grounded
+relations plus named coverage boundaries from `asgard map scan`; its complete derived state lives
+outside Git at `.asgard/state/map-graph.json`. Deep knowledge lives in per-area `<area>.md` files
+(e.g. `cli.md`, `frontend.md`), created by agents as they explore.
 
 ## Map Grammar (doctor warns on violations)
 
@@ -20,10 +22,13 @@ drawn by `asgard map update` from current on-disk evidence. Deep knowledge lives
 5. **fog-of-war** — Fill deep area maps incrementally, only for explored areas. No full rewrites or bulk generation.
 6. **Read first, verify to trust** — Read the map before exploring, but re-confirm every path your plan stands on with Read.
 7. **Size and injection safety** — Area files stay at 8 KiB or less. Prose outside the grammar and prompt-control phrasing are excluded from automatic context.
+8. **Named absence boundary** — A missing graph edge proves nothing by itself. Check scanner coverage limits and candidate evidence before a no-impact claim.
 
 ## Verification
 
 `asgard map check` and `asgard doctor` detect managed drift, ghost entries, grammar, and size violations.
+`asgard map scan --json` names unsupported files, excluded tests, parser bounds, and ambiguous joins;
+`asgard map impact <node-id> --json` binds the two-way evidence and remaining frontier to a stable revision.
 `PROJECT.md` auto-refreshes at main-request/subagent start and before Verifier hash computation, so map
 changes are included in the same PASS. Inspect the actual bounded injection with `asgard map context --query "<task>"`.
 

@@ -6,6 +6,14 @@
 
 - Evidence summary: commands 194 · db 2 · calls 6 · uses 2
 
+## Coverage boundaries
+
+> Named scanner gaps are evidence too. They weaken absence and blast-radius claims; details live in `map scan --json`.
+
+- Coverage status: partial · 2 named limits
+- test_sources_excluded [repository] — 180 test source files are outside the production relation graph · files 180
+- unsupported_source_suffix [.rs] — no relation extractor is configured for Rust (.rs) · files 2
+
 ## Commands
 
 > 이 저장소가 이미 답을 내는 표면이다 — 핸들러를 grep 하기 전에 여기서 고른다.
@@ -68,9 +76,9 @@
 - `asgard manual` — your own project rules (MANUAL.md) — what is loaded, from where, how big
 - `asgard map check` — how far the map has drifted, and which area maps are broken — writes nothing
 - `asgard map context` — the slice of the map an agent would actually be handed
-- `asgard map impact` — what a change here could reach, both directions — near neighbours, not a proof
+- `asgard map impact` — revision-bound two-way impact evidence, candidates, frontiers, and next exact source reads
 - `asgard map list` — every node in the graph, with the id to trace from and where it came from
-- `asgard map scan` — rebuild the relation graph from evidence in the code — no model involved
+- `asgard map scan` — rebuild source-grounded relation evidence and retain every named scanner coverage limit
 - `asgard map trace` — walk outward from one node — what sits next to it, not everything it could reach
 - `asgard map update` — draw the project map, or redraw it after the repository has moved around
 - `asgard mode pick` — change one setting by picking from a list instead of typing it out
@@ -217,9 +225,9 @@
 - `src/asgard/studio/tickets/evidence.py` — db: conn.execute?×4 · calls: failed_rate?, rate_per_s?
 - `src/asgard/cli/review.py` — commands: review cancel, review decide, review list, review show
 - `src/asgard/commands/studio/load.py` — calls: count?, failed?, rate_per_s?
+- `src/asgard/io_sqlite.py` — db: conn.execute?×3
 - `src/asgard/openai_codex.py` — calls: httpx.get?, httpx.post? · uses: openai
 - `src/asgard/agent/session.py` — uses: anthropic, openai
-- `src/asgard/io_sqlite.py` — db: conn.execute?×2
 - `benchmarks/shortcut-recall/harness.py` — db: conn.execute?
 
 ## Trace seeds

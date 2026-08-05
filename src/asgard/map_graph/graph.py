@@ -12,22 +12,30 @@ import json
 import os
 import re
 import tempfile
-import tomllib
-from collections import Counter, defaultdict
+from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from ..code_map import MapError, _atomic_write, _files, _map_dir, _safe_component, _safe_label
+from ..code_map import (
+    _LANGUAGE_BY_SUFFIX,
+    MapError,
+    _atomic_write,
+    _files,
+    _map_dir,
+    _safe_component,
+)
 from .evidence import Evidence
 from .extract_java import extract_java, extract_mapper_xml, extract_proc, extract_sql, strip_java_comments
 from .extract_python import extract_python
 from .extract_tsjs import extract_api_bases, extract_store_aliases, extract_tsjs, resolve_fe_usage
+from .projection import GRAPH_MARKER as _GRAPH_MARKER
+from .projection import console_script as _console_script
+from .projection import render_graph_md as _render_graph_md
 from .resolve_jvm import JavaModule, JvmIndex, index_java
 from .spring_props import SpringProps
 
 GRAPH_FILE = "GRAPH.md"
-_GRAPH_MARKER = "<!-- asgard:map-graph schema=1 -->"
 _STATE_RELATIVE = Path(".asgard") / "state" / "map-graph.json"
 _MAX_SOURCE_BYTES = 512 * 1024
 _TSJS_SUFFIXES = {".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".prisma", ".vue", ".svelte"}
@@ -81,35 +89,9 @@ _HTTP_VERBS = ("get", "post", "put", "delete", "patch")
 _API_LINK_CAP = 8
 # 스코프당 FE 베이스 접두가 이만큼 넘으면 수집 잡음이다 — 그 스코프의 베이스를 쓰지 않는다.
 _API_BASE_CAP = 4
-# GRAPH.md Trace seeds — 진입 표면 종류만, 종류당 상한 (전체 열람은 `asgard map list`).
-_SEED_KINDS = ("route", "page", "command", "store", "event", "job")
-_MAX_SEEDS_PER_KIND = 40
-# `## Commands` 절의 상한. 다른 절보다 후한 이유는 이것이 GRAPH.md 에서 유일하게 **라우팅**
-# 되는 재고이기 때문이다 — 잘린 명령은 주입면에서 후보로도 못 선다. 통째 열람은 어차피 금지고
-# (Navigation contract) `map context` 가 질의별로 셋만 뽑아 간다.
-_MAX_COMMAND_ROWS = 200
-# 허브 절 — 개념 노드가 이만큼은 있어야 "상위"라는 말이 뜻을 갖는다.
-_MIN_HUB_POPULATION = 12
-_MIN_HUB_ROWS = 3
-_MAX_HUB_ROWS = 12
 # 스팬 신뢰 확장자 — AST(.py)·주석 제거 후 중괄호 균형(.java)은 포함 관계가 결정론적이다.
 # 나머지(원문 정규식 근사 스팬)는 플로우 엣지를 candidate로 캡한다.
 _STRUCTURAL_SPAN_SUFFIXES = (".py", ".java")
-_KIND_LABEL = {
-    "route": "routes",
-    "page": "pages",
-    "store": "stores",
-    "composable": "composables",
-    "service": "services",
-    "component": "components",
-    "command": "commands",
-    "model": "models",
-    "db_access": "db",
-    "api_call": "calls",
-    "event": "events",
-    "job": "jobs",
-    "external_service": "uses",
-}
 
 
 class GraphError(MapError):
@@ -132,10 +114,43 @@ class GraphResult:
     state_path: str
     graph_md_path: str
     changed: bool
+    coverage_status: str
+    coverage_limits: tuple[dict, ...]
 
 
 _JVM_SUFFIXES = {".java", ".kt", ".kts"}
 _JVM_TEST_DIRS = {"test", "androidtest", "integrationtest", "testfixtures"}
+
+
+def _coverage_limit(
+    code: str,
+    detail: str,
+    *,
+    subject: str = "",
+    files: list[str] | tuple[str, ...] = (),
+    candidates: list[str] | tuple[str, ...] = (),
+    next_action: str = "",
+) -> dict:
+    """A stable, explicit account of evidence the configured scanner could not settle."""
+    return {
+        "code": code,
+        "subject": subject,
+        "detail": detail,
+        "files": sorted(set(files)),
+        "candidates": sorted(set(candidates)),
+        "next_action": next_action,
+    }
+
+
+def _sorted_limits(rows: list[dict]) -> list[dict]:
+    """Canonical order: collection order and locale must not change derived revisions."""
+    unique = {json.dumps(row, ensure_ascii=False, sort_keys=True, separators=(",", ":")): row for row in rows}
+    return [unique[key] for key in sorted(unique)]
+
+
+def _coverage_relevant(path: Path) -> bool:
+    suffix = path.suffix.lower()
+    return suffix in _EXTRACTORS or suffix in _LANGUAGE_BY_SUFFIX or SpringProps.is_config(path.name)
 
 
 def _is_test_path(path: Path) -> bool:
@@ -168,51 +183,63 @@ def _stat_revision(root: Path) -> str:
     """
     digest = hashlib.sha256()
     for rel in _files(root):
-        suffix = rel.suffix.lower()
-        if suffix not in _EXTRACTORS and not SpringProps.is_config(rel.name):
-            continue
-        if _is_test_path(rel):
+        if not _coverage_relevant(rel):
             continue
         try:
             stat = (root / rel).stat()
         except OSError:
-            continue
-        if stat.st_size > _MAX_SOURCE_BYTES:
             continue
         digest.update(f"{rel.as_posix()}\0{stat.st_size}\0{stat.st_mtime_ns}".encode("utf-8", "surrogateescape"))
         digest.update(b"\0")
     return "source-stat-sha256:" + digest.hexdigest()
 
 
-def _collect(root: Path) -> tuple[int, list[Evidence], str, dict[str, tuple[str, ...]], str, list[JavaModule]]:
+def _collect(
+    root: Path,
+) -> tuple[int, list[Evidence], str, dict[str, tuple[str, ...]], str, list[JavaModule], list[dict]]:
     scanned = 0
     collected: list[Evidence] = []
     props = SpringProps()
     base_table: dict[str, set[str]] = defaultdict(set)
+    base_sources: dict[str, dict[str, set[str]]] = defaultdict(lambda: defaultdict(set))
     alias_table: dict[str, set[str]] = defaultdict(set)
+    alias_sources: dict[str, set[str]] = defaultdict(set)
     jvm_modules: list[JavaModule] = []
     digest = hashlib.sha256()
     stat_digest = hashlib.sha256()
+    excluded_tests: list[str] = []
+    unsupported: dict[str, list[str]] = defaultdict(list)
+    oversized: list[str] = []
+    unreadable: list[str] = []
+    undecodable: list[str] = []
     for rel in _files(root):
         suffix = rel.suffix.lower()
         is_config = SpringProps.is_config(rel.name)
-        if suffix not in _EXTRACTORS and not is_config:
-            continue
-        if _is_test_path(rel):
+        if not _coverage_relevant(rel):
             continue
         full = root / rel
         try:
             stat = full.stat()
         except OSError:
             continue
-        if stat.st_size > _MAX_SOURCE_BYTES:
-            continue
-        # 스탯 다이제스트는 read/decode 성패와 무관하게 여기서 찍는다 — `_stat_revision`과 동일 집합.
+        # 스탯 다이제스트는 분석 성공 여부와 무관하게 찍는다. 테스트·미지원 언어·과대 파일도
+        # coverage를 바꾸므로, 그것들이 생기거나 사라진 상태를 fresh라 부르면 안 된다.
         stat_digest.update(f"{rel.as_posix()}\0{stat.st_size}\0{stat.st_mtime_ns}".encode("utf-8", "surrogateescape"))
         stat_digest.update(b"\0")
+        if suffix not in _EXTRACTORS and not is_config:
+            if not _is_test_path(rel):
+                unsupported[suffix or "(no suffix)"].append(rel.as_posix())
+            continue
+        if _is_test_path(rel):
+            excluded_tests.append(rel.as_posix())
+            continue
+        if stat.st_size > _MAX_SOURCE_BYTES:
+            oversized.append(rel.as_posix())
+            continue
         try:
             raw = full.read_bytes()
         except OSError:
+            unreadable.append(rel.as_posix())
             continue
         try:
             source = raw.decode("utf-8")
@@ -221,6 +248,7 @@ def _collect(root: Path) -> tuple[int, list[Evidence], str, dict[str, tuple[str,
             try:
                 source = raw.decode("cp949")
             except UnicodeError:
+                undecodable.append(rel.as_posix())
                 continue
         digest.update(rel.as_posix().encode("utf-8", "surrogateescape"))
         digest.update(b"\0")
@@ -231,14 +259,93 @@ def _collect(root: Path) -> tuple[int, list[Evidence], str, dict[str, tuple[str,
             props.ingest(rel.as_posix(), source)
             continue
         if suffix in _TSJS_SUFFIXES:
-            base_table[_scope_of(rel.as_posix())].update(extract_api_bases(source))
+            scope = _scope_of(rel.as_posix())
+            for base in extract_api_bases(source):
+                base_table[scope].add(base)
+                base_sources[scope][base].add(rel.as_posix())
             for accessor, store_id in extract_store_aliases(source):
                 alias_table[accessor].add(store_id)
+                alias_sources[accessor].add(rel.as_posix())
         elif suffix == ".java":
             # 주석 제거본으로 색인한다 — extract_java와 같은 기준이라 줄 번호가 일치한다.
             jvm_modules.append(index_java(rel.as_posix(), strip_java_comments(source)))
         collected.extend(_EXTRACTORS[suffix](rel.as_posix(), source))
-    # 스코프당 베이스가 상한을 넘으면 잡음이다 — 그 스코프는 통째로 버린다 (모호성 보존).
+    limits: list[dict] = []
+    if excluded_tests:
+        limits.append(
+            _coverage_limit(
+                "test_sources_excluded",
+                f"{len(excluded_tests)} test source files are outside the production relation graph",
+                files=excluded_tests,
+                next_action="inspect adjacent tests with bounded source search before claiming test impact",
+            )
+        )
+    for suffix, files in sorted(unsupported.items()):
+        language = _LANGUAGE_BY_SUFFIX.get(suffix, suffix)
+        limits.append(
+            _coverage_limit(
+                "unsupported_source_suffix",
+                f"no relation extractor is configured for {language} ({suffix})",
+                subject=suffix,
+                files=files,
+                next_action=f"inspect these files directly or add a {suffix} relation extractor",
+            )
+        )
+    if oversized:
+        limits.append(
+            _coverage_limit(
+                "source_too_large",
+                f"{len(oversized)} source files exceed the {_MAX_SOURCE_BYTES}-byte parser bound",
+                files=oversized,
+                next_action="read the named files directly or split generated/handwritten source before impact claims",
+            )
+        )
+    if unreadable:
+        limits.append(
+            _coverage_limit(
+                "source_unreadable",
+                f"{len(unreadable)} source files could not be read",
+                files=unreadable,
+                next_action="restore read access and rerun `asgard map scan`",
+            )
+        )
+    if undecodable:
+        limits.append(
+            _coverage_limit(
+                "source_undecodable",
+                f"{len(undecodable)} source files are neither UTF-8 nor CP949",
+                files=undecodable,
+                next_action="convert or inspect the named files directly, then rerun the scan",
+            )
+        )
+    for scope, bases in sorted(base_table.items()):
+        if len(bases) <= _API_BASE_CAP:
+            continue
+        files = sorted({path for base in bases for path in base_sources[scope][base]})
+        limits.append(
+            _coverage_limit(
+                "api_base_ambiguous",
+                f"{len(bases)} API base candidates exceed the {_API_BASE_CAP}-candidate convergence bound",
+                subject=scope or ".",
+                files=files,
+                candidates=sorted(bases),
+                next_action="select the runtime base from configuration before joining relative API calls",
+            )
+        )
+    for accessor, store_ids in sorted(alias_table.items()):
+        if len(store_ids) <= 1:
+            continue
+        limits.append(
+            _coverage_limit(
+                "store_alias_ambiguous",
+                "one frontend accessor resolves to multiple stores",
+                subject=accessor,
+                files=sorted(alias_sources[accessor]),
+                candidates=sorted(store_ids),
+                next_action="read the accessor declaration and consumers before choosing a store",
+            )
+        )
+    # 스코프당 베이스가 상한을 넘으면 잡음이다 — 그 스코프는 통째로 버리되, 위 limit에 남긴다.
     api_bases = {scope: tuple(sorted(bases)) for scope, bases in base_table.items() if 0 < len(bases) <= _API_BASE_CAP}
     # 접근자 하나가 서로 다른 스토어로 갈리면 정체가 증명되지 않는다 — 그 별칭은 쓰지 않는다.
     store_aliases = {accessor: next(iter(ids)) for accessor, ids in alias_table.items() if len(ids) == 1}
@@ -249,6 +356,7 @@ def _collect(root: Path) -> tuple[int, list[Evidence], str, dict[str, tuple[str,
         api_bases,
         "source-stat-sha256:" + stat_digest.hexdigest(),
         jvm_modules,
+        _sorted_limits(limits),
     )
 
 
@@ -342,7 +450,7 @@ def _api_call_method(node: dict) -> str:
 
 def _api_route_links(
     nodes: dict[str, dict], api_bases: dict[str, tuple[str, ...]] | None = None
-) -> dict[tuple[str, str, str], str]:
+) -> tuple[dict[tuple[str, str, str], str], list[dict]]:
     """api_call → route 브리지 엣지 — 프론트/원격 호출과 백엔드 표면을 경로 일치로 잇는다.
 
     베이스 URL·프록시 접두는 정적으로 증명할 수 없으므로 전부 candidate 다. 우선순위:
@@ -358,6 +466,7 @@ def _api_route_links(
         if raw.startswith("/"):
             routes.append((node["id"], method.upper(), _path_segments(raw)))
     links: dict[tuple[str, str, str], str] = {}
+    limits: list[dict] = []
     for node in nodes.values():
         if node["kind"] != "api_call":
             continue
@@ -398,14 +507,38 @@ def _api_route_links(
             matches = [(route_id, f"path match via {base}") for route_id, base in based]
         else:
             matches = [(route_id, "path suffix match") for route_id in suffix]
-        if not matches or len(matches) > _API_LINK_CAP:
+        if not matches:
+            if node["name"].startswith("/"):
+                limits.append(
+                    _coverage_limit(
+                        "api_route_unresolved",
+                        "a relative API call did not converge on a route",
+                        subject=node["id"],
+                        files=[location["file"] for location in node["files"]],
+                        next_action="read the call site and gateway/router configuration before claiming no backend route",
+                    )
+                )
+            continue
+        if len(matches) > _API_LINK_CAP:
+            limits.append(
+                _coverage_limit(
+                    "api_route_ambiguous",
+                    f"{len(matches)} route candidates exceed the {_API_LINK_CAP}-candidate convergence bound",
+                    subject=node["id"],
+                    files=[location["file"] for location in node["files"]],
+                    candidates=[route_id for route_id, _reason in matches],
+                    next_action="read the API call and candidate route configuration to disambiguate the edge",
+                )
+            )
             continue
         for route_id, reason in matches:
             links[(node["id"], route_id, "calls")] = reason
-    return links
+    return links, limits
 
 
-def _jvm_route_links(collected: list[Evidence], modules: list[JavaModule] | None) -> dict[tuple[str, str, str], str]:
+def _jvm_route_links(
+    collected: list[Evidence], modules: list[JavaModule] | None
+) -> tuple[dict[tuple[str, str, str], str], list[dict]]:
     """라우트 → 도달 가능한 SQL 구문 — 계층을 건너뛴 크로스파일 엣지.
 
     중간 계층(로직/스토어/매퍼)은 노드로 세우지 않는다. 대신 `detail`에 해석 근거를 남겨
@@ -413,7 +546,7 @@ def _jvm_route_links(collected: list[Evidence], modules: list[JavaModule] | None
     이미 소유하므로 라우트→구문→테이블 체인이 그래프에서 그대로 읽힌다.
     """
     if not modules:
-        return {}
+        return {}, []
     # 매퍼 XML이 증명한 `FQN#구문id` → db_access 노드 id
     statements: dict[str, str] = {}
     for item in collected:
@@ -426,9 +559,10 @@ def _jvm_route_links(collected: list[Evidence], modules: list[JavaModule] | None
                 if simple == namespace.rsplit(".", 1)[-1]:
                     statements[f"{namespace}#{member}"] = statement.node_id
     if not statements:
-        return {}
+        return {}, []
     index = JvmIndex(modules, statements)
     links: dict[tuple[str, str, str], str] = {}
+    limits: list[dict] = []
     for route in collected:
         if route.kind != "route" or not route.file.endswith(".java") or not route.scope_end:
             continue
@@ -437,14 +571,34 @@ def _jvm_route_links(collected: list[Evidence], modules: list[JavaModule] | None
             continue
         reached = index.statements_from(*located)
         if reached is None:
-            continue  # 상한 초과 — 수렴 실패는 지어내지 않고 통째로 버린다
+            limits.append(
+                _coverage_limit(
+                    "jvm_call_chain_limit",
+                    "the reachable MyBatis statement set exceeded the resolver bound",
+                    subject=route.node_id,
+                    files=[route.file],
+                    next_action="read the route call chain and mapper boundaries directly",
+                )
+            )
+            continue
         found, partial = reached
+        if partial:
+            limits.append(
+                _coverage_limit(
+                    "jvm_call_chain_partial",
+                    "the JVM call chain contains an unresolved receiver, implementation, or depth frontier",
+                    subject=route.node_id,
+                    files=[route.file],
+                    candidates=sorted(found),
+                    next_action="read the unresolved call chain from the route method before claiming complete DB impact",
+                )
+            )
         for statement_id in found:
             coverage = "partial" if partial else "resolved"
             links[(route.node_id, statement_id, "touches")] = (
                 f"jvm call chain via {located[1].owner}.{located[1].name} ({coverage})"
             )
-    return links
+    return links, limits
 
 
 def _build_state(
@@ -454,6 +608,7 @@ def _build_state(
     api_bases: dict[str, tuple[str, ...]] | None = None,
     stat_revision: str = "",
     jvm_modules: list[JavaModule] | None = None,
+    coverage_limits: list[dict] | None = None,
 ) -> dict:
     nodes: dict[str, dict] = {}
     edges: dict[tuple[str, str, str], str] = {}
@@ -475,7 +630,13 @@ def _build_state(
         # 정렬돼 있어 결정론이고, 뒤엣것으로 덮으면 스캔마다 카탈로그가 흔들린다.
         if item.summary and not node["summary"]:
             node["summary"] = item.summary
-        location = {"file": item.file, "line": item.line, "confidence": item.confidence, "detail": item.detail}
+        location = {
+            "file": item.file,
+            "line": item.line,
+            "line_end": item.scope_end or item.line,
+            "confidence": item.confidence,
+            "detail": item.detail,
+        }
         if location not in node["files"]:
             node["files"].append(location)
         file_id = f"file:{item.file}"
@@ -489,17 +650,19 @@ def _build_state(
     flows = _flow_edges(collected)
     edges.update(flows)
     link_details: dict[tuple[str, str, str], str] = {}
-    for key, reason in _api_route_links(nodes, api_bases).items():
+    api_links, api_limits = _api_route_links(nodes, api_bases)
+    for key, reason in api_links.items():
         if key not in edges:
             edges[key] = "candidate"
             link_details[key] = reason
-    jvm_links = _jvm_route_links(collected, jvm_modules)
+    jvm_links, jvm_limits = _jvm_route_links(collected, jvm_modules)
     for key, reason in jvm_links.items():
         if key not in edges:
             edges[key] = "candidate"
             link_details[key] = reason
     for node in nodes.values():
         node["files"].sort(key=lambda loc: (loc["file"], loc["line"]))
+    limits = _sorted_limits([*(coverage_limits or []), *api_limits, *jvm_limits])
     return {
         "schema": 1,
         "revision": revision,
@@ -510,9 +673,11 @@ def _build_state(
             "nodes": len(nodes),
             "edges": len(edges),
             "flows": len(flows),
-            "api_links": len(link_details) - len(jvm_links),
+            "api_links": len(api_links),
             "jvm_links": len(jvm_links),
+            "coverage_limits": len(limits),
         },
+        "coverage": {"status": "partial" if limits else "investigated", "limits": limits},
         "nodes": sorted(nodes.values(), key=lambda n: n["id"]),
         "edges": [
             {"source": source, "target": target, "kind": kind, "confidence": confidence}
@@ -520,184 +685,6 @@ def _build_state(
             for (source, target, kind), confidence in sorted(edges.items())
         ],
     }
-
-
-def _fold(names: list[str]) -> str:
-    """같은 증거는 이름 하나에 횟수로 접는다 — 한 파일에서 `conn.execute?`를 72번 반복해 적으면
-    행 하나가 주입 예산을 통째로 먹는데, 전달하려는 뜻은 "이 파일은 DB를 많이 만진다" 하나다.
-    횟수는 살린다 (72와 2는 다른 신호다).
-
-    서로 **다른** 이름이 많은 경우는 여기서 자르지 않는다. 카탈로그는 완전해야 하고(`map list`가
-    이걸 읽는다), 긴 행이 아픈 곳은 4,000B 예산이 걸린 주입면이다 — 자르는 자리는 거기다
-    (`map_context._clip_role`).
-    """
-    counted = Counter(names)
-    return ", ".join(name if total == 1 else f"{name}×{total}" for name, total in sorted(counted.items()))
-
-
-def _console_script(root: Path) -> str:
-    """`[project.scripts]`가 선언한 실행 이름 — 명령 행을 그대로 칠 수 있게 하는 접두.
-
-    선언이 없으면 빈 값이다. 실행 이름을 패키지 이름에서 추측하지 않는다.
-    """
-    try:
-        with (root / "pyproject.toml").open("rb") as stream:
-            data = tomllib.load(stream)
-    except OSError, tomllib.TOMLDecodeError, ValueError:
-        return ""
-    scripts = (data.get("project") or {}).get("scripts") if isinstance(data, dict) else {}
-    if not isinstance(scripts, dict):
-        return ""
-    names = sorted(name for name in scripts if isinstance(name, str) and name.strip())
-    return _safe_label(names[0]) if names else ""
-
-
-def _command_rows(state: dict, script: str) -> list[str]:
-    """`## Commands` 절 — 이 저장소가 이미 답을 내는 표면의 목록.
-
-    역할을 밝힌 명령만 적는다. 이름만 있는 명령은 `## Trace seeds`가 이미 세고 있고, 역할 없는
-    이름을 여기 또 늘어놓으면 앞서 고친 그 병(예산만 먹고 라우팅은 못 하는 행)으로 되돌아간다.
-    """
-    prefix = f"{script} " if script else ""
-    rows = [
-        f"- `{prefix}{node['name']}` — {node['summary']}"
-        for node in state["nodes"]
-        if node["kind"] == "command" and node.get("summary")
-    ]
-    if not rows:
-        return []
-    listed = sorted(rows)[:_MAX_COMMAND_ROWS]
-    lines = [
-        "",
-        "## Commands",
-        "",
-        "> 이 저장소가 이미 답을 내는 표면이다 — 핸들러를 grep 하기 전에 여기서 고른다.",
-        "",
-        *listed,
-    ]
-    if len(rows) > len(listed):
-        lines.append(f"- (+{len(rows) - len(listed)} more — `asgard map list --kind command`)")
-    return lines
-
-
-def _hub_rows(state: dict) -> list[str]:
-    """`## Hubs` 절 — 무엇을 중심으로 도는가.
-
-    파일 노드는 세지 않는다. 파일은 자기가 선언한 것 전부와 이어져 있어 차수가 선언 개수를 그대로
-    베낀 값이고, 그러면 이 절은 "가장 큰 파일"을 다시 말하는 자리가 된다 (이 저장소에서 `cli.py`가
-    차수 132, 나머지는 전부 10 이하다 — 재보고 뺐다).
-
-    별 모양 그래프에서는 이 절이 아무것도 안 알려 준다. 그래서 상위가 중앙값보다 확실히 높을
-    때만 낸다 — 993파일 JVM 모노리포에서는 `TDEVICE` 72·`TCFG_METER` 58에 중앙값 3이라
-    "이 시스템은 이 표들을 중심으로 돈다"가 사실이고, 여기서는 그 조건이 성립하지 않는다.
-    """
-    degree: Counter[str] = Counter()
-    for edge in state.get("edges", []):
-        degree[edge["source"]] += 1
-        degree[edge["target"]] += 1
-    concepts = {node["id"]: node for node in state["nodes"] if node["kind"] != "file" and "id" in node}
-    scored = sorted(
-        ((degree[node_id], node_id) for node_id in concepts if degree[node_id]),
-        key=lambda row: (-row[0], row[1]),
-    )
-    if len(scored) < _MIN_HUB_POPULATION:
-        return []
-    middle = sorted(count for count, _ in scored)[len(scored) // 2]
-    listed = [(count, node_id) for count, node_id in scored[:_MAX_HUB_ROWS] if count >= max(middle * 3, 4)]
-    # 하나뿐인 허브는 허브 목록이 아니라 싱크 하나다. 이 저장소가 그 경우인데(`conn.execute` 10,
-    # 수신자 타입을 못 묶어 candidate로 남은 일반 노드), "이 시스템은 conn.execute를 중심으로
-    # 돈다"는 아무에게도 방향을 못 준다.
-    if len(listed) < _MIN_HUB_ROWS:
-        return []
-    return [
-        "",
-        "## Hubs",
-        "",
-        "> 인접 차수 상위 개념 — 여기를 건드리면 멀리 간다. 정확한 범위는 `asgard map impact <id>`.",
-        "",
-        *[f"- `{node_id}` — {concepts[node_id]['kind']}, 인접 {count}" for count, node_id in listed],
-    ]
-
-
-def _render_graph_md(state: dict, script: str = "") -> str:
-    """결정론 카탈로그 — 타임스탬프·리비전 없이 구조만 담아 팀 diff를 조용하게 유지한다."""
-    per_file: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
-    kind_totals: dict[str, int] = defaultdict(int)
-    for node in state["nodes"]:
-        if node["kind"] == "file":
-            continue
-        kind_totals[node["kind"]] += 1
-        suffix = "" if node["confidence"] == "confirmed" else "?"
-        for location in node["files"]:
-            per_file[location["file"]][node["kind"]].append(node["name"] + suffix)
-    summary = " · ".join(f"{_KIND_LABEL[kind]} {kind_totals[kind]}" for kind in _KIND_LABEL if kind_totals.get(kind))
-    names = {node["id"]: node["name"] for node in state["nodes"] if "id" in node}
-    flows: dict[str, list[str]] = defaultdict(list)
-    for edge in state.get("edges", []):
-        if edge["source"].startswith("file:"):
-            continue
-        suffix = "" if edge.get("confidence", "confirmed") == "confirmed" else "?"
-        flows[edge["source"]].append(f"{edge['kind']} `{names.get(edge['target'], edge['target'])}`{suffix}")
-    lines = [
-        _GRAPH_MARKER,
-        "# Relation Graph",
-        "",
-        "> Asgard managed relation catalog. Regenerate with `asgard map scan`; do not hand-edit.",
-        "> `?` marks candidate evidence — verify at the cited source before asserting.",
-        "",
-        f"- Evidence summary: {summary or 'none'}",
-    ]
-    lines += _hub_rows(state)
-    lines += _command_rows(state, script)
-    lines += [
-        "",
-        "## Relations by file",
-        "",
-    ]
-    ranked = sorted(per_file.items(), key=lambda item: (-sum(len(v) for v in item[1].values()), item[0]))
-    for path, kinds in ranked:
-        parts = []
-        for kind in _KIND_LABEL:
-            if kinds.get(kind):
-                parts.append(f"{_KIND_LABEL[kind]}: {_fold(kinds[kind])}")
-        lines.append(f"- `{path}` — " + " · ".join(parts))
-    if flows:
-        # 개념→개념 플로우 — 어느 핸들러가 어떤 DB/API/이벤트/서비스를 만지는지
-        lines += ["", "## Flows", ""]
-        for source in sorted(flows):
-            lines.append(f"- `{names.get(source, source)}` — " + " · ".join(sorted(flows[source])))
-    # 진입 표면의 정확한 노드 id — 카탈로그 행이 곧 trace 시드다 (id 재구성 강요 금지).
-    seeds: dict[str, list[str]] = defaultdict(list)
-    for node in state["nodes"]:
-        if node["kind"] in _SEED_KINDS and "id" in node:
-            seeds[node["kind"]].append(node["id"])
-    if seeds:
-        lines += [
-            "",
-            "## Trace seeds",
-            "",
-            "> Exact node ids — copy into `asgard map trace --from <id>` or `asgard map impact <id>`.",
-            "",
-        ]
-        for kind in _SEED_KINDS:
-            ids = sorted(seeds.get(kind, ()))
-            if not ids:
-                continue
-            row = " · ".join(f"`{node_id}`" for node_id in ids[:_MAX_SEEDS_PER_KIND])
-            if len(ids) > _MAX_SEEDS_PER_KIND:
-                row += f" (+{len(ids) - _MAX_SEEDS_PER_KIND} more — `asgard map list --kind {kind}`)"
-            lines.append(f"- {_KIND_LABEL[kind]}: {row}")
-    lines += [
-        "",
-        "## Navigation contract",
-        "",
-        "- Trace edges with `asgard map trace --from <node-id>` (`--kinds touches,calls` filters edge kinds).",
-        "- Enumerate node ids with `asgard map list [--kind route]`; both directions at once with `asgard map impact <node-id>`.",
-        '- Do not read this catalog whole on large repos — `asgard map context --query "<task>"` returns the bounded, task-ranked slice.',
-        "- A missing edge is not evidence of absence — this graph is static-lane adjacency, not an exhaustive dependency inventory.",
-        "",
-    ]
-    return "\n".join(lines)
 
 
 def _owned_graph_md(content: str) -> bool:
@@ -739,8 +726,16 @@ def _atomic_state_write(root: Path, path: Path, content: str) -> None:
 
 def scan_graph(root: str | os.PathLike[str], *, dry_run: bool = False, force: bool = False) -> GraphResult:
     base = Path(root).resolve()
-    scanned, collected, revision, api_bases, stat_revision, jvm_modules = _collect(base)
-    state = _build_state(scanned, collected, revision, api_bases, stat_revision, jvm_modules)
+    scanned, collected, revision, api_bases, stat_revision, jvm_modules, coverage_limits = _collect(base)
+    state = _build_state(
+        scanned,
+        collected,
+        revision,
+        api_bases,
+        stat_revision,
+        jvm_modules,
+        coverage_limits,
+    )
     state_path = _state_file(base, _STATE_RELATIVE.name, create=False)
     state_json = json.dumps(state, ensure_ascii=False, indent=1, sort_keys=True)
     graph_md = _render_graph_md(state, _console_script(base))
@@ -782,6 +777,8 @@ def scan_graph(root: str | os.PathLike[str], *, dry_run: bool = False, force: bo
         state_path=str(state_path),
         graph_md_path=str(graph_md_path),
         changed=changed,
+        coverage_status=state["coverage"]["status"],
+        coverage_limits=tuple(state["coverage"]["limits"]),
     )
 
 
@@ -848,13 +845,23 @@ def concept_candidates(state: dict, word: str, *, limit: int = 8) -> list[dict]:
 
 def node_anchor(node: dict) -> tuple[str, int]:
     """노드의 대표 증거 위치 — confirmed 위치 우선, 파일 노드는 경로 자신이 앵커다."""
+    file, line, _line_end = node_span(node)
+    return file, line
+
+
+def node_span(node: dict) -> tuple[str, int, int]:
+    """Representative bounded source region; legacy states fall back to the start line."""
     if node["kind"] == "file":
-        return node["name"], 0
+        return node["name"], 0, 0
     locations = node.get("files") or []
     picked = next((loc for loc in locations if loc.get("confidence") == "confirmed"), None) or (
         locations[0] if locations else None
     )
-    return (picked["file"], picked["line"]) if picked else ("", 0)
+    if not picked:
+        return "", 0, 0
+    line = int(picked.get("line") or 0)
+    line_end = int(picked.get("line_end") or line)
+    return str(picked.get("file") or ""), line, max(line, line_end)
 
 
 def trace(
@@ -924,7 +931,7 @@ def trace(
                 continue
             seen.add(neighbor)
             node = nodes[neighbor]
-            file, line = node_anchor(node)
+            file, line, line_end = node_span(node)
             hops.append(
                 {
                     "id": neighbor,
@@ -936,6 +943,7 @@ def trace(
                     "via_confidence": edge_confidence,
                     "file": file,
                     "line": line,
+                    "line_end": line_end,
                     "truncated": False,
                 }
             )

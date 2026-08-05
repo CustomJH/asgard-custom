@@ -526,6 +526,9 @@ class TestFrontendLane(Base):
         edges = {(e["source"], e["target"]) for e in state["edges"]}
         self.assertNotIn(("page:/p", "store:alpha"), edges)
         self.assertNotIn(("page:/p", "store:beta"), edges)
+        limit = next(row for row in state["coverage"]["limits"] if row["code"] == "store_alias_ambiguous")
+        self.assertEqual(limit["subject"], "useThing")
+        self.assertEqual(limit["candidates"], ["alpha", "beta"])
 
     def test_component_declared_only_in_components_tree(self):
         decls = {
@@ -921,6 +924,45 @@ class TestScanGraph(Base):
         # 후보 증거는 카탈로그에서 `?`로 표시된다
         self.assertIn("?", graph_body)
 
+    def test_scan_preserves_named_coverage_limits_in_state_and_projection(self):
+        from asgard.map_graph import fresh_state, scan_graph
+
+        self.seed()
+        self.write("src/worker.go", "package worker\n")
+        self.write("src/oversized.py", "#" * (512 * 1024 + 1))
+        with open(os.path.join(self.root, "src/undecodable.py"), "wb") as stream:
+            stream.write(b"\xff\xff")
+
+        result = scan_graph(self.root)
+        state = fresh_state(self.root)
+        limits = {row["code"]: row for row in state["coverage"]["limits"]}
+
+        self.assertEqual(result.coverage_status, "partial")
+        self.assertEqual(list(result.coverage_limits), state["coverage"]["limits"])
+        self.assertEqual(state["coverage"]["status"], "partial")
+        self.assertIn("unsupported_source_suffix", limits)
+        self.assertIn("src/worker.go", limits["unsupported_source_suffix"]["files"])
+        self.assertIn("source_too_large", limits)
+        self.assertIn("src/oversized.py", limits["source_too_large"]["files"])
+        self.assertIn("source_undecodable", limits)
+        self.assertIn("src/undecodable.py", limits["source_undecodable"]["files"])
+        self.assertIn("test_sources_excluded", limits)
+        self.assertIn("tests/test_api.py", limits["test_sources_excluded"]["files"])
+        body = open(result.graph_md_path, encoding="utf-8").read()
+        self.assertIn("## Coverage boundaries", body)
+        self.assertIn("Coverage status: partial", body)
+        self.assertIn("unsupported_source_suffix", body)
+
+    def test_freshness_includes_files_outside_configured_extractors(self):
+        from asgard.map_graph import GraphError, fresh_state, scan_graph
+
+        self.seed()
+        scan_graph(self.root)
+        self.write("src/new_worker.go", "package worker\n")
+
+        with self.assertRaisesRegex(GraphError, "stale"):
+            fresh_state(self.root)
+
     def hub_state(self, spread: dict[str, int]) -> dict:
         """{개념 이름: 인접 파일 수} → 상태. 파일 노드가 개념을 하나씩 만진다."""
         nodes: list[dict] = []
@@ -1271,7 +1313,7 @@ class TestTrace(Base):
 
 class TestMemoryBridge(Base):
     def test_related_records_match_by_path_and_node_id_without_merging(self):
-        from asgard.map_graph import graph_state, related_records, scan_graph
+        from asgard.map_graph import graph_state, impact_report, related_records, scan_graph
 
         self.seed()
         from asgard.project_memory.canonical import save_canonical_record
@@ -1296,6 +1338,13 @@ class TestMemoryBridge(Base):
         self.assertEqual(len(found), 1)
         self.assertEqual(found[0].title, "Stripe 결제 재시도 정책 결정")
         self.assertEqual(found[0].match, "src/app/api.py")
+        self.assertEqual(found[0].record_id, "decision.stripe-retry")
+        self.assertEqual(found[0].source_revision, "abc123")
+        self.assertTrue(found[0].record_revision.startswith("sha256:"))
+        self.assertEqual(found[0].validity, "stale")
+        report = impact_report(self.root, "external_service:stripe")
+        self.assertEqual(report["records"][0]["record_id"], "decision.stripe-retry")
+        self.assertIn("stale_related_record", {row["code"] for row in report["coverage"]["limits"]})
         # 그래프 상태에는 레코드 내용이 절대 섞이지 않는다 (오버레이 계약)
         self.assertNotIn(
             "재시도", open(os.path.join(self.root, ".asgard/state/map-graph.json"), encoding="utf-8").read()
@@ -1610,6 +1659,30 @@ const computed = `${API_BASE_URL}/x`
         # base 성격 이름의 체크인 리터럴만 — 일반 상수·경로 없는 오리진·계산식은 제외
         self.assertEqual(extract_api_bases(source), ["/api/v2", "/v1", "/gw"])
 
+    def test_too_many_api_bases_are_preserved_as_an_ambiguity_limit(self):
+        from asgard.map_graph import graph_state, scan_graph
+
+        self.write("pyproject.toml", '[project]\nname = "graphed"\n')
+        self.write(
+            "web/services/client.ts",
+            "\n".join(
+                [
+                    "const API_BASE_URL = '/one'",
+                    "const apiBase = '/two'",
+                    "const apiBasePath = '/three'",
+                    "const apiPrefix = '/four'",
+                    "const apiRoot = '/five'",
+                ]
+            ),
+        )
+
+        scan_graph(self.root)
+        state = graph_state(self.root)
+        assert state is not None
+        limit = next(row for row in state["coverage"]["limits"] if row["code"] == "api_base_ambiguous")
+        self.assertEqual(limit["subject"], "web")
+        self.assertEqual(limit["candidates"], ["/five", "/four", "/one", "/three", "/two"])
+
     def test_fe_base_prefix_promotes_suffix_to_exact_via_base(self):
         from asgard.map_graph import scan_graph
 
@@ -1771,6 +1844,9 @@ await $fetch('/users/me')
         links = [key for key in edges if key[0] == "api_call:/x" and key[1].startswith("route:")]
         self.assertEqual(links, [])
         self.assertEqual(state["counts"]["api_links"], 0)
+        limit = next(row for row in state["coverage"]["limits"] if row["code"] == "api_route_ambiguous")
+        self.assertEqual(limit["subject"], "api_call:/x")
+        self.assertEqual(len(limit["candidates"]), 9)
 
 
 class TestJpaTableConvergence(Base):
@@ -1824,6 +1900,44 @@ class TestGraphMdSeeds(Base):
         self.assertIn("not evidence of absence", body)
 
 
+class TestImpactDossier(Base):
+    def test_stable_snapshot_separates_evidence_and_named_limits(self):
+        from asgard.map_graph import fresh_state, impact_report, scan_graph
+
+        self.seed()
+        scan_graph(self.root)
+
+        first = impact_report(self.root, "route:GET_/users", depth=1)
+        state = fresh_state(self.root)
+        reordered_state = {
+            **state,
+            "nodes": list(reversed(state["nodes"])),
+            "edges": list(reversed(state["edges"])),
+            "coverage": {**state["coverage"], "limits": list(reversed(state["coverage"]["limits"]))},
+        }
+        reordered = impact_report(self.root, "route:GET_/users", depth=1, state=reordered_state)
+
+        self.assertEqual(first["schema"], 1)
+        self.assertTrue(first["source_revision"].startswith("source-sha256:"))
+        self.assertTrue(first["impact_revision"].startswith("sha256:"))
+        self.assertEqual(first["impact_revision"], reordered["impact_revision"])
+        self.assertEqual(first["origin"]["id"], "route:GET_/users")
+        self.assertEqual(first["origin"]["file"], "src/app/api.py")
+        self.assertGreaterEqual(first["origin"]["line_end"], first["origin"]["line_start"])
+        self.assertEqual(first["coverage"]["status"], "partial")
+        codes = {row["code"] for row in first["coverage"]["limits"]}
+        self.assertIn("test_sources_excluded", codes)
+        self.assertTrue(first["evidence"])
+        self.assertTrue(all(row["evidence_id"].startswith("sha256:") for row in first["evidence"]))
+        self.assertTrue(all(row["line_end"] >= row["line_start"] for row in first["evidence"] if row["file"]))
+        self.assertTrue(all("next_exact_read" in row for row in first["evidence"]))
+
+        self.write("src/app/api.py", _PY_FIXTURE + '\nhttpx.get("https://new.example.com")\n')
+        scan_graph(self.root)
+        changed = impact_report(self.root, "route:GET_/users", depth=1)
+        self.assertNotEqual(first["impact_revision"], changed["impact_revision"])
+
+
 class TestCli(Base):
     def test_map_scan_and_trace_json(self):
         from cli_boundary import run_cli
@@ -1843,7 +1957,7 @@ class TestCli(Base):
             hops = json.loads(traced.stdout)["hops"]
             self.assertTrue(hops)
             # 홉마다 대표 앵커(file:line)와 절단 표식이 실린다 — 원문 확인 없는 단정을 막는 계약
-            self.assertTrue(all({"file", "line", "truncated"} <= set(hop) for hop in hops))
+            self.assertTrue(all({"file", "line", "line_end", "truncated"} <= set(hop) for hop in hops))
         finally:
             os.chdir(cwd)
 
@@ -1880,8 +1994,23 @@ class TestCli(Base):
             self.assertEqual(impact.exit_code, 0, impact.stderr)
             report = json.loads(impact.stdout)
             self.assertEqual(report["from"], "external_service:stripe")
-            self.assertLessEqual({"upstream", "downstream", "coverage", "records"}, set(report))
+            self.assertLessEqual(
+                {
+                    "schema",
+                    "source_revision",
+                    "impact_revision",
+                    "source_parity",
+                    "upstream",
+                    "downstream",
+                    "evidence",
+                    "coverage",
+                    "records",
+                },
+                set(report),
+            )
             self.assertEqual(report["coverage"]["depth"], 4)
+            self.assertIn(report["coverage"]["status"], {"investigated", "partial"})
+            self.assertIsInstance(report["coverage"]["limits"], list)
             self.assertTrue(report["upstream"] or report["downstream"])
         finally:
             os.chdir(cwd)

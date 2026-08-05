@@ -14,7 +14,9 @@ map_app = typer.Typer(
 app.add_typer(map_app, name="map")
 
 
-@map_app.command("scan", help="rebuild the relation graph from evidence in the code — no model involved")
+@map_app.command(
+    "scan", help="rebuild source-grounded relation evidence and retain every named scanner coverage limit"
+)
 def map_scan(
     dry_run: bool = typer.Option(False, "--dry-run"),
     json_: bool = typer.Option(False, "--json"),
@@ -61,7 +63,9 @@ def map_why(
     raise typer.Exit(run_map_why(query, limit=limit, json_out=json_))
 
 
-@map_app.command("impact", help="what a change here could reach, both directions — near neighbours, not a proof")
+@map_app.command(
+    "impact", help="revision-bound two-way impact evidence, candidates, frontiers, and next exact source reads"
+)
 def map_impact(
     node_id: str = typer.Argument(..., metavar="NODE_ID", help="node id, e.g. db_access:USERS or route:GET_/users"),
     depth: int = typer.Option(4, "--depth"),

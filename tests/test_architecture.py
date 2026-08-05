@@ -616,7 +616,13 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
         # 증거 모델과 그것만 읽는 조회기들.
         ("증거", frozenset({"evidence", "bridge", "resolve_jvm", "view_legacy"})),
         ("추출", frozenset({"extract_java", "extract_python", "extract_tsjs", "spring_props"})),
+        # projection — 완성된 상태만 받아 팀 공유 Markdown을 만드는 결정론 뷰. 그래프 조립은
+        # 이 렌더러를 부르지만 렌더러는 수집·해석을 모르므로 그래프 바로 아래에 둔다.
+        ("프로젝션", frozenset({"projection"})),
         ("그래프", frozenset({"graph"})),
+        # impact — fresh graph와 memory overlay를 읽어 revision-bound dossier로 조립한다.
+        # 추출·그래프를 바꾸지 않고 소비만 하므로 graph 위, 공개 파사드 아래다.
+        ("영향", frozenset({"impact"})),
         ("뷰", frozenset({"view"})),
         ("파사드", frozenset({"__init__"})),
     ),

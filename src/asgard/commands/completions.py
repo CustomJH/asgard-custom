@@ -113,11 +113,11 @@ _SUB_DESC = {
         "update": "draw or redraw the deterministic project map",
         "check": "report drift without writing",
         "context": "show bounded task context",
-        "scan": "rebuild the relation graph (no LLM)",
+        "scan": "rebuild source-grounded relations and named coverage limits",
         "trace": "walk relation edges from a node",
         "list": "every node in the graph, with the id to trace from",
         "why": "search the comments and docstrings that recorded a reason",
-        "impact": "what a change here could reach, both directions",
+        "impact": "revision-bound two-way evidence, frontiers, and next source reads",
     },
     "setup": {"map": "draw or refresh the project code map"},
     "evolve": {

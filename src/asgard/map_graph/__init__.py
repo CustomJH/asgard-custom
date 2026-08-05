@@ -23,9 +23,11 @@ from .graph import (
     fresh_state,
     graph_state,
     node_anchor,
+    node_span,
     scan_graph,
     trace,
 )
+from .impact import impact_report
 from .view import build_view, write_view
 
 __all__ = [
@@ -40,7 +42,9 @@ __all__ = [
     "concept_candidates",
     "fresh_state",
     "graph_state",
+    "impact_report",
     "node_anchor",
+    "node_span",
     "related_records",
     "scan_graph",
     "trace",

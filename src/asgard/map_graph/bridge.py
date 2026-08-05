@@ -21,6 +21,14 @@ class RelatedRecord:
     file: str  # 레코드 파일명
     title: str
     match: str  # "node-id" | 매칭된 파일 경로
+    record_id: str = ""
+    kind: str = ""
+    source: str = ""
+    source_revision: str = ""
+    record_revision: str = ""
+    confidence: str = ""
+    status: str = ""
+    validity: str = "unknown"
 
 
 def related_records(root: str | os.PathLike[str], node: dict) -> list[RelatedRecord]:
@@ -30,6 +38,7 @@ def related_records(root: str | os.PathLike[str], node: dict) -> list[RelatedRec
     메모리 계층의 의존성 때문에 자동 지도 갱신까지 실패하면 안 된다.
     """
     from ..project_memory.canonical import _read_record_file, records_dir
+    from ..project_memory.scan import source_revision
 
     base = Path(root).resolve()
     try:
@@ -38,6 +47,7 @@ def related_records(root: str | os.PathLike[str], node: dict) -> list[RelatedRec
         return []
     if not directory.is_dir():
         return []
+    current_revision = source_revision(str(base))
     needles: dict[str, str] = {str(node.get("id", "")): "node-id"}
     for location in node.get("files", ()):
         path = str(location.get("file", ""))
@@ -53,7 +63,7 @@ def related_records(root: str | os.PathLike[str], node: dict) -> list[RelatedRec
         try:
             if record_path.is_symlink() or record_path.stat().st_size > _MAX_RECORD_BYTES:
                 continue
-            record, _digest = _read_record_file(str(record_path))
+            record, digest = _read_record_file(str(record_path))
         except OSError, UnicodeError, ValueError:
             continue
         text = "\n".join(
@@ -68,5 +78,19 @@ def related_records(root: str | os.PathLike[str], node: dict) -> list[RelatedRec
         matched = next((label for needle, label in sorted(needles.items()) if needle in text), None)
         if matched is None:
             continue
-        related.append(RelatedRecord(file=record_path.name, title=record.title, match=matched))
+        related.append(
+            RelatedRecord(
+                file=record_path.name,
+                title=record.title,
+                match=matched,
+                record_id=record.record_id,
+                kind=record.kind,
+                source=record.source,
+                source_revision=record.source_revision,
+                record_revision="sha256:" + digest,
+                confidence=record.confidence,
+                status=record.status,
+                validity="current" if record.source_revision == current_revision else "stale",
+            )
+        )
     return related

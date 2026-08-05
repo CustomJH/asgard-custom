@@ -226,8 +226,10 @@ def run_map_scan(*, dry_run: bool = False, json_out: bool = False, quiet: bool =
         ui.ok(
             f"{result.files_scanned} files → {result.evidence_count} evidence · {result.nodes} nodes"
             f" · {result.edges} edges · {result.flows} flows · {result.api_links} api links"
-            f" · {result.jvm_links} jvm links"
+            f" · {result.jvm_links} jvm links · coverage {result.coverage_status}"
         )
+        if result.coverage_limits:
+            ui.step(f"{len(result.coverage_limits)} named coverage limits — inspect `asgard map scan --json`")
         if dry_run:
             ui.step(("would update " if result.changed else "already current ") + result.graph_md_path)
         else:
@@ -285,7 +287,11 @@ def run_map_trace(
         mark = (
             "" if hop["confidence"] == "confirmed" and hop.get("via_confidence", "confirmed") == "confirmed" else " ?"
         )
-        anchor = f" @ {hop['file']}" + (f":{hop['line']}" if hop.get("line") else "") if hop.get("file") else ""
+        if hop.get("file") and hop.get("line"):
+            end = f"-{hop['line_end']}" if hop.get("line_end", hop["line"]) > hop["line"] else ""
+            anchor = f" @ {hop['file']}:{hop['line']}{end}"
+        else:
+            anchor = f" @ {hop['file']}" if hop.get("file") else ""
         ui.step(f"{'  ' * hop['depth']}{hop['via']} → {hop['id']}{mark}{anchor}")
     truncated = sum(1 for hop in hops if hop.get("truncated"))
     if truncated:
@@ -386,49 +392,31 @@ def run_map_impact(node_id: str, *, depth: int = 4, json_out: bool = False) -> i
     """
     root = _project_root(os.getcwd())
     ui.set_quiet(json_out)
-    from ..map_graph import GraphError, fresh_state, related_records, trace
+    from ..map_graph import GraphError, fresh_state, impact_report
 
     try:
         state = fresh_state(root)
         node_id, resolved_from = _resolve_concept(state, node_id)
-        upstream = trace(root, node_id, depth=depth, direction="upstream", state=state)
-        downstream = trace(root, node_id, depth=depth, direction="downstream", state=state)
+        report = impact_report(root, node_id, depth=depth, state=state)
     except (GraphError, OSError) as exc:
         if json_out:
             print(json.dumps({"error": str(exc)}, ensure_ascii=False))
         else:
             ui.fail(str(exc))
         return 2
-    origin = next((node for node in state["nodes"] if node.get("id") == node_id), {})
-    records = [asdict(record) for record in related_records(root, origin)] if origin else []
-    candidates = sum(
-        1
-        for hop in [*upstream, *downstream]
-        if hop["confidence"] != "confirmed" or hop.get("via_confidence", "confirmed") != "confirmed"
-    )
-    coverage = {
-        "depth": depth,
-        "upstream_truncated": sum(1 for hop in upstream if hop.get("truncated")),
-        "downstream_truncated": sum(1 for hop in downstream if hop.get("truncated")),
-        "candidates": candidates,
-    }
+    report["resolved_from"] = resolved_from
     if json_out:
-        payload = {
-            "from": node_id,
-            "resolved_from": resolved_from,
-            "upstream": upstream,
-            "downstream": downstream,
-            "records": records,
-            "coverage": coverage,
-        }
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        print(json.dumps(report, ensure_ascii=False, indent=2))
         return 0
     ui.head(f"map · impact {node_id}")
     if resolved_from:
         ui.step(
             f"resolved: {resolved_from} → {node_id} (하나만 걸렸어요 — 아니다 싶으면 `asgard map list`로 확인해 주세요)"
         )
-    for label, hops in (("upstream — 이 노드에 닿는 것", upstream), ("downstream — 이 노드가 만지는 것", downstream)):
+    for label, hops in (
+        ("upstream — 이 노드에 닿는 것", report["upstream"]),
+        ("downstream — 이 노드가 만지는 것", report["downstream"]),
+    ):
         ui.step(f"[{label}]")
         if not hops:
             ui.step("  인접한 게 없어요 — 없다는 증거는 아니에요")
@@ -438,17 +426,30 @@ def run_map_impact(node_id: str, *, depth: int = 4, json_out: bool = False) -> i
                 if hop["confidence"] == "confirmed" and hop.get("via_confidence", "confirmed") == "confirmed"
                 else " ?"
             )
-            anchor = f" @ {hop['file']}" + (f":{hop['line']}" if hop.get("line") else "") if hop.get("file") else ""
+            if hop.get("file") and hop.get("line"):
+                end = f"-{hop['line_end']}" if hop.get("line_end", hop["line"]) > hop["line"] else ""
+                anchor = f" @ {hop['file']}:{hop['line']}{end}"
+            else:
+                anchor = f" @ {hop['file']}" if hop.get("file") else ""
             tail = " …" if hop.get("truncated") else ""
             ui.step(f"  d{hop['depth']} {hop['via']} → {hop['id']}{mark}{anchor}{tail}")
+    coverage = report["coverage"]
     truncated = coverage["upstream_truncated"] + coverage["downstream_truncated"]
-    ui.step(f"coverage: depth {depth} · all edge kinds · candidates {candidates}")
+    ui.step(
+        f"coverage: {coverage['status']} · depth {depth} · all edge kinds · candidates {coverage['candidates']}"
+    )
     if truncated:
         ui.step(f"{truncated} nodes at depth limit still have unexplored edges — raise --depth to continue")
+    for limit in coverage["limits"]:
+        subject = f" [{limit['subject']}]" if limit.get("subject") else ""
+        ui.step(f"limit: {limit['code']}{subject} — {limit['detail']}")
+        if limit.get("next_action"):
+            ui.step(f"  next: {limit['next_action']}")
+    ui.step(f"impact revision: {report['impact_revision']}")
     ui.step(
         "선이 없다고 의존이 없는 건 아니에요 — 정적으로 그린 인접 지도라, `?` 후보는 원문을 보기 전엔 단정하지 마세요"
     )
-    for record in records:
+    for record in report["records"]:
         ui.step(f"관련 기록: {record['title']} [{record['match']}]")
     return 0
 

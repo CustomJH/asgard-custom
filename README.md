@@ -233,19 +233,30 @@ bundled `hwpx` skill. Agents reach the same engine through
 ```bash
 asgard map generate                         # initialize the deterministic shared map
 asgard map update                           # refresh structural facts
+asgard map scan                             # rebuild source-grounded relation evidence and named gaps
+asgard map trace --from route:GET_/users    # walk one bounded graph direction/slice
+asgard map impact route:GET_/users --json   # revision-bound two-way impact evidence
 asgard map check                            # read-only drift and area-map validation
 asgard map context --query "worker routing" # inspect bounded agent context
 ```
 
 The team-shared map lives in `.asgard/map/`. `PROJECT.md` is a compact, deterministic
 orientation map built from paths, manifests, verification commands, public symbols, and
-local import relations observed on disk; Asgard owns and regenerates it. Human/agent-authored
-area maps such as `cli.md` or `frontend.md` are bounded fog-of-war notes and are never
-overwritten. Main requests and subagents receive only task-relevant map entries within a
-fixed context budget. Each start refreshes structural drift, and quest verification refreshes
-again before computing the Verifier diff hash, so automatic map changes are covered by the
-same PASS instead of creating an unverified post-close write. `asgard setup map` remains a
-backward-compatible alias.
+local import relations observed on disk. `GRAPH.md` is the source-derived relation catalog;
+its complete machine-readable state lives in the derived, untracked
+`.asgard/state/map-graph.json`. Every graph location carries a bounded source span and every
+known omission — unsupported source, excluded tests, parser bounds, or ambiguous convergence —
+is retained as a named coverage limit instead of disappearing as an empty edge. `map impact`
+returns confirmed and candidate rows separately, the remaining frontier, next exact reads,
+the source revision, and a deterministic `impact_revision`.
+
+Asgard owns and regenerates both managed projections. Human/agent-authored area maps such as
+`cli.md` or `frontend.md` are bounded fog-of-war notes and are never overwritten. Main requests
+and subagents receive only task-relevant map entries within a fixed context budget, including a
+warning whenever relation coverage is partial. Each start refreshes structural drift, and quest
+verification refreshes again before computing the Verifier diff hash, so automatic map changes
+are covered by the same PASS instead of creating an unverified post-close write. `asgard setup
+map` remains a backward-compatible alias.
 
 Maps are navigation hints, not completion evidence. Thinker/Worker must still read the
 definitions and usages that a plan depends on, while `asgard doctor` checks managed-map

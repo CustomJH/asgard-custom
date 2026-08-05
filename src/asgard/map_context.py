@@ -18,6 +18,7 @@ _ENTRY = re.compile(r"^- `([^`]+)` — (.+)$")
 _COMMAND = re.compile(r"^- Command: `([^`]+)` — (.+)$")
 _TOKEN = re.compile(r"[\w./-]{2,}", re.UNICODE)
 _SEED_ID = re.compile(r"`([a-z_]+:[^`\s]+)`")
+_COVERAGE = re.compile(r"^- Coverage status: ([a-z_]+) · (\d+) named limits$")
 _MAX_CONTEXT_SEEDS = 3
 _MAX_CONTEXT_COMMANDS = 3
 GRAPH_SOURCE = "GRAPH.md"
@@ -212,6 +213,18 @@ def _routable_commands(graph_text: str) -> list[tuple[str, str]]:
     return rows
 
 
+def _coverage_note(graph_text: str) -> str:
+    """Carry a partial scanner boundary into the agent slice without copying the full gap catalog."""
+    found = next((_COVERAGE.fullmatch(line) for line in graph_text.splitlines() if line.startswith("- Coverage status:")), None)
+    if found is None or found.group(1) != "partial":
+        return ""
+    count = int(found.group(2))
+    return (
+        f"관계 지도 coverage가 partial이다({count} named limits). "
+        "부재·전체 영향 주장은 `asgard map scan --json`의 빠진 범위를 먼저 확인해라."
+    )
+
+
 def _command_routes(rows: list[tuple[str, str]], groups: Groups) -> list[tuple[str, str]]:
     """질의에 맞는 명령 — 숏컷의 본체다.
 
@@ -339,11 +352,14 @@ def build_map_context(
             "연쇄·영향 질문(무엇이 무엇을 부르나·바꾸면 어디까지)은 경로 grep 전에 지도 명령이 정확하다:",
             f"- `asgard map impact <id>` / `asgard map trace --from <id> --kinds calls,touches` — 시드: {seed_row}",
         ]
-    reserved = sum(len(line.encode("utf-8")) + 1 for line in (*route_lines, *seed_lines))
+    coverage_note = _coverage_note(graph_text)
+    coverage_lines = [coverage_note] if coverage_note else []
+    reserved = sum(len(line.encode("utf-8")) + 1 for line in (*coverage_lines, *route_lines, *seed_lines))
     selected: list[MapEntry] = []
     lines = [
         f'<asgard-map revision="{managed_hash[:12]}" advisory="true">',
         "작업 관련 프로젝트 지도다. 먼저 이 경로로 탐색하되 계획·편집·판정에 쓰는 정의와 사용처는 소스에서 다시 읽어라.",
+        *coverage_lines,
         *route_lines,
     ]
     for entry in ranked[:MAX_CONTEXT_ENTRIES]:
@@ -362,5 +378,5 @@ def build_map_context(
                 break
             lines.append(line)
     lines.append("</asgard-map>")
-    text = "\n".join(lines) if selected or commands or route_lines else ""
+    text = "\n".join(lines) if selected or commands or route_lines or coverage_lines else ""
     return MapContext(text, tuple(selected), issues, managed_hash, refreshed)
