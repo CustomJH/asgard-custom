@@ -849,9 +849,14 @@ def _cmd_close(root: str, qid: str, policy: dict, args) -> int:
     return 0
 
 
-def main() -> int:
-    args = _parser().parse_args()
-    root = repo_root()
+def main(argv: list[str] | None = None, root: str | None = None) -> int:
+    """CLI 진입점 ①, 그리고 같은 인터프리터 안에서 부르는 라이브러리 진입점 ②.
+
+    두 인자 모두 ②를 위해 있다. `argv`가 없으면 `sys.argv`를 읽고 `root`가 없으면 `repo_root()`가
+    git 을 한 번 더 띄운다 — 프로세스로 부를 때는 그 두 값을 달리 얻을 방법이 없기 때문이다. 이미
+    저장소 위치를 아는 호출부는 넘겨서 둘 다 건너뛴다."""
+    args = _parser().parse_args(argv)
+    root = root or repo_root()
     policy = load_policy(root)
 
     if args.cmd == "open":
