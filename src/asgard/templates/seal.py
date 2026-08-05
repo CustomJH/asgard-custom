@@ -76,12 +76,18 @@ gitmoji와 Conventional Commits의 type 구조를 결합한다.
 
 1. **한 번의 확인** — `git status --short`를 보고, 민감한 경로가 없을 때
    `git diff --cached`와 `git diff`를 읽는다. 변경이 없으면 한 줄로 알리고 끝낸다.
+   트리가 커도 파일 묶음마다 `git diff`를 다시 부르지 않는다. 양이 부담되면 `git diff --stat`으로
+   규모를 먼저 보고 `git diff -U1`처럼 문맥을 줄여 한 번에 읽는다 — 같은 바이트를 나눠 읽으면
+   왕복만 늘어난다 (26-08-05 실측: `git diff` 호출 자체는 0.2초인데 호출 사이 왕복이 4~10초라,
+   묶음별로 열다섯 번 부른 실행에서 왕복만 1분이 넘었다).
 2. 변경을 최소 logical commit으로 묶는다. 경계가 명확하면 설명이나 승인 왕복 없이 계속한다.
-3. `git add -- <named paths>`로 한 묶음만 stage한다.
-4. `git diff --cached --check`와 `git diff --cached --stat`으로 stage 결과를 확인한다. 의도한
-   파일과 다르거나 검사에 실패하면 commit하지 않는다.
-5. `git commit -m "<subject>"`를 실행한다. 필요한 body가 있을 때만 두 번째 `-m`을 붙인다.
-6. 생성된 commit hash와 subject만 한 줄로 보고한다. `git log`를 다시 출력하지 않는다.
+3. 한 묶음을 **한 번의 호출로** 봉인한다:
+   `git add -- <named paths> && git diff --cached --check && git commit -m "<subject>"`.
+   `&&`는 앞이 실패하면 뒤를 안 돌려서, 검사에 걸린 묶음은 commit까지 못 간다. 필요한 body가
+   있을 때만 두 번째 `-m`을 붙인다. 무엇이 담겼는지는 commit 출력의 `N files changed`가 알린다.
+   호출을 add·check·stat·commit 넷으로 쪼개면 commit 한 건마다 왕복이 셋 더 붙는다.
+   이 합침이 안전한 전제는 1번이다 — 이미 stage돼 있던 것을 거기서 이미 봤어야 한다.
+4. 생성된 commit hash와 subject만 한 줄로 보고한다. `git log`를 다시 출력하지 않는다.
 
 merge conflict, 민감한 파일, 분리할 수 없는 혼합 hunk, hook 실패만 정확한 원인과 함께 보고하고
 멈춘다. 이 네 경우가 아니면 한 턴 안에 commit까지 끝낸다.

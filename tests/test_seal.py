@@ -76,7 +76,7 @@ class TestSkillBody(unittest.TestCase):
 
     def test_staging_hygiene_rule(self):
         self.assertIn("No `git add -A` / `git add .`", SEAL_SKILL_MD)
-        self.assertIn("git diff --cached --stat", SEAL_SKILL_MD)  # staged 재검증 게이트
+        self.assertIn("git diff --cached --check", SEAL_SKILL_MD)  # staged 재검증 게이트
 
     def test_secret_and_noverify_gates(self):
         self.assertIn("Canon 4", SEAL_SKILL_MD)
@@ -115,8 +115,18 @@ class TestSkillBody(unittest.TestCase):
         self.assertIn("한 번의 확인", SEAL_SKILL_MD)
         self.assertIn("git status --short", SEAL_SKILL_MD)
         self.assertIn("git diff --cached --check", SEAL_SKILL_MD)
-        self.assertIn("git diff --cached --stat", SEAL_SKILL_MD)
         self.assertIn('git commit -m "<subject>"', SEAL_SKILL_MD)
+
+    def test_one_commit_costs_one_round_trip(self):
+        """봉인 한 건은 호출 하나다 — stage·검사·commit 이 `&&` 로 이어져야 한다.
+
+        훅이 아니라 왕복이 남은 값이다 (26-08-05 실측: `git` 호출 자체는 0.2초인데 호출 사이
+        모델 왕복이 4~10초). 넷으로 쪼갠 절차는 commit 한 건에 왕복 넷을 쓴다. 순서도 고정한다 —
+        `&&` 는 앞이 실패하면 뒤를 안 돌리므로, 검사가 commit **앞**에 있어야 게이트다."""
+        chain = 'git add -- <named paths> && git diff --cached --check && git commit -m "<subject>"'
+        self.assertIn(chain, SEAL_SKILL_MD)
+        body = SEAL_SKILL_MD
+        self.assertLess(body.index("git diff --cached --check"), body.index('git commit -m "<subject>"'))
 
     def test_atomic_commit_rules(self):
         self.assertIn("1 commit = 1 logical change", SEAL_SKILL_MD)
