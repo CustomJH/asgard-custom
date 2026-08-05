@@ -42,8 +42,8 @@ for _stream in (sys.stdout, sys.stderr):
     except Exception:
         pass
 
-MAX_SHOWN = 3  # 한 화면에 놓을 물음 수 — 전부 쏟으면 무엇부터 볼지가 사라진다
-MAX_BACK = 2  # 되돌아온 물음 상한 — 재방문이 이번 변경보다 길어지면 이번 변경을 안 보게 된다
+MAX_SHOWN = 1  # Stop은 하루치 리뷰가 아니라 한 턴의 속도 조절기다 — 한 번에 한 판단만 둔다
+MAX_BACK = 1  # 이번 질문이 없을 때만 옛 물음 하나가 들어온다
 # 파일을 바꾼 호출 몇 번마다 팁을 한 번 물어볼 것인가. 작게 잡으면 도구 호출마다 프로세스가
 # 뜨고, 크게 잡으면 짧은 작업에서는 한 번도 안 닿는다. 여덟은 한 번의 작업 단위(파일 서넛을
 # 오가며 고치는 구간)가 끝날 무렵 한 번 닿는 값이다.
@@ -78,7 +78,7 @@ def _lesson(exe: str, root: str, paths: list[str]) -> dict:
     """
     # `--record`가 이 호출을 성장 기록에 센다 — 훅이 놓은 물음도 사람 앞에 놓인 물음이다.
     # 안 세면 조절(fading)·재방문이 외부 클라이언트에서만 영원히 1회차에 머문다.
-    cmd = [exe, "tutor", "--json", "--record", "--report"]
+    cmd = [exe, "tutor", "--json", "--record", "--report", "--limit", str(MAX_SHOWN)]
     for path in paths[:200]:
         cmd += ["--path", path]
     try:
@@ -138,6 +138,13 @@ def _card(lesson: dict, points: list[dict], back: list[dict], told: Sequence[str
         # 설명이 물음보다 위에 온다 — 전달된 적 없는 것을 인출부터 시키면 물음은 답이 아니라
         # 침묵을 받는다. 네이티브 `tutor._card`가 같은 자리에 같은 절을 놓는다.
         lines += [*told, ""]
+    moved = sum(
+        len(row.get("units_moved") or ())
+        for row in (lesson.get("files") or [])
+        if isinstance(row, dict)
+    )
+    if moved:
+        lines.append("  구조 이동 — 같은 본문으로 확인된 %d개 단위는 삭제 질문에서 뺐어요." % moved)
     shown = 0
     folded, quiet = {}, {}
     for point in points:
@@ -154,7 +161,7 @@ def _card(lesson: dict, points: list[dict], back: list[dict], told: Sequence[str
         shown += 1
     over = sum(1 for p in points if (p.get("form") or "full") not in ("fold", "quiet")) - shown
     if over > 0:
-        lines.append("  …외 %d건" % over)
+        lines.append("  나머지 후보는 이번 회차에 묻지 않아요.")
     if folded:
         lines.append("  %s — 이미 답해 오신 종류라 접었어요" % _folded(folded))
     if quiet:
@@ -171,7 +178,7 @@ def _card(lesson: dict, points: list[dict], back: list[dict], told: Sequence[str
     return "\n".join(lines)
 
 
-def _explain(exp: object, limit: int = MAX_SHOWN) -> list[str]:
+def _explain(exp: object, limit: int = MAX_SHOWN, quiz: bool = True) -> list[str]:
     """`asgard tutor --json`의 `explain` 칸을 그린다 — 훅은 설명을 만들지 않는다.
 
     칸이 없거나 `null`이면 빈 목록이고, 그러면 카드는 지금까지처럼 물음만 낸다. 훅은 stdlib
@@ -199,17 +206,36 @@ def _explain(exp: object, limit: int = MAX_SHOWN) -> list[str]:
     if depth == "owned":
         where = " · ".join(("%s %s" % (_at(step), step.get("unit") or "")).strip() for step in steps[:limit])
         return ["⠶ 설명 — %s" % where] if where else []
-    lines = ["⠶ 설명 — 이번 변경에서 읽을 자리 %d곳이에요." % len(steps)]
+    total = int(exp.get("total_units") or len(steps))
+    flows = int(exp.get("flow_count") or 1)
+    overview = str(exp.get("overview") or "").strip()
+    if not overview:
+        overview = (
+            "변경 단위 %d곳을 호출 관계 기준 %d개 흐름으로 나눴어요." % (total, flows)
+            if total
+            else "현재 읽을 코드 단위는 없어요."
+        )
+    lines = ["⠶ 설명 — " + overview]
     mission = " ".join(str(exp.get("mission") or "").split())
     if depth == "first" and mission:
         lines.append("  임무 — " + mission[:120])
-    for step in steps[:limit]:
-        lines.append(
-            "  %s. %s %s — %s · %s"
-            % (step.get("order"), _at(step), step.get("unit") or "", step.get("what") or "", step.get("why_here") or "")
-        )
-    if len(steps) > limit:
-        lines.append("  …외 %d건" % (len(steps) - limit))
+    primary = int(exp.get("primary_units") or len(steps))
+    shown = steps[: min(max(0, limit), primary)]
+    if shown:
+        lines.append("  먼저 읽을 흐름 — %d곳" % len(shown))
+        for step in shown:
+            lines.append(
+                "  %s. %s %s — %s · %s"
+                % (
+                    step.get("order"),
+                    _at(step),
+                    step.get("unit") or "",
+                    step.get("what") or "",
+                    step.get("why_here") or "",
+                )
+            )
+        if total > len(shown):
+            lines.append("  나머지 흐름은 보고서에 접어 뒀어요.")
     if depth != "first":
         return lines
     if terms:
@@ -218,9 +244,10 @@ def _explain(exp: object, limit: int = MAX_SHOWN) -> list[str]:
             gloss = str(term.get("gloss") or "")
             lines.append("    `%s` — %s" % (term.get("name"), term.get("where")) + (" — %s" % gloss if gloss else ""))
         if len(terms) > limit:
-            lines.append("    …외 %d건" % (len(terms) - limit))
+            lines.append("    나머지 말은 보고서에 접어 뒀어요.")
     lines += ["  확인 — %s" % check for check in checks]
-    lines += ["    ▸ %s" % ask for ask in recall]
+    if quiz:
+        lines += ["    ▸ %s" % ask for ask in recall]
     lines += ["  못 본 것 — %s: %s" % (gap[0], gap[1]) for gap in gaps[:limit]]
     return lines
 
@@ -241,6 +268,10 @@ def _texts(exp: dict, name: str) -> list:
 
 
 def _label(row: dict) -> str:
+    if not row.get("unit") and row.get("kind") == "behavior-removed":
+        return "삭제 책임 묶음"
+    if not row.get("unit") and row.get("kind") == "test-removed":
+        return "판정 책임 묶음"
     return _KIND.get(row.get("kind"), row.get("kind"))
 
 
@@ -407,9 +438,11 @@ def main() -> None:
         if not exe:
             sys.exit(0)
         lesson = _lesson(exe, root, paths)
-        points = [p for p in (lesson.get("checkpoints") or []) if isinstance(p, dict)]
+        selected = lesson.get("shown_checkpoints")
+        source = selected if isinstance(selected, list) else (lesson.get("checkpoints") or [])
+        points = [p for p in source if isinstance(p, dict)]
         back = [r for r in (lesson.get("revisits") or []) if isinstance(r, dict)]
-        told = _explain(lesson.get("explain"))
+        told = _explain(lesson.get("explain"), quiz=not bool(points or back))
         if not points and not back and not told:
             sys.exit(0)  # 물을 것도 설명할 것도 없으면 침묵한다 — 빈 카드는 다음 카드의 신뢰를 깎는다
         if _latched(root, sid, _signature(points, back, told)):

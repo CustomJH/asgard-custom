@@ -228,6 +228,67 @@ class ReviewTest(unittest.TestCase):
             self._write(root, "tests/test_m.py", "def test_a():\n    assert 1\n")
             self.assertIn("test-removed", self._kinds(tutor.review(root, "HEAD", ["tests/test_m.py"])))
 
+    def test_an_extracted_function_is_reported_as_a_move_not_removed_behavior(self):
+        """본문이 그대로 다른 변경 파일에 살아 있으면 삭제 질문은 오탐이다."""
+        with contextlib.ExitStack() as stack:
+            root = self._repo(stack)
+            self._write(root, "old.py", "def legacy(value):\n    return value + 1\n")
+            self._write(root, "new.py", "VALUE = 1\n")
+            self._commit(root)
+            self._write(root, "old.py", "VALUE = 1\n")
+            self._write(root, "new.py", "def shared(value):\n    return value + 1\n")
+
+            lesson = tutor.review(root, "HEAD", ["old.py", "new.py"])
+
+            old = next(change for change in lesson.files if change.path == "old.py")
+            self.assertEqual(old.units_removed, ())
+            self.assertIn("legacy → new.py shared", old.units_moved)
+            self.assertNotIn("behavior-removed", self._kinds(lesson))
+
+    def test_a_changed_copy_is_not_called_a_move(self):
+        """옮기며 동작도 바뀌면 같은 구현이라고 단정하지 않는다."""
+        with contextlib.ExitStack() as stack:
+            root = self._repo(stack)
+            self._write(root, "old.py", "def legacy(value):\n    return value + 1\n")
+            self._write(root, "new.py", "VALUE = 1\n")
+            self._commit(root)
+            self._write(root, "old.py", "VALUE = 1\n")
+            self._write(root, "new.py", "def shared(value):\n    return value + 2\n")
+
+            lesson = tutor.review(root, "HEAD", ["old.py", "new.py"])
+
+            self.assertIn("behavior-removed", self._kinds(lesson))
+            self.assertEqual(next(change for change in lesson.files if change.path == "old.py").units_moved, ())
+
+    def test_many_removed_units_make_one_responsibility_question(self):
+        body = "\n\n".join(f"def part_{n}():\n    return {n}" for n in range(5)) + "\n"
+        with contextlib.ExitStack() as stack:
+            root = self._repo(stack)
+            self._write(root, "m.py", body)
+            self._commit(root)
+            self._write(root, "m.py", "VALUE = 1\n")
+
+            lesson = tutor.review(root, "HEAD", ["m.py"])
+            removed = [point for point in lesson.checkpoints if point.kind == "behavior-removed"]
+
+            self.assertEqual(len(removed), 1)
+            self.assertIn("이 묶음이 맡던 책임", removed[0].ask)
+            self.assertEqual(len(lesson.files[0].units_removed), 5, "인벤토리는 압축해도 사실은 잃지 않는다")
+            self.assertIs(lesson.ranked[0], removed[0], "같은 위험도면 책임 묶음이 세부 단위보다 먼저다")
+
+    def test_a_deleted_file_is_read_from_the_base_instead_of_called_unreadable(self):
+        with contextlib.ExitStack() as stack:
+            root = self._repo(stack)
+            self._write(root, "gone.py", "def gone():\n    return 1\n")
+            self._commit(root)
+            os.remove(os.path.join(root, "gone.py"))
+
+            lesson = tutor.review(root, "HEAD", ["gone.py"])
+
+            self.assertEqual(lesson.undetermined, ())
+            self.assertTrue(lesson.files[0].judged)
+            self.assertIn("behavior-removed", self._kinds(lesson))
+
     def test_the_repos_own_package_is_not_a_new_dependency(self):
         """자기 나무를 남이라 부르는 물음은 한 번이면 신뢰를 잃는다 (실측 오탐)."""
         with contextlib.ExitStack() as stack:
@@ -540,6 +601,18 @@ class ReportLaneTest(unittest.TestCase):
             for key in ("base", "files", "added", "removed", "checkpoints", "revisits", "undetermined", "mandate"):
                 self.assertIn(key, data)
             self.assertIn("explain", data)
+            self.assertIn("shown_checkpoints", data)
+            self.assertIn("checkpoint_summary", data)
+
+    def test_the_hook_payload_and_report_carry_only_the_one_question_actually_shown(self):
+        with contextlib.ExitStack() as stack:
+            root = self._repo(stack)
+            data = json.loads(self._run(json_out=True, report=True, limit=1, paths=("m.py",)))
+            report = open(os.path.join(root, data["report"]), encoding="utf-8").read()
+
+            self.assertLessEqual(len(data["shown_checkpoints"]), 1)
+            self.assertGreaterEqual(len(data["checkpoints"]), len(data["shown_checkpoints"]))
+            self.assertLessEqual(report.count("- [ ] **"), 1)
 
     def test_the_explain_slot_is_null_when_the_engine_is_missing(self):
         """표면이 엔진보다 먼저 배송될 수 있다 — 그때 훅이 받는 값은 예외가 아니라 null이다."""

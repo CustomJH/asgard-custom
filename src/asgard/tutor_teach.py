@@ -28,6 +28,7 @@ from __future__ import annotations
 import ast
 import os
 import subprocess
+from collections import Counter
 from dataclasses import dataclass
 
 from . import surface, tutor_growth, tutor_probes
@@ -43,7 +44,24 @@ OWNED_AT = 3  # 이 경로들에 대해 답한 물음이 이만큼이면 좌표�
 DEPTHS = ("first", "familiar", "owned")
 # 코드 단위를 못 읽은 것이 아니라 읽을 단위가 없는 확장자. 이것까지 gaps 에 올리면 문서 한 줄
 # 고칠 때마다 "못 봤다"가 쌓이고, 그러면 그 목록을 아무도 안 본다.
-_DOC_SUFFIXES = (".md", ".txt", ".rst", ".json", ".toml", ".yaml", ".yml", ".ini", ".cfg", ".lock", ".csv", ".svg")
+_DOC_SUFFIXES = (
+    ".md",
+    ".txt",
+    ".rst",
+    ".json",
+    ".jsonl",
+    ".ndjson",
+    ".log",
+    ".toml",
+    ".yaml",
+    ".yml",
+    ".ini",
+    ".cfg",
+    ".lock",
+    ".csv",
+    ".svg",
+)
+_DOC_NAMES = frozenset({".gitignore", ".gitattributes", ".dockerignore", "LICENSE", "NOTICE"})
 
 
 @dataclass(frozen=True)
@@ -82,6 +100,11 @@ class Explanation:
     checks: tuple[str, ...]
     recall: tuple[str, ...]
     gaps: tuple[tuple[str, str], ...]
+    # 아래 넷은 카드가 목록보다 먼저 지도를 보여 주기 위한 사실이다. 기본값은 구 payload 호환용.
+    total_units: int = 0
+    flow_count: int = 0
+    primary_units: int = 0
+    overview: str = ""
 
 
 @dataclass(frozen=True)
@@ -152,11 +175,15 @@ def _scan(root: str, base: str, targets: list[str]) -> tuple[dict[str, tuple[str
     for rel in targets:
         text = _read(root, rel)
         if text is None:
+            # 기준에는 있고 지금 없는 파일은 "못 읽은 파일"이 아니라 삭제된 파일이다. 삭제와 이동은
+            # tutor 인벤토리가 맡고, 현재 실행 흐름에는 넣을 본문이 없으므로 여기서는 조용히 뺀다.
+            if _at_base(root, rel, base) is not None:
+                continue
             gaps.append((rel, "파일을 읽지 못해서 읽는 순서에 못 넣었어요"))
             continue
         now = tutor_probes.units_of(text, rel)
         if now is None:
-            if not rel.lower().endswith(_DOC_SUFFIXES):
+            if not rel.lower().endswith(_DOC_SUFFIXES) and os.path.basename(rel) not in _DOC_NAMES:
                 gaps.append((rel, "코드 단위를 읽지 못해서 읽는 순서에 못 넣었어요"))
             continue
         before = _at_base(root, rel, base)
@@ -288,6 +315,61 @@ def _order(nodes: dict[_Key, _Node], edges: set[tuple[_Key, _Key]]) -> list[_Key
             if caller == key and callee in left:
                 left[callee] -= 1
     return out
+
+
+def _flow_order(
+    nodes: dict[_Key, _Node], edges: set[tuple[_Key, _Key]]
+) -> tuple[list[_Key], tuple[int, ...]]:
+    """호출 관계로 이어진 묶음을 큰 것부터 놓고, 각 묶음 안에서는 호출자가 먼저 오게 한다.
+
+    전역 위상 정렬은 서로 무관한 흐름을 경로 이름순으로 섞는다. 그러면 카드의 첫 세 자리가 한
+    실행 흐름이 아니라 세 파일의 시작점이 된다. 묶음은 설명용일 뿐이라 방향을 버린 연결 성분으로
+    만들고, 실제 읽는 순서는 기존 위상 정렬을 그대로 쓴다.
+    """
+    ordered = _order(nodes, edges)
+    neighbours = {key: set() for key in nodes}
+    for left, right in edges:
+        if left in neighbours and right in neighbours:
+            neighbours[left].add(right)
+            neighbours[right].add(left)
+    components: list[set[_Key]] = []
+    remaining = set(nodes)
+    while remaining:
+        seed = min(remaining, key=lambda key: (nodes[key].path, nodes[key].line, key[1]))
+        component, stack = set(), [seed]
+        while stack:
+            key = stack.pop()
+            if key in component:
+                continue
+            component.add(key)
+            stack.extend(neighbours[key] - component)
+        remaining -= component
+        components.append(component)
+    components.sort(
+        key=lambda group: (
+            -len(group),
+            min((nodes[key].path, nodes[key].line, key[1]) for key in group),
+        )
+    )
+    grouped = [key for group in components for key in ordered if key in group]
+    return (grouped, tuple(len(group) for group in components))
+
+
+def _area(rel: str) -> str:
+    parts = rel.replace("\\", "/").split("/")
+    if parts[:1] == ["src"] and len(parts) >= 3:
+        return "/".join(parts[:3])
+    return parts[0] if parts and parts[0] else "(root)"
+
+
+def _overview(targets: list[str], total: int, flows: int) -> str:
+    """의도를 만들지 않고도 먼저 줄 수 있는 시스템 배경 — 경로와 호출 관계만 쓴다."""
+    areas = Counter(_area(rel) for rel in targets)
+    scope = " · ".join(f"`{name}` {count}개 파일" for name, count in areas.most_common(2))
+    if not total:
+        return (scope + "에서 " if scope else "") + "현재 읽을 코드 단위는 없어요."
+    prefix = (scope + "에 걸친 " if scope else "") + f"변경 단위 {total}곳"
+    return prefix + f"을 호출 관계 기준 {max(1, flows)}개 흐름으로 나눴어요."
 
 
 def _why_here(key: _Key, node: _Node, nodes: dict[_Key, _Node], edges: set[tuple[_Key, _Key]]) -> str:
@@ -475,15 +557,37 @@ def _near(rel: str, stems: set[str]) -> bool:
 
 
 def _test_paths(root: str, paths: object) -> set[str]:
-    """실제로 있는 테스트 파일만. 없는 파일을 명령에 넣으면 그 한 줄이 통째로 안 돌아간다."""
+    """실제로 단독 수집되는 테스트 모듈만.
+
+    `tests/conftest.py`와 `tests/hookscaffold.py`도 테스트 트리 안에는 있지만 pytest의 실행 대상은
+    아니다. 지원 파일을 명령 인자로 넣으면 확인 줄이 길어지고 수집 의미도 달라진다.
+    """
     rows = paths if isinstance(paths, (list, tuple, set, frozenset)) else ()
-    return {
+    candidates = {
         rel
         for raw in rows
         if (rel := str(raw).replace(os.sep, "/")).endswith(".py")
         and tutor_probes.is_test_path(rel)
+        and (os.path.basename(rel).startswith("test_") or os.path.basename(rel).endswith("_test.py"))
         and os.path.exists(os.path.join(root, rel))
     }
+    if not candidates:
+        return set()
+    try:
+        proc = subprocess.run(
+            ["git", "check-ignore", "--stdin"],
+            cwd=root,
+            input="\n".join(sorted(candidates)) + "\n",
+            capture_output=True,
+            text=True,
+            timeout=10,
+            encoding="utf-8",
+            errors="replace",
+        )
+        ignored = {line.strip().replace(os.sep, "/") for line in proc.stdout.splitlines() if line.strip()}
+    except OSError, subprocess.SubprocessError:
+        ignored = set()  # git 판정이 없으면 존재하는 테스트를 버리지는 않는다
+    return candidates - ignored
 
 
 # ── 임무·용어집 (이 사람의 기록) ───────────────────────────────────
@@ -582,7 +686,10 @@ def explain(root: str, base: str = "HEAD", paths: object = (), depth: str = "") 
     nodes = _nodes(seen)
     edges, edge_gaps = _edges(seen, nodes)
     gaps.extend(edge_gaps)
-    keys = _order(nodes, edges)
+    keys, component_sizes = _flow_order(nodes, edges)
+    total_units = len(keys)
+    flow_count = len(component_sizes)
+    primary_units = component_sizes[0] if component_sizes else 0
     if len(keys) > MAX_STEPS:
         gaps.append((f"(+{len(keys) - MAX_STEPS}개 단위)", f"읽는 순서는 {MAX_STEPS}자리까지만 만들었어요"))
         keys = keys[:MAX_STEPS]
@@ -616,8 +723,12 @@ def explain(root: str, base: str = "HEAD", paths: object = (), depth: str = "") 
         steps=steps,
         terms=fresh,
         checks=checks,
-        recall=_recall(level, steps, keys, edges, nodes),
+        recall=_recall(level, steps, keys, edges, nodes, min(3, primary_units)),
         gaps=tuple(gaps),
+        total_units=total_units,
+        flow_count=flow_count,
+        primary_units=primary_units,
+        overview=_overview(targets, total_units, flow_count),
     )
 
 
@@ -627,6 +738,7 @@ def _recall(
     keys: list[_Key],
     edges: set[tuple[_Key, _Key]],
     nodes: dict[_Key, _Node],
+    visible: int = 3,
 ) -> tuple[str, ...]:
     """설명 뒤에 놓는 인출 물음 하나. **채점하지 않는다**(`tutor_growth` 계약 ①).
 
@@ -639,7 +751,9 @@ def _recall(
     if depth != "first" or len(steps) < 2:
         return ()
     rank = {key: index for index, key in enumerate(keys)}
-    called = sorted((rank[c] for _, c in edges if c in rank))
+    # 카드에 안 보인 단위를 되묻지 않는다. 설명을 받지 못한 것을 인출시키면 그 질문은 학습이
+    # 아니라 검색 숙제가 된다.
+    called = sorted((rank[c] for a, c in edges if a in rank and c in rank and rank[a] < visible and rank[c] < visible))
     if called:
         name = nodes[keys[called[0]]].unit
         return (f"방금 본 흐름에서 `{name}` 단위를 부르는 자리는 어디였나요?",)
@@ -663,7 +777,7 @@ def shown_terms(exp: Explanation, limit: int = 3) -> tuple[Term, ...]:
     return exp.terms[: max(0, limit)]
 
 
-def card(exp: Explanation, limit: int = 3) -> str:
+def card(exp: Explanation, limit: int = 3, quiz: bool = True) -> str:
     """설명 카드. 깊이가 올라갈수록 줄어든다(계약 ④). 실을 것이 없으면 빈 문자열.
 
     `gaps`만 남은 회차도 빈 카드다. 못 본 것은 계속 `gaps`에 남지만(계약 ⑤) 그것 하나로 카드를
@@ -675,27 +789,45 @@ def card(exp: Explanation, limit: int = 3) -> str:
     if exp.depth == "owned":
         where = " · ".join(f"{s.where} {s.unit}".strip() for s in exp.steps[:limit])
         return f"⠶ 설명 — {where}" if where else ""
-    lines = [f"⠶ 설명 — 이번 변경에서 읽을 자리 {len(exp.steps)}곳이에요."]
+    headline = exp.overview or _fallback_overview(exp)
+    lines = [f"⠶ 설명 — {headline}"]
     if exp.depth == "first" and exp.mission:
         lines.append("  임무 — " + " ".join(exp.mission.split())[:120])
-    lines.extend(_card_steps(exp.steps, limit))
+    shown = shown_steps(exp, limit)
+    if shown:
+        lines.append(f"  먼저 읽을 흐름 — {len(shown)}곳")
+        lines.extend(_card_steps(shown))
+        if (exp.total_units or len(exp.steps)) > len(shown):
+            lines.append("  나머지 흐름은 보고서에 접어 뒀어요.")
     if exp.depth != "first":
         return "\n".join(lines)
     lines.extend(_card_terms(shown_terms(exp, limit), len(exp.terms)))
     for check in exp.checks:
         lines.append(f"  확인 — {check}")
-    for ask in exp.recall:
-        lines.append(f"    ▸ {ask}")
+    if quiz:
+        for ask in exp.recall:
+            lines.append(f"    ▸ {ask}")
     for where, why in exp.gaps[:limit]:
         lines.append(f"  못 본 것 — {where}: {why}")
     return "\n".join(lines)
 
 
-def _card_steps(steps: tuple[Step, ...], limit: int) -> list[str]:
-    lines = [f"  {s.order}. {s.where} {s.unit} — {s.what} · {s.why_here}" for s in steps[:limit]]
-    if len(steps) > limit:
-        lines.append(f"  …외 {len(steps) - limit}건")
-    return lines
+def shown_steps(exp: Explanation, limit: int = 3) -> tuple[Step, ...]:
+    """카드가 실제로 펼칠 한 호출 흐름. 다음 연결 성분으로 넘어가 목록을 섞지 않는다."""
+    cap = min(max(0, limit), exp.primary_units or len(exp.steps))
+    return exp.steps[:cap]
+
+
+def _fallback_overview(exp: Explanation) -> str:
+    total = exp.total_units or len(exp.steps)
+    if not total:
+        return "현재 읽을 코드 단위는 없어요."
+    flows = exp.flow_count or 1
+    return f"변경 단위 {total}곳을 호출 관계 기준 {flows}개 흐름으로 나눴어요."
+
+
+def _card_steps(steps: tuple[Step, ...]) -> list[str]:
+    return [f"  {s.order}. {s.where} {s.unit} — {s.what} · {s.why_here}" for s in steps]
 
 
 def _card_terms(shown: tuple[Term, ...], total: int) -> list[str]:
@@ -706,5 +838,5 @@ def _card_terms(shown: tuple[Term, ...], total: int) -> list[str]:
     for term in shown:
         lines.append(f"    `{term.name}` — {term.where}" + (f" — {term.gloss}" if term.gloss else ""))
     if total > len(shown):
-        lines.append(f"    …외 {total - len(shown)}건")
+        lines.append("    나머지 말은 보고서에 접어 뒀어요.")
     return lines

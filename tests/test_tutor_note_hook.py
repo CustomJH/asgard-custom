@@ -116,7 +116,7 @@ class TutorNoteHookTest(unittest.TestCase):
         self.assertIn("1. app.py:42 load_config — 예외를 잡아요 · 여기가 입구예요", card)
         self.assertIn("`sentinel` — app.py:3 — 없음을 뜻하는 표식이에요", card)
         self.assertIn("확인 — python -m pytest tests/test_app.py", card)
-        self.assertIn("이 설정이 비면 무엇이 기본값이 되나요?", card)
+        self.assertNotIn("이 설정이 비면 무엇이 기본값이 되나요?", card, "한 카드에는 회상 질문도 하나만 둔다")
         self.assertIn("못 본 것 — web.js: 구문을 못 읽었어요", card, "못 본 것은 못 봤다고 적는다")
         self.assertLess(
             card.index("⠶ 설명 —"),
@@ -143,7 +143,7 @@ class TutorNoteHookTest(unittest.TestCase):
         for depth in ("first", "familiar", "owned"):
             row = replace(exp, depth=depth)
             engine = tutor_teach.card(row, 3)
-            hook = "\n".join(tutor_note._explain(json.loads(json.dumps(asdict(row)))))
+            hook = "\n".join(tutor_note._explain(json.loads(json.dumps(asdict(row))), 3))
             self.assertEqual(hook, engine, depth)
 
     def test_an_owned_reader_gets_one_line(self) -> None:
@@ -189,7 +189,23 @@ class TutorNoteHookTest(unittest.TestCase):
     def test_an_explanation_alone_still_reaches_the_user(self) -> None:
         """물음이 없어도 설명이 있으면 카드는 나간다 — 설명 자체가 이 층이 내야 할 것이다."""
         card = self._run({"files": ["app.py"], "added": 1, "removed": 0, "explain": _EXPLAIN})
-        self.assertIn("⠶ 설명 — 이번 변경에서 읽을 자리 1곳이에요.", card)
+        self.assertIn("⠶ 설명 — 변경 단위 1곳을 호출 관계 기준 1개 흐름으로 나눴어요.", card)
+        self.assertIn("이 설정이 비면 무엇이 기본값이 되나요?", card, "판정 질문이 없을 때는 회상 질문을 쓴다")
+
+    def test_the_hook_prefers_the_one_checkpoint_the_engine_marked_as_shown(self) -> None:
+        hidden = dict(_LESSON["checkpoints"][0], path="hidden.py", unit="hidden", ask="숨은 질문인가요?", cid="deadbeef")
+        lesson = dict(
+            _LESSON,
+            checkpoints=[_LESSON["checkpoints"][0], hidden],
+            shown_checkpoints=[_LESSON["checkpoints"][0]],
+            explain=_EXPLAIN,
+        )
+
+        card = self._run(lesson)
+
+        self.assertIn("load_config", card)
+        self.assertNotIn("숨은 질문", card)
+        self.assertNotIn("…외", card)
 
     def test_the_report_path_comes_from_the_judgement(self) -> None:
         """카드 마지막 줄은 판정이 실제로 쓴 자리를 적는다 — 상수는 자리가 옮겨지면 빈 자리를 연다."""

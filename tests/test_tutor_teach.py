@@ -20,6 +20,7 @@ import re
 import subprocess
 import tempfile
 import unittest
+from dataclasses import replace
 
 from asgard import tutor_growth, tutor_teach
 
@@ -157,6 +158,24 @@ class ReadingOrderTest(_Repo):
             self.assertIn("`helper`", said["top"])
             self.assertNotIn("이름이 같은 단위", " ".join(why for _, why in exp.gaps))
 
+    def test_disconnected_changes_start_with_one_complete_flow(self):
+        """카드 첫 세 자리가 서로 다른 파일의 시작점이면 읽는 순서가 다시 목록이 된다."""
+        with contextlib.ExitStack() as stack:
+            root = self._base(stack, {"a.py": "x = 1\n", "z.py": "x = 1\n"})
+            self._write(root, "a.py", "def alone():\n    return 1\n")
+            self._write(
+                root,
+                "z.py",
+                "def leaf():\n    return 1\n\n\ndef middle():\n    return leaf()\n\n\ndef top():\n    return middle()\n",
+            )
+            self._stage(root)
+
+            exp = tutor_teach.explain(root, "HEAD")
+
+            self.assertEqual(self._units(exp)[:3], ["top", "middle", "leaf"])
+            self.assertEqual((exp.total_units, exp.flow_count, exp.primary_units), (4, 2, 3))
+            self.assertIn("4곳", exp.overview)
+
     def test_the_same_name_in_two_files_makes_no_edge_at_all(self):
         """실측으로 잡은 자리 — `tutor.py`의 `turn_note`가 `hooks/tutor_note.py`의 `_card` 를
         부르는 것으로 나왔다. 이름이 겹치면 어느 쪽인지 기계가 못 정하고, 못 정한 것을 단언하면
@@ -210,6 +229,26 @@ class NonPythonTest(_Repo):
             exp = tutor_teach.explain(root, "HEAD")
             self.assertEqual(exp.steps, ())
             self.assertEqual([where for where, _ in exp.gaps if where == "README.md"], [])
+
+    def test_a_gitignore_is_not_reported_as_unreadable_code(self):
+        with contextlib.ExitStack() as stack:
+            root = self._base(stack, {".gitignore": ".venv/\n"})
+            self._write(root, ".gitignore", ".venv/\nbuild/\n")
+            self._stage(root)
+
+            exp = tutor_teach.explain(root, "HEAD")
+
+            self.assertNotIn(".gitignore", [where for where, _ in exp.gaps])
+
+    def test_a_deleted_file_is_not_reported_as_unread(self):
+        with contextlib.ExitStack() as stack:
+            root = self._base(stack, {"gone.py": "def gone():\n    return 1\n"})
+            os.remove(os.path.join(root, "gone.py"))
+            self._stage(root)
+
+            exp = tutor_teach.explain(root, "HEAD")
+
+            self.assertNotIn("gone.py", [where for where, _ in exp.gaps])
 
 
 class PurposeTest(_Repo):
@@ -345,6 +384,40 @@ class CheckTest(_Repo):
             exp = tutor_teach.explain(root, "HEAD")
             self.assertEqual(exp.checks, ("python -m pytest tests/test_m.py",))
             self.assertNotIn("이 변경을 직접 확인하는 판정을 못 찾았어요", [why for _, why in exp.gaps])
+
+    def test_pytest_support_files_are_not_put_in_the_check_command(self):
+        base = {
+            "tests/conftest.py": "VALUE = 1\n",
+            "tests/hookscaffold.py": "VALUE = 1\n",
+            "tests/test_m.py": "def test_a():\n    assert 1\n",
+        }
+        with contextlib.ExitStack() as stack:
+            root = self._base(stack, base)
+            for rel, text in base.items():
+                self._write(root, rel, text + "\nCHANGED = 1\n")
+            self._stage(root)
+
+            check = tutor_teach.explain(root, "HEAD").checks[0]
+
+            self.assertIn("tests/test_m.py", check)
+            self.assertNotIn("conftest.py", check)
+            self.assertNotIn("hookscaffold.py", check)
+
+    def test_gitignored_reference_tests_are_not_put_in_the_check_command(self):
+        with contextlib.ExitStack() as stack:
+            root = self._base(stack, {"m.py": "x = 1\n", ".gitignore": "workspace/\n"})
+            self._write(root, "m.py", "def steam(cup):\n    return cup\n")
+            self._write(
+                root,
+                "workspace/copy/tests/test_m.py",
+                "from m import steam\n\n\ndef test_steam():\n    assert steam(1) == 1\n",
+            )
+            self._stage(root)
+
+            exp = tutor_teach.explain(root, "HEAD")
+
+            self.assertEqual(exp.checks, ())
+            self.assertIn("이 변경을 직접 확인하는 판정을 못 찾았어요", [why for _, why in exp.gaps])
 
     def test_a_change_with_no_new_symbol_and_no_test_says_it_found_no_check(self):
         """본문만 고친 변경에는 찾을 심볼도 판정도 없다 — 그때는 명령 줄을 조용히 비우지 않는다."""
@@ -563,7 +636,7 @@ class ShownTermsTest(_Repo):
                 self.assertIn(f"`{term.name}`", card)
             for term in exp.terms[3:]:
                 self.assertNotIn(f"`{term.name}`", card)
-            self.assertIn("…외 2건", card)
+            self.assertIn("나머지 말은 보고서에 접어 뒀어요", card)
             self.assertEqual(tutor_teach.glossary_merge(root, shown), 3)
 
     def test_a_word_the_card_cut_is_still_explained_next_time(self):
@@ -647,6 +720,17 @@ class CardTest(unittest.TestCase):
         self.assertIn("python -m pytest tests/test_m.py", card)
         self.assertIn("▸", card)
         self.assertIn("회수 경로를 혼자 재구성하기", card)
+
+    def test_a_stop_card_can_leave_the_recall_quiz_to_the_ranked_checkpoint(self):
+        card = tutor_teach.card(self._exp("first"), quiz=False)
+        self.assertNotIn("방금 본 흐름", card)
+        self.assertIn("python -m pytest", card)
+
+    def test_a_card_folds_other_flows_without_an_overflow_counter(self):
+        exp = replace(self._exp("first"), total_units=40, flow_count=12, primary_units=2)
+        card = tutor_teach.card(exp, limit=1)
+        self.assertIn("나머지 흐름은 보고서에 접어 뒀어요", card)
+        self.assertNotIn("…외 39건", card)
 
     def test_a_familiar_place_gets_the_order_and_nothing_else(self):
         card = tutor_teach.card(self._exp("familiar"))

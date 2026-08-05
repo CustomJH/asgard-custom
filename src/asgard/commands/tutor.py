@@ -37,6 +37,10 @@ _ANSWER_SLOT = "  - 답: "  # `--collect`가 되읽는 자리 — 형식을 바�
 _CID_RE = re.compile(r"`([0-9a-f]{8})`")
 _ITEM_RE = re.compile(r"^\s*- \[.\] ")
 _LADDER = ("○○○", "●○○", "●●○", "●●●")
+_REPORT_STEP_LIMIT = 12  # 보고서는 지도다. 원시 단위 목록은 JSON이 맡는다
+_REPORT_DETAIL_LIMIT = 20
+_REPORT_TERM_LIMIT = 8
+_REPORT_GAP_LIMIT = 8
 # 항복 신호의 사람 이름. `KIND_LABEL`이 엔진에 있는 것과 달리 이 표는 표면이 갖는다 —
 # `tutor_debt.Signal`은 `fact`·`why`로 이미 사람 문장을 들고 오고, 여기서 더할 것은 그 신호를
 # 화면에서 부르는 이름 하나뿐이다. 엔진에 두면 재료와 표현이 다시 한 자리에 섞인다.
@@ -69,6 +73,7 @@ def _units_line(change: tutor.FileChange) -> str:
         f"새 단위 {len(change.units_added)}" if change.units_added else "",
         f"바뀐 단위 {len(change.units_changed)}" if change.units_changed else "",
         f"사라진 단위 {len(change.units_removed)}" if change.units_removed else "",
+        f"옮긴 단위 {len(getattr(change, 'units_moved', ()))}" if getattr(change, "units_moved", ()) else "",
     ]
     return " · ".join(b for b in bits if b) or "단위 변화 없음"
 
@@ -91,7 +96,7 @@ def _emit_points(rows: list[tuple[tutor.Checkpoint, str]], limit: int) -> None:
     open_rows = [r for r in rows if r[1] not in ("fold", "quiet")]
     ui.phase(f"당신이 직접 확인할 것 — {len(rows)}건 (막지 않아요)")
     for point, form in open_rows[:limit]:
-        ui.warn(f"{_KIND.get(point.kind, point.kind)} — {point.where}  [{point.cid}]")
+        ui.warn(f"{_point_label(point)} — {point.where}  [{point.cid}]")
         ui.step(ui.dim(f"    {point.what}"))
         if form == "full":  # 왜 당신 눈이 필요한가 — 이미 답해 본 종류에는 세 번째로 설명하지 않는다
             ui.step(ui.dim(f"    {point.why}"))
@@ -122,6 +127,14 @@ def _count_line(counts: dict[str, int]) -> str:
     return " · ".join(f"{_KIND.get(k, k)} {n}건" for k, n in sorted(counts.items()))
 
 
+def _point_label(point: tutor.Checkpoint) -> str:
+    if not point.unit and point.kind == "behavior-removed":
+        return "삭제 책임 묶음"
+    if not point.unit and point.kind == "test-removed":
+        return "판정 책임 묶음"
+    return _KIND.get(point.kind, point.kind)
+
+
 def _emit_back(back: list[tutor_growth.Revisit]) -> None:
     if not back:
         return
@@ -137,12 +150,14 @@ def _payload(
     back: list,
     exp: Any = None,
     report_rel: str = "",
+    limit: int = 1,
 ) -> str:
     """훅과 화면이 같은 판정을 쓰도록 조절 결과까지 넣는다 — 판정기가 둘이면 반드시 어긋난다.
 
     칸은 더하기만 한다. 훅(`hooks/tutor_note.py`)과 스튜디오 창이 이 이름들을 그대로 읽으므로
     하나를 지우거나 고쳐 부르면 그쪽 화면이 조용히 빈다.
     """
+    shown = _shown_rows(rows, limit)
     return json.dumps(
         {
             "base": lesson.base,
@@ -150,6 +165,12 @@ def _payload(
             "added": lesson.touched[0],
             "removed": lesson.touched[1],
             "checkpoints": [{**asdict(p), "weight": p.weight, "cid": p.cid, "form": form} for p, form in rows],
+            # 전체 후보는 기계 소비자에게 남기고, Stop 훅에는 사람이 실제로 볼 목록을 따로 준다.
+            # 둘을 섞으면 화면에 없던 후보까지 질문·건너뜀으로 기록된다.
+            "shown_checkpoints": [
+                {**asdict(p), "weight": p.weight, "cid": p.cid, "form": form} for p, form in shown
+            ],
+            "checkpoint_summary": _point_counts(rows),
             "revisits": [
                 {"cid": r.cid, "kind": r.kind, "path": r.path, "unit": r.unit, "ask": r.ask, "asks": r.asks}
                 for r in back
@@ -164,6 +185,17 @@ def _payload(
         ensure_ascii=False,
         indent=2,
     )
+
+
+def _shown_rows(rows: list[tuple[tutor.Checkpoint, str]], limit: int) -> list[tuple[tutor.Checkpoint, str]]:
+    return [row for row in rows if row[1] not in ("fold", "quiet")][: max(0, limit)]
+
+
+def _point_counts(rows: list[tuple[tutor.Checkpoint, str]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for point, _ in rows:
+        counts[point.kind] = counts.get(point.kind, 0) + 1
+    return counts
 
 
 def _emit_mandate(lesson: tutor.Lesson) -> None:
@@ -227,37 +259,61 @@ def _report_files(lesson: tutor.Lesson) -> list[str]:
         lines.append(f"| {name} | +{change.added}/-{change.removed} | {_units_line(change)} |")
     # 신규 파일은 단위가 전부 새것이라 나열할 값이 없다 — 표의 개수로 충분하고, 나열하면
     # 기존 파일에서 실제로 생기고 사라진 것이 그 속에 묻힌다.
-    detail = [f for f in lesson.files if not f.new_file and (f.units_added or f.units_removed)]
+    detail = [
+        f
+        for f in lesson.files
+        if not f.new_file and (f.units_added or f.units_removed or getattr(f, "units_moved", ()))
+    ]
     if detail:
-        lines += ["", "기존 파일의 함수 수준 변화:", ""]
+        lines += ["", "대표 함수 수준 변화:", ""]
+        rows: list[str] = []
         for change in detail:
             for name in change.units_added:
-                lines.append(f"- `{change.path}` — 새 단위 `{name}`")
+                rows.append(f"- `{change.path}` — 새 단위 `{name}`")
             for name in change.units_removed:
-                lines.append(f"- `{change.path}` — 사라진 단위 `{name}`")
+                rows.append(f"- `{change.path}` — 사라진 단위 `{name}`")
+            for move in getattr(change, "units_moved", ()):
+                rows.append(f"- `{change.path}` — 옮긴 단위 `{move}`")
+        lines += rows[:_REPORT_DETAIL_LIMIT]
+        if len(rows) > _REPORT_DETAIL_LIMIT:
+            lines.append(f"- 나머지 {len(rows) - _REPORT_DETAIL_LIMIT}건은 위 표와 `--json` 인벤토리에 접어 뒀다.")
     return lines
 
 
-def _report_points(lesson: tutor.Lesson) -> list[str]:
+def _report_points(
+    lesson: tutor.Lesson,
+    rows: list[tuple[tutor.Checkpoint, str]] | None = None,
+    limit: int = 1,
+) -> list[str]:
     lines = ["## 3. 당신이 직접 확인할 것", ""]
     if not lesson.ranked:
         lines.append("기계가 짚을 자리는 없었다. 그래도 위 2절의 답이 스스로 납득되는지는 사람만 판정할 수 있다.")
         return lines
+    shaped = rows if rows is not None else [(point, "full") for point in lesson.ranked]
+    shown = _shown_rows(shaped, limit)
+    counts = _point_counts(shaped)
+    labels = " · ".join(f"{_KIND.get(kind, kind)} {count}건" for kind, count in sorted(counts.items()))
+    lines.append(f"기계 후보 {len(shaped)}건 ({labels}) 중 이번 회차에는 {len(shown)}건만 묻는다.")
     lines.append("체크박스는 읽었다는 뜻이 아니라 **답했다**는 뜻이다.")
     lines.append("`답:` 칸에 적고 `asgard tutor --collect`를 돌리면 답이 성장 기록으로 들어간다.")
     lines.append("")
-    for point in lesson.ranked:
+    for point, _ in shown:
         lines += [
-            f"- [ ] **{_KIND.get(point.kind, point.kind)}** — `{point.where}` `{point.cid}`",
+            f"- [ ] **{_point_label(point)}** — `{point.where}` `{point.cid}`",
             f"  - 사실: {point.what}",
             f"  - 왜 당신 눈이 필요한가: {point.why}",
             f"  - **물음: {point.ask}**",
             _ANSWER_SLOT,
         ]
+    if len(shaped) > len(shown):
+        lines += [
+            "",
+            "나머지 후보는 질문으로 기록하지 않았다. 원시 판정은 `asgard tutor --json`에서 볼 수 있다.",
+        ]
     return lines
 
 
-def _report_explain(exp: Any) -> list[str]:
+def _report_explain(exp: Any, include_recall: bool = True) -> list[str]:
     """1 절과 2 절 사이 — 읽는 순서와 말뜻. **2 절을 대신 채우지 않는다.**
 
     0 절과 같은 이유로 2 절 앞에 둔다. 여기 있는 것은 "어디부터 읽어야 하는가"이고, 답이
@@ -267,27 +323,50 @@ def _report_explain(exp: Any) -> list[str]:
     if exp is None or not (exp.steps or exp.terms or exp.checks or exp.recall):
         return []
     lines = ["", "## 1-1. 이 변경을 읽는 순서", ""]
+    overview = str(getattr(exp, "overview", "") or "").strip()
+    if overview:
+        lines += [overview, ""]
     if exp.mission:
         lines += [f"향하는 곳: {exp.mission}", ""]
-    for step in exp.steps:
+    primary = int(getattr(exp, "primary_units", 0) or len(exp.steps))
+    step_limit = min(_REPORT_STEP_LIMIT, primary)
+    for step in exp.steps[:step_limit]:
         where = f"`{step.path}:{step.line}`" + (f" `{step.unit}`" if step.unit else "")
         lines += [f"{step.order}. {where} — {step.what}", f"   - {step.why_here}"]
+    total = int(getattr(exp, "total_units", 0) or len(exp.steps))
+    if total > step_limit:
+        lines += [
+            "",
+            f"나머지 {total - step_limit}개 단위는 다른 흐름이라 여기서 접었다. "
+            "전체 지도는 `asgard tutor --explain`로 본다.",
+        ]
     if exp.terms:
         lines += ["", "이 변경이 쓰는 말:", ""]
-        lines += [f"- **{t.name}** — {t.gloss} (`{t.where}` · {t.source})" for t in exp.terms]
+        lines += [
+            f"- **{t.name}** — {t.gloss} (`{t.where}` · {t.source})" for t in exp.terms[:_REPORT_TERM_LIMIT]
+        ]
+        if len(exp.terms) > _REPORT_TERM_LIMIT:
+            lines.append(f"- 나머지 {len(exp.terms) - _REPORT_TERM_LIMIT}개 말은 다음 회차로 넘긴다.")
     if exp.checks:
         lines += ["", "직접 쳐 볼 확인 명령:", ""]
         lines += [f"- `{c}`" for c in exp.checks]
-    if exp.recall:
+    if include_recall and exp.recall:
         lines += ["", "되짚어 볼 물음:", ""]
         lines += [f"- {q}" for q in exp.recall]
     if exp.gaps:
         lines += ["", "설명이 못 닿은 자리:", ""]
-        lines += [f"- `{where}` — {why}" for where, why in exp.gaps]
+        lines += [f"- `{where}` — {why}" for where, why in exp.gaps[:_REPORT_GAP_LIMIT]]
+        if len(exp.gaps) > _REPORT_GAP_LIMIT:
+            lines.append(f"- 나머지 {len(exp.gaps) - _REPORT_GAP_LIMIT}개 한계는 원시 JSON에 남겼다.")
     return lines
 
 
-def _report(lesson: tutor.Lesson, exp: Any = None) -> str:
+def _report(
+    lesson: tutor.Lesson,
+    exp: Any = None,
+    rows: list[tuple[tutor.Checkpoint, str]] | None = None,
+    limit: int = 1,
+) -> str:
     lines = [
         "# 변경 되짚기",
         "",
@@ -296,9 +375,10 @@ def _report(lesson: tutor.Lesson, exp: Any = None) -> str:
     ]
     lines += _report_mandate(lesson)
     lines += _report_files(lesson)
-    lines += _report_explain(exp)
+    shown = _shown_rows(rows or [(point, "full") for point in lesson.ranked], limit)
+    lines += _report_explain(exp, include_recall=not bool(shown))
     lines += ["", "## 2. 왜 이렇게 했는가", "", _WHY_SLOT]
-    lines += ["", *_report_points(lesson)]
+    lines += ["", *_report_points(lesson, rows, limit)]
     if lesson.undetermined:
         lines += [
             "",
@@ -311,11 +391,18 @@ def _report(lesson: tutor.Lesson, exp: Any = None) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _write_report(root: str, lesson: tutor.Lesson, out: str, exp: Any = None) -> str:
+def _write_report(
+    root: str,
+    lesson: tutor.Lesson,
+    out: str,
+    exp: Any = None,
+    rows: list[tuple[tutor.Checkpoint, str]] | None = None,
+    limit: int = 1,
+) -> str:
     from ..io_files import write_text
 
     path = out if os.path.isabs(out) else os.path.join(root, out)
-    write_text(path, _report(lesson, exp))
+    write_text(path, _report(lesson, exp, rows, limit))
     return path
 
 
@@ -814,14 +901,14 @@ def _run_review(
     # 빈 보고서로 덮으면 직전에 쓴 진짜 보고서가 사라진다.
     written = ""
     if (report or out) and (lesson.files or lesson.checkpoints):
-        written = os.path.relpath(_write_report(root, lesson, out or _REPORT_REL, exp), root)
+        written = os.path.relpath(_write_report(root, lesson, out or _REPORT_REL, exp, rows, limit), root)
 
     # 세는 조건은 물음 쪽(`hand_back`)과 같다 — 화면이나 보고서로 사람 앞에 나간 회차만 병합한다.
     if record or not json_out:
         _learned(root, exp)
 
     if json_out:
-        print(_payload(lesson, rows, back, exp, written))
+        print(_payload(lesson, rows, back, exp, written, limit))
         return 0
     _emit_review(lesson, rows, back, limit, written)
     return 0

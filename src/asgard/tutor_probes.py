@@ -16,6 +16,8 @@
 from __future__ import annotations
 
 import ast
+import copy
+import hashlib
 import io
 import re
 import sys
@@ -35,6 +37,39 @@ def units_of(text: str, rel: str) -> dict[str, Unit] | None:
         return craft_rules.units(text)
     lang = craft_lex.language(rel)
     return craft_lex.units(text, lang) if lang else None
+
+
+def unit_fingerprints(text: str, rel: str) -> dict[str, str]:
+    """Python 단위의 본문 지문.
+
+    이름과 줄 좌표만 빼고 서명·장식자·본문은 그대로 센다. 그래서 같은 구현을 다른 파일이나
+    다른 이름으로 옮긴 경우는 잡되, 옮기면서 동작을 고친 경우는 삭제가 아니라고 단정하지 않는다.
+    이 지문은 Tutor가 대규모 추출을 단위별 삭제 100건으로 오해하지 않게 하는 보수적인 근거다.
+    """
+    if not rel.endswith(".py"):
+        return {}
+    tree = _tree(text)
+    if tree is None:
+        return {}
+    out: dict[str, str] = {}
+
+    def visit(node: ast.AST, prefix: tuple[str, ...] = ()) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.ClassDef):
+                visit(child, prefix + (child.name,))
+                continue
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                name = ".".join(prefix + (child.name,))
+                clone = copy.deepcopy(child)
+                clone.name = "_moved_unit"
+                body = ast.dump(clone, annotate_fields=True, include_attributes=False)
+                out[name] = hashlib.sha256(body.encode("utf-8")).hexdigest()
+                visit(child, prefix + (child.name,))
+                continue
+            visit(child, prefix)
+
+    visit(tree)
+    return out
 
 
 def _tree(text: str) -> ast.AST | None:

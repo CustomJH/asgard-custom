@@ -41,9 +41,11 @@ from .health import _read
 from .io_files import read_json, write_json
 
 MAX_PATHS = 400  # 한 번에 읽을 파일 상한 — 초과분은 잘린 사실로 넣는다(조용한 절단 금지)
+REMOVAL_DETAIL_LIMIT = 2  # 같은 파일의 대량 삭제는 단위별 심문이 아니라 책임 묶음 하나로 묻는다
 # (인벤토리, 확인할 자리, 미판정 사유, 단위→줄). 마지막 칸은 표면 판정에 좌표를 주기 위한 것이다 —
 # surface는 심볼 이름만 알고 줄을 모르는데, `file:1`은 사람이 열어 볼 수 없는 좌표다.
 _Judged = tuple["FileChange", list["Checkpoint"], str | None, dict[str, int]]
+_Moves = dict[tuple[str, str], tuple[tuple[str, str], ...]]
 # 확인 순위 — 사람의 눈은 유한하다. 계약이 깨진 자리가 표식보다 먼저 온다.
 WEIGHT = {
     "contract-break": 5,
@@ -152,6 +154,8 @@ class FileChange:
     new_file: bool = False
     judged: bool = True  # 단위 수준까지 읽었는가
     code: bool = True  # 코드로 읽어야 할 파일인가 (문서·설정은 못 읽은 게 아니라 읽을 게 없다)
+    # "원래 이름 → 새 경로 새 이름". 본문 지문이 정확히 같은 경우만 들어온다.
+    units_moved: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -171,11 +175,21 @@ class Lesson:
 
     @property
     def ranked(self) -> tuple[Checkpoint, ...]:
-        return tuple(sorted(self.checkpoints, key=lambda c: (-c.weight, c.path, c.line)))
+        # 같은 위험도라면 단위 하나보다 책임 묶음을 먼저 묻는다. 대규모 추출에서 첫 질문이
+        # `client` 같은 세 줄 도우미가 되면 큰 구조를 이해하기 전에 세부 검색부터 하게 된다.
+        def key(point: Checkpoint) -> tuple[int, int, str, int]:
+            grouped_removal = point.kind in {"behavior-removed", "test-removed"} and not point.unit
+            return (-point.weight, 0 if grouped_removal else 1, point.path, point.line)
+
+        return tuple(sorted(self.checkpoints, key=key))
 
     @property
     def touched(self) -> tuple[int, int]:
         return (sum(f.added for f in self.files), sum(f.removed for f in self.files))
+
+    @property
+    def moved(self) -> int:
+        return sum(len(f.units_moved) for f in self.files)
 
 
 # ── git 재료 ───────────────────────────────────────────────────────
@@ -232,11 +246,63 @@ def _moved_only(now: Unit, old: Unit) -> bool:
     return (now.lines, now.depth, now.stmts) == (old.lines, old.depth, old.stmts)
 
 
-def _inventory(rel: str, now: dict[str, Unit], old: dict[str, Unit], stat: tuple[int, int], fresh: bool) -> FileChange:
+def _inventory(
+    rel: str,
+    now: dict[str, Unit],
+    old: dict[str, Unit],
+    stat: tuple[int, int],
+    fresh: bool,
+    moves: _Moves,
+) -> FileChange:
     added = tuple(sorted(set(now) - set(old)))
-    removed = tuple(sorted(set(old) - set(now)))
+    gone = sorted(set(old) - set(now))
+    moved = tuple(_move_label(name, moves[(rel, name)]) for name in gone if (rel, name) in moves)
+    removed = tuple(name for name in gone if (rel, name) not in moves)
     changed = tuple(sorted(n for n in set(now) & set(old) if not _moved_only(now[n], old[n])))
-    return FileChange(rel, stat[0], stat[1], added, changed, removed, fresh, judged=True, code=True)
+    return FileChange(
+        path=rel,
+        added=stat[0],
+        removed=stat[1],
+        units_added=added,
+        units_changed=changed,
+        units_removed=removed,
+        new_file=fresh,
+        judged=True,
+        code=True,
+        units_moved=moved,
+    )
+
+
+def _move_label(name: str, destinations: tuple[tuple[str, str], ...]) -> str:
+    places = " · ".join(f"{path} {unit}" for path, unit in destinations)
+    return f"{name} → {places}"
+
+
+def _relocations(root: str, base: str, targets: list[str]) -> _Moves:
+    """변경 범위 안에서 본문이 그대로 살아 있는 제거 단위의 목적지.
+
+    목적지도 이번 변경에서 새로 생겼거나 본문이 바뀐 단위여야 한다. 예전부터 우연히 같은 함수가
+    다른 파일에 있었다는 이유로 실제 삭제를 이동이라 부르면 안 되기 때문이다.
+    """
+    destinations: dict[str, list[tuple[str, str]]] = {}
+    removed: list[tuple[str, str, str]] = []
+    for rel in targets[:MAX_PATHS]:
+        text = _read(root, rel)
+        before = _at_base(root, rel, base)
+        now = tutor_probes.unit_fingerprints(text or "", rel)
+        old = tutor_probes.unit_fingerprints(before or "", rel)
+        for name, fingerprint in now.items():
+            if old.get(name) != fingerprint:
+                destinations.setdefault(fingerprint, []).append((rel, name))
+        for name, fingerprint in old.items():
+            if name not in now:
+                removed.append((rel, name, fingerprint))
+    out: _Moves = {}
+    for rel, name, fingerprint in removed:
+        found = tuple(sorted(set(destinations.get(fingerprint, ())) - {(rel, name)}))
+        if found:
+            out[(rel, name)] = found
+    return out
 
 
 def _stat(rel: str, text: str | None, stats: dict[str, tuple[int, int]], before: str | None = None) -> tuple[int, int]:
@@ -264,13 +330,38 @@ def _fresh(now: dict[str, int], old: dict[str, int]) -> dict[str, int]:
     return {sig: line for sig, line in now.items() if sig not in old}
 
 
-def _judge(root: str, rel: str, base: str, stats: dict[str, tuple[int, int]], own: frozenset[str]) -> _Judged:
+def _judge(
+    root: str,
+    rel: str,
+    base: str,
+    stats: dict[str, tuple[int, int]],
+    own: frozenset[str],
+    moves: _Moves,
+) -> _Judged:
     """(인벤토리, 확인할 자리, 미판정 사유). 사유가 있어도 인벤토리는 낸다 — 바뀐 사실은 사실이다."""
     code = _is_code(rel)
     text = _read(root, rel)
-    if text is None:
-        return (FileChange(rel, *_stat(rel, None, stats), judged=False, code=code), [], "읽지 못했어요", {})
     before = _at_base(root, rel, base)
+    if text is None:
+        stat = _stat(rel, None, stats, before)
+        if before is None:
+            return (
+                FileChange(path=rel, added=stat[0], removed=stat[1], judged=False, code=code),
+                [],
+                "읽지 못했어요",
+                {},
+            )
+        old = tutor_probes.units_of(before, rel)
+        if old is None:
+            why = "삭제 전 코드 단위를 읽지 못했어요" if code else None
+            return (
+                FileChange(path=rel, added=stat[0], removed=stat[1], judged=not code, code=code),
+                [],
+                why,
+                {},
+            )
+        change = _inventory(rel, {}, old, stat, False, moves)
+        return (change, _removal_points(rel, list(change.units_removed), old), None, {})
     stat = _stat(rel, text, stats, before)
     marks = _fresh(tutor_probes.marks(text, rel), tutor_probes.marks(before or "", rel))
     points = [_mark_point(rel, sig, line) for sig, line in sorted(marks.items(), key=lambda kv: kv[1])]
@@ -281,9 +372,10 @@ def _judge(root: str, rel: str, base: str, stats: dict[str, tuple[int, int]], ow
     old = (tutor_probes.units_of(before, rel) or {}) if before is not None else {}
     if rel.endswith(".py"):
         points.extend(_python_points(rel, text, before or "", own))
-    points.extend(_removal_points(rel, sorted(set(old) - set(now)), old))
+    change = _inventory(rel, now, old, stat, before is None, moves)
+    points.extend(_removal_points(rel, list(change.units_removed), old))
     anchors = {name: unit.line for name, unit in now.items()}
-    return (_inventory(rel, now, old, stat, before is None), points, None, anchors)
+    return (change, points, None, anchors)
 
 
 def _is_code(rel: str) -> bool:
@@ -365,24 +457,48 @@ def _removal_points(rel: str, gone: list[str], old: dict[str, Unit]) -> list[Che
     """사라진 단위. 테스트가 사라진 것과 구현이 사라진 것은 물음이 다르다."""
     tests = tutor_probes.test_units(gone) if tutor_probes.is_test_path(rel) else set()
     out: list[Checkpoint] = []
-    for name in gone:
-        is_test = name in tests
-        out.append(
-            Checkpoint(
-                "test-removed" if is_test else "behavior-removed",
-                rel,
-                old[name].line if name in old else 1,
-                name,
-                f"`{name}`이 사라졌어요 ({old[name].lines}행)" if name in old else f"`{name}`이 사라졌어요",
-                "판정이 사라진 것과 기능이 사라진 것은 diff에서 똑같이 보여요"
-                if is_test
-                else "삭제는 diff에서 가장 조용한 변경이에요 — 부르던 곳이 남아 있어도 실행 전엔 티가 안 나요",
-                "이 테스트가 지키던 조건은 지금 무엇이 지키나요?"
-                if is_test
-                else "이걸 부르던 곳은 어디였고, 왜 이제 필요 없나요?",
-            )
-        )
+    for is_test, names in ((False, [n for n in gone if n not in tests]), (True, [n for n in gone if n in tests])):
+        if len(names) > REMOVAL_DETAIL_LIMIT:
+            out.append(_removal_group_point(rel, names, old, is_test))
+            continue
+        for name in names:
+            out.append(_removal_point(rel, name, old, is_test))
     return out
+
+
+def _removal_point(rel: str, name: str, old: dict[str, Unit], is_test: bool) -> Checkpoint:
+    return Checkpoint(
+        "test-removed" if is_test else "behavior-removed",
+        rel,
+        old[name].line if name in old else 1,
+        name,
+        f"`{name}`이 사라졌어요 ({old[name].lines}행)" if name in old else f"`{name}`이 사라졌어요",
+        "판정이 사라진 것과 기능이 사라진 것은 diff에서 똑같이 보여요"
+        if is_test
+        else "삭제는 diff에서 가장 조용한 변경이에요 — 부르던 곳이 남아 있어도 실행 전엔 티가 안 나요",
+        "이 테스트가 지키던 조건은 지금 무엇이 지키나요?"
+        if is_test
+        else "이걸 부르던 곳은 어디였고, 왜 이제 필요 없나요?",
+    )
+
+
+def _removal_group_point(rel: str, names: list[str], old: dict[str, Unit], is_test: bool) -> Checkpoint:
+    total_lines = sum(old[name].lines for name in names if name in old)
+    sample = " · ".join(f"`{name}`" for name in names[:2])
+    key = "group:" + hashlib.sha1("\0".join(names).encode("utf-8")).hexdigest()[:12]
+    noun = "테스트" if is_test else "동작 단위"
+    return Checkpoint(
+        "test-removed" if is_test else "behavior-removed",
+        rel,
+        min((old[name].line for name in names if name in old), default=1),
+        "",
+        f"{sample} 외 {len(names) - 2}개 {noun}가 함께 사라졌어요 (합계 {total_lines}행)",
+        "여러 삭제를 하나씩 물으면 같은 구조 결정을 여러 번 답하게 돼요",
+        "이 묶음이 맡던 책임은 지금 어디에 있고, 삭제 전후에 유지돼야 할 조건은 무엇인가요?"
+        if not is_test
+        else "이 판정 묶음이 지키던 조건은 지금 어느 테스트나 검증이 대신하나요?",
+        key,
+    )
 
 
 # ── 표면 계약 (surface 재사용) ─────────────────────────────────────
@@ -452,12 +568,13 @@ def review(root: str, base: str = "HEAD", paths: object = ()) -> Lesson:
     targets = named or list(craft.changed_paths(root, base))
     stats = _numstat(root, base)
     own = _own_names(root)
+    moves = _relocations(root, base, targets)
     files: list[FileChange] = []
     points: list[Checkpoint] = []
     unknown: list[tuple[str, str]] = []
     anchors: dict[str, dict[str, int]] = {}
     for rel in targets[:MAX_PATHS]:
-        change, found, why, lines = _judge(root, rel, base, stats, own)
+        change, found, why, lines = _judge(root, rel, base, stats, own, moves)
         files.append(change)
         points.extend(found)
         anchors[rel] = lines
@@ -594,7 +711,10 @@ def hand_back(
     if count and shown:
         record(root, shown, now)
     rows = shaped(root, points)
-    back = revisits(root, now, skip=[p.cid for p in points]) if count else []
+    # 이번 변경과 재방문을 합쳐도 `limit`을 넘지 않는다. 새 질문 셋 뒤에 옛 질문 둘을 붙이면
+    # 화면 상한은 사실상 다섯이 되고, 무엇에 답해야 하는지가 다시 사라진다.
+    back_cap = min(2, max(0, limit - len(shown)))
+    back = revisits(root, now, cap=back_cap, skip=[p.cid for p in points]) if count and back_cap else []
     return (rows, back)
 
 
@@ -928,7 +1048,7 @@ def _touches(path: str, units: set[str], keys: set[str]) -> bool:
 # ── 네이티브 루프 도달 경로 ────────────────────────────────────────
 
 
-def turn_note(root: str, sid: object, limit: int = 3) -> str:
+def turn_note(root: str, sid: object, limit: int = 1) -> str:
     """네이티브 턴 끝에 실을 되짚기 카드. 없으면 빈 문자열 (토큰 회귀 없음).
 
     외부 클라이언트는 Stop 훅이 이 일을 한다. 네이티브 루프에는 훅이 없어서 — 단일 프로세스라
@@ -942,15 +1062,17 @@ def turn_note(root: str, sid: object, limit: int = 3) -> str:
     lesson = review(root, "HEAD", paths)
     points = lesson.ranked
     rows, back = hand_back(root, points, limit)
-    told = _explained(root, paths, limit)
+    shown_rows = _shown_rows(rows, limit)
+    told = _explained(root, paths, limit, quiz=not bool(shown_rows or back))
     if not points and not back and not told:
         return ""  # 물을 것도 설명할 것도 없으면 침묵한다 — 빈 카드는 다음 카드의 신뢰를 깎는다
-    if _repeat(root, key, points, back, told):
+    shown_points = tuple(point for point, _ in shown_rows)
+    if _repeat(root, key, shown_points, back, told):
         return ""
-    return _card(lesson, rows, back, limit, told)
+    return _card(lesson, shown_rows, back, limit, told)
 
 
-def _explained(root: str, paths: list[str], limit: int) -> str:
+def _explained(root: str, paths: list[str], limit: int, quiz: bool = True) -> str:
     """이번 변경의 설명 절. 엔진이 없으면 빈 문자열 — 그러면 카드는 물음만 낸다.
 
     늦게 읽는 이유는 `_debt_ledger`와 같다: 같은 시각에 만드는 모듈이 없어도 되짚기 시작은
@@ -965,7 +1087,7 @@ def _explained(root: str, paths: list[str], limit: int) -> str:
     try:
         module = importlib.import_module(f"{__package__}.tutor_teach")
         exp = module.explain(root, "HEAD", paths)
-        told = str(module.card(exp, limit) or "").strip()
+        told = str(module.card(exp, limit, quiz=quiz) or "").strip()
     except Exception:
         return ""
     try:
@@ -974,6 +1096,11 @@ def _explained(root: str, paths: list[str], limit: int) -> str:
     except Exception:
         pass  # 적립 실패가 카드를 지우지는 않는다 — 그 말은 다음 회차에 한 번 더 설명된다
     return told
+
+
+def _shown_rows(rows: list[tuple[Checkpoint, str]], limit: int) -> list[tuple[Checkpoint, str]]:
+    """한 카드에서 실제로 묻는 후보. 원시 후보 목록과 사람 앞의 질문 목록을 갈라 둔다."""
+    return [row for row in rows if row[1] not in ("fold", "quiet")][: max(0, limit)]
 
 
 def _session_writes(root: str, sid: str) -> list[str]:
@@ -1026,6 +1153,8 @@ def _card(
     if told:
         lines.append(told)
         lines.append("")
+    if lesson.moved:
+        lines.append(f"  구조 이동 — 같은 본문으로 확인된 {lesson.moved}개 단위는 삭제 질문에서 뺐어요.")
     lines += _card_points(rows, limit)
     lines += _card_back(back)
     lines.append("")
@@ -1049,17 +1178,25 @@ def _card_points(rows: list[tuple[Checkpoint, str]], limit: int) -> list[str]:
             continue
         if shown >= limit:
             continue
-        lines.append(f"  {KIND_LABEL.get(point.kind, point.kind)} — {point.where}  [{point.cid}]")
+        lines.append(f"  {_point_label(point)} — {point.where}  [{point.cid}]")
         lines.append(f"    ▸ {point.ask}")
         shown += 1
     over = sum(1 for _, form in rows if form not in ("fold", "quiet")) - shown
     if over > 0:
-        lines.append(f"  …외 {over}건")
+        lines.append("  나머지 후보는 이번 회차에 묻지 않아요.")
     if folded:
         lines.append(f"  {_folded_line(folded)} — 이미 답해 오신 종류라 접었어요")
     if quiet:
         lines.append(f"  {_folded_line(quiet)} — 계속 못 닿아서 접었어요 (`asgard tutor --progress`)")
     return lines
+
+
+def _point_label(point: Checkpoint) -> str:
+    if not point.unit and point.kind == "behavior-removed":
+        return "삭제 책임 묶음"
+    if not point.unit and point.kind == "test-removed":
+        return "판정 책임 묶음"
+    return KIND_LABEL.get(point.kind, point.kind)
 
 
 def _folded_line(counts: dict[str, int]) -> str:
