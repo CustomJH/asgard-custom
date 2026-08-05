@@ -1188,6 +1188,58 @@ class TrinityRun:
             " verification command, and it is not the Worker's account of what it did.\n"
         )
 
+    def _trajectory_note(self) -> str:
+        """판정자에게 넘길 **하네스가 관측한 워커 실행 기록** — 워커의 말이 아니라 사실이다.
+
+        판정자는 지금까지 요청·기준·바뀐 파일 목록·공개 표면만 받았다. 즉 **결과물만 보고
+        무슨 일이 있었는지는 못 봤다.** 그런데 판정 품질을 가장 크게 움직이는 축이 바로 그
+        입력량이다 — 하네스를 스스로 다시 쓰게 한 실험이 같은 모델로 76.4% 대 58% 를 낸 기제가
+        "매 단계 실행 로그를 통째로 읽힌다"였다 (Cloud Codes, *Loop vs Graph Engineering*,
+        영상 uM8pWgO12Bk; 그쪽 상한은 단계당 1,000만 토큰이고 종전 방법들은 2.6만 근처였다).
+        같은 방향으로 값이 가장 큰 한 걸음이 이것이다.
+
+        **독립성은 안 깎인다.** 여기 담기는 것은 하네스가 직접 적은 `cmd`·`exit_code`·차단
+        여부뿐이고, 워커의 요약·자신감·"확인했습니다"는 한 글자도 안 들어간다. 판정자 계약의
+        "Worker commentary is not input" 은 그대로다 — 오히려 워커가 **돌렸다고 말한 것과
+        실제로 돈 것**을 대조할 수 있게 된다.
+
+        마지막 verify 이후의 work 이벤트만, 30줄까지. 잘린 수는 숨기지 않는다."""
+        hd = self._hd
+        try:
+            from ...hooks.quest_log import load_events
+
+            events = load_events(hd.root, self.qid)
+        except Exception:
+            return ""
+        recent: list[dict] = []
+        for event in events:
+            if event.get("event") == "verify":
+                recent = []  # 판정이 지나갔다 — 그 뒤가 이번 턴의 궤적이다
+            elif event.get("event") == "work":
+                recent.append(event)
+        rows: list[str] = []
+        for event in recent:
+            for command in event.get("commands") or []:
+                if not isinstance(command, dict):
+                    continue
+                cmd = str(command.get("cmd") or "").strip()
+                if not cmd:
+                    continue
+                if command.get("blocked"):
+                    rows.append(f"  blocked  {cmd[:140]}")
+                else:
+                    rows.append(f"  exit {str(command.get('exit_code')):<4} {cmd[:140]}")
+        if not rows:
+            return ""
+        shown, dropped = rows[:30], max(0, len(rows) - 30)
+        tail = f"\n  … {dropped} more not shown\n" if dropped else "\n"
+        return (
+            "\nHarness-observed Worker execution record since the last verdict — this is what the harness"
+            " itself watched run, not the Worker's account of it. Read it against the diff: a command the"
+            " Worker never ran cannot support a claim, a command that exited non-zero and was never re-run is"
+            " an unresolved failure, and a blocked command never executed at all.\n" + "\n".join(shown) + tail
+        )
+
     def _verifier_turn(self) -> str | None:
         """판정 턴 — read-only 세션 + verdict 툴 강제, 하니스 관측 증거만 기록."""
         hd = self._hd
@@ -1273,6 +1325,7 @@ class TrinityRun:
             + self._intent_block()
             + shape_note_v
             + surface_note
+            + self._trajectory_note()
             + "\nClassify every defect you raise in the verdict's `findings`: `auto-fix` for mechanical,"
             " low-risk defects a retry turn resolves on its own judgment; `ask-user` for a finding that"
             " contradicts what Odin explicitly asked for above or that changes user-visible product"

@@ -803,6 +803,68 @@ class TestRunnerIdentity(unittest.TestCase):
         self.assertEqual(self.identity('pytest "unclosed'), 'pytest "unclosed')
 
 
+class TestTrajectoryNote(unittest.TestCase):
+    """판정자가 받는 **하네스 관측 실행 기록** — 결과물만 보던 판정에 "무슨 일이 있었나"를 더한다.
+
+    판정 품질을 가장 크게 움직이는 축이 판정자의 입력량이라는 실측(같은 모델로 76.4% 대 58%,
+    기제는 매 단계 실행 로그 투입량)이 근거다. 담기는 것은 하네스가 적은 `cmd`·`exit_code`·차단
+    여부뿐이라 "Worker commentary is not input" 계약은 그대로다."""
+
+    def _note(self, events):
+        import types
+
+        from asgard.agent.heimdall.trinity import TrinityRun
+
+        with tempfile.TemporaryDirectory() as root:
+            quest = os.path.join(root, ".asgard", "quest")
+            os.makedirs(quest)
+            with open(os.path.join(quest, "q.jsonl"), "w", encoding="utf-8") as handle:
+                for event in events:
+                    handle.write(json.dumps(event) + "\n")
+            run = types.SimpleNamespace(_hd=types.SimpleNamespace(root=root), qid="q")
+            return TrinityRun._trajectory_note(run)
+
+    def test_commands_and_exit_codes_reach_the_verdict_turn(self):
+        note = self._note(
+            [
+                {
+                    "event": "work",
+                    "commands": [{"cmd": "pytest -q", "exit_code": 1}, {"cmd": "ruff check .", "exit_code": 0}],
+                },
+            ]
+        )
+        self.assertIn("pytest -q", note)
+        self.assertIn("exit 1", note)
+        self.assertIn("ruff check .", note)
+
+    def test_a_blocked_command_is_named_as_never_run(self):
+        note = self._note([{"event": "work", "commands": [{"cmd": "rm -rf x", "blocked": True}]}])
+        self.assertIn("blocked", note)
+        self.assertIn("rm -rf x", note)
+
+    def test_only_the_turns_since_the_last_verdict_are_shown(self):
+        note = self._note(
+            [
+                {"event": "work", "commands": [{"cmd": "old-command", "exit_code": 0}]},
+                {"event": "verify", "verdict": "FAIL"},
+                {"event": "work", "commands": [{"cmd": "new-command", "exit_code": 0}]},
+            ]
+        )
+        self.assertIn("new-command", note)
+        self.assertNotIn("old-command", note)
+
+    def test_a_quest_with_no_commands_adds_nothing(self):
+        self.assertEqual(self._note([{"event": "work"}]), "")
+        self.assertEqual(self._note([]), "")
+
+    def test_the_dropped_count_is_not_hidden(self):
+        events = [{"event": "work", "commands": [{"cmd": f"cmd-{n}", "exit_code": 0} for n in range(45)]}]
+        note = self._note(events)
+        self.assertIn("15 more not shown", note)
+        self.assertIn("cmd-0", note)
+        self.assertNotIn("cmd-44", note)
+
+
 class TestRoutePriorsE2E(Base):
     """Bayesian-lite — 종결 outcome 기록 + prior가 승격 문턱을 실제로 낮추는 e2e."""
 
@@ -1421,7 +1483,7 @@ class TestBudget(Base):
         out = h.handle("w1.txt 만들어")
         self.assertIn("예산", out)
         self.assertNotIn(DONE, out)
-        # 침묵 break 금지 — 어떤 전이가 왜 못 뛰었는지 Odin 보고에 실린다 (26-07-22 실측:
+        # 침묵 break 금지 — 어떤 전이가 왜 못 뛰었는지 Odin 보고에 들어간다 (26-07-22 실측:
         # grace PASS 후 베이스라인 red 수리 전이가 막혔는데 "판정 실패"로 오독되는 보고).
         # 전이명은 승격 규칙(동종 red 2회 → THINKER_REPLAN)에 따라 달라진다 — 형식만 봉인.
         self.assertIn("미실행 전이 ", out)
@@ -2281,7 +2343,7 @@ class TestDirectGuard(Base):
         self.assertEqual(h.last_response_text, "측정에는 NPS 지표를 썼다.")
 
     def test_identity_carries_both_style_axes(self):
-        """두 계약은 모든 역할이 공유하는 신원에 실린다 — 딜리버리 자식도 같은 문체로 보고한다."""
+        """두 계약은 모든 역할이 공유하는 신원에 들어간다 — 딜리버리 자식도 같은 문체로 보고한다."""
         h = FakeHeimdall(self.root, [], cls=self._cls_read())
         self.assertIn("Lagom — Minimalism Contract", h.delivery_identity)
         self.assertIn("Bragi — Human Voice Contract", h.delivery_identity)
