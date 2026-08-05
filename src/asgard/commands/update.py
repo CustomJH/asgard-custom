@@ -3,13 +3,16 @@ re-installing the target version. Requires uv on PATH (the installer bootstraps 
 
 release wheel을 직접 내려받아(진행률 바) 로컬 파일로 `uv tool install` 한다 — pure-python이라
 git/컴파일러 불필요. ASGARD_INSTALL_SPEC 오버라이드(dev/CI)는 다운로드 없이 스펙 그대로 설치.
-REPL의 /update도 이 함수를 쓴다 (restart_hint — 새 버전은 재시작 후 적용)."""
+REPL의 /update도 이 함수를 쓴다 (restart_hint — 새 버전은 재시작 후 적용).
+
+Windows는 이 프로세스 안에서 설치하지 않는다 — `_handoff` 주석에 그 이유가 있다."""
 
 import json
 import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import urllib.request
 
@@ -19,6 +22,9 @@ from .completions import ensure_installed
 
 _REPO = "CustomJH/asgard-custom"
 _SPEC_OVERRIDE = os.environ.get("ASGARD_INSTALL_SPEC")  # dev/CI escape hatch (git+…, local path)
+_PYTHON = "3.14"  # pyproject의 requires-python과 같은 핀 — install.sh·install.ps1도 이것을 쓴다
+_WIN = sys.platform == "win32"
+_HANDOFFS: list[subprocess.Popen] = []
 
 
 def _latest_version() -> str | None:
@@ -49,16 +55,118 @@ def _download(url: str, dest: str) -> None:
                 b.advance(len(chunk))
 
 
-def _uv_install(spec: str, label: str) -> int:
+def _uv_argv(spec: str) -> list[str]:
+    return ["uv", "tool", "install", "--force", "--python", _PYTHON, spec]
+
+
+def _uv_install(spec: str, label: str) -> tuple[int, str]:
+    """(종료 코드, uv가 낸 출력 전부) — 출력을 같이 돌려주는 이유는 `_failed`에 있다."""
     with ui.spin(label):
         r = subprocess.run(
-            ["uv", "tool", "install", "--force", "--python", "3.14", spec],
+            _uv_argv(spec),
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
         )
-    return r.returncode
+    return r.returncode, f"{r.stdout or ''}{r.stderr or ''}".strip()
+
+
+def _failed(base: dict, out: str, json_out: bool) -> int:
+    """uv가 낸 말을 그대로 보여준다.
+
+    `✘ update failed (uv tool install)` 한 줄만 남기던 판은 원인을 통째로 버렸다 — 인터프리터
+    없음, 프록시, 잠긴 파일이 화면에서 전부 같은 문장이었다. install.ps1은 같은 자리에서 uv
+    출력을 이미 붙여 준다."""
+    if not json_out:
+        ui.fail("update failed (uv tool install)")
+        for line in out.splitlines()[-12:]:
+            if line.strip():
+                ui.step(ui.dim(line.strip()))
+    return _emit({**base, "updated": False, "error": out}, 1, json_out)
+
+
+def _ps_quote(s: str) -> str:
+    """PowerShell 리터럴 문자열 — 작은따옴표는 두 번 적어 탈출한다."""
+    return "'" + s.replace("'", "''") + "'"
+
+
+def _handoff_script(spec: str, sync: bool, cleanup: str | None = None) -> str:
+    """이 프로세스가 끝난 뒤 uv를 돌리는 PowerShell 스크립트.
+
+    `uv tool install --force`는 도구 환경을 지우고 다시 만든다 (uv-tool `create_environment`
+    → `remove_virtualenv`). 그 환경 안의 `Scripts\\python.exe`가 지금 이 파이썬이고,
+    Windows는 실행 중인 파일을 지우지 못한다 — 그래서 자기 자신을 갈아 끼우는 설치는
+    프로세스가 살아 있는 한 `Access is denied (os error 5)`로 끝난다. POSIX는 실행 중인
+    파일을 unlink 할 수 있어 같은 명령이 그냥 통한다.
+
+    창 하나를 새로 여는 이유는 uv의 출력을 사람 눈앞에 남기기 위해서다."""
+    exe = shutil.which("asgard") or "asgard"
+    cleanup_cmd = (
+        f"Remove-Item -LiteralPath {_ps_quote(cleanup)} -Recurse -Force -ErrorAction SilentlyContinue"
+        if cleanup
+        else ""
+    )
+    failed = f"{cleanup_cmd}; " if cleanup_cmd else ""
+    lines = [
+        "Write-Host 'waiting for asgard to exit...'",
+        f"$launcher = Get-Process -Id {os.getppid()} -ErrorAction SilentlyContinue",
+        # REPL의 /update는 세션을 닫을 때까지 기다려야 잠긴 환경을 다시 건드리지 않는다.
+        f"Wait-Process -Id {os.getpid()} -ErrorAction SilentlyContinue",
+        "if ($null -ne $launcher -and $launcher.ProcessName -eq 'asgard') { "
+        "Wait-Process -InputObject $launcher -ErrorAction SilentlyContinue }",
+        f"uv tool install --force --python {_PYTHON} {_ps_quote(spec)}",
+        f"if ($LASTEXITCODE -ne 0) {{ {failed}Read-Host 'update failed - press Enter to close'; exit 1 }}",
+        # POSIX 갈래의 `ensure_installed()` 자리 — 새 명령이 탭 완성에 들어오는 것은 여기뿐이다.
+        f"& {_ps_quote(exe)} completions powershell --install",
+    ]
+    if sync:
+        lines.extend(
+            [
+                f"& {_ps_quote(exe)} sync",
+                "$syncCode = $LASTEXITCODE",
+                f"if ($syncCode -ne 0) {{ {failed}Read-Host 'sync failed - press Enter to close'; exit $syncCode }}",
+            ]
+        )
+    if cleanup_cmd:
+        lines.append(cleanup_cmd)
+    lines.append("Read-Host 'update done - press Enter to close'")
+    return "; ".join(lines)
+
+
+def _handoff(
+    base: dict,
+    spec: str,
+    shown: str,
+    sync: bool,
+    json_out: bool,
+    cleanup: str | None = None,
+) -> int:
+    """Windows 설치를 새 콘솔로 넘긴다. 넘길 수 없으면 사람이 칠 명령을 알려주고 실패로 끝낸다."""
+    manual = subprocess.list2cmdline(_uv_argv(spec))
+    ps = shutil.which("powershell") or shutil.which("pwsh")
+    why = "" if ps else "powershell not found"
+    if ps:
+        try:
+            # helper는 이 프로세스가 끝나야 진행한다. with로 기다리면 서로 멈추므로 프로세스가
+            # 끝날 때 운영체제가 핸들을 닫도록 참조를 유지한다.
+            installer = subprocess.Popen(
+                [ps, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", _handoff_script(spec, sync, cleanup)],
+                creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0),
+                close_fds=True,
+            )
+            _HANDOFFS.append(installer)
+        except OSError as e:
+            why = str(e)
+    if why:
+        if not json_out:
+            ui.fail(f"could not start the installer window ({why}); run this after asgard exits:")
+            ui.step(ui.dim(manual))
+        return _emit({**base, "updated": False, "handoff": False, "command": manual}, 1, json_out)
+    if not json_out:
+        ui.step(f"installing {ui.dim(shown)} in a new window")
+        ui.warn("Windows cannot replace asgard while it runs; the new window installs once this one exits")
+    return _emit({**base, "updated": False, "handoff": True, "command": manual}, 0, json_out)
 
 
 def _sync_projects() -> int:
@@ -117,10 +225,11 @@ def _install_override(base: dict, spec: str, sync: bool, json_out: bool) -> int:
     ui.steps(1)
     ui.phase("install via uv tool")
     ui.step(ui.dim(spec))
-    if _uv_install(spec, "installing asgard (override)…"):
-        if not json_out:
-            ui.fail("update failed (uv tool install)")
-        return _emit({**base, "spec": spec, "updated": False}, 1, json_out)
+    if _WIN:
+        return _handoff({**base, "spec": spec}, spec, spec, sync, json_out)
+    rc, out = _uv_install(spec, "installing asgard (override)…")
+    if rc:
+        return _failed({**base, "spec": spec}, out, json_out)
     if not json_out:
         ui.done("updated (override spec)")
     ensure_installed()  # 셸 completion 기본 설치·재생성 — 새 바이너리로 (베스트에포트)
@@ -129,7 +238,7 @@ def _install_override(base: dict, spec: str, sync: bool, json_out: bool) -> int:
 
 
 def _install_release(base: dict, target: str, sync: bool, restart_hint: bool, json_out: bool) -> int:
-    """릴리스 휠을 받아 uv tool로 얹는다 — 임시 폴더는 어느 갈래로 나가든 지운다."""
+    """릴리스 휠을 받아 uv tool로 얹는다 — 임시 폴더는 설치 주체가 지운다."""
     ui.steps(2)
     ui.phase("download release wheel")
     tmpd = tempfile.mkdtemp(prefix="asgard-update-")
@@ -146,12 +255,19 @@ def _install_release(base: dict, target: str, sync: bool, restart_hint: bool, js
         ui.ok(os.path.basename(wheel))
 
     ui.phase("install via uv tool")
-    rc = _uv_install(wheel, f"installing asgard v{target}…")
+    if _WIN:
+        return _handoff(
+            {**base, "target": target},
+            wheel,
+            f"asgard v{target}",
+            sync,
+            json_out,
+            cleanup=tmpd,
+        )
+    rc, out = _uv_install(wheel, f"installing asgard v{target}…")
     shutil.rmtree(tmpd, ignore_errors=True)
     if rc:
-        if not json_out:
-            ui.fail("update failed (uv tool install)")
-        return _emit({**base, "target": target, "updated": False}, 1, json_out)
+        return _failed({**base, "target": target}, out, json_out)
     if not json_out:
         ui.done(f"v{__version__} → v{target}")
     ensure_installed()  # 셸 completion 기본 설치·재생성 — 새 바이너리로 (베스트에포트)
