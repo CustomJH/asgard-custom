@@ -135,7 +135,7 @@ def merge_gitignore(existing: str | None) -> str:
 # checks_available 갈림길. baseline_parallel 을 되돌리면 병렬에서 자주 깨지는 스위트가 빨간 판정마다
 # 병렬 실행 한 번을 더 쓰고 버린다 (판정 자체는 안 바뀐다 — quest_log._run_check).
 # verify_level 은 저장소가 고른 검증 강도다 — 시드로 되돌리면 full 을 골라 둔 저장소가 sync 한 번에
-# 기본 low 로 내려앉는다 (설정 표면이 sync 마다 증발하면 그건 설정이 아니다).
+# 기본 low 로 바뀐다 (설정 표면이 sync 마다 사라지면 그건 설정이 아니다).
 PROJECT_OWNED_POLICY_KEYS = ("baseline_checks", "baseline_timeout", "baseline_parallel", "verify_level")
 
 
@@ -143,9 +143,12 @@ def _refreshed_policy(seed: dict, current: object) -> dict:
     """정책 갱신 — 판정 키는 시드가 이기고, 환경 의존 키만 프로젝트 값을 살린다."""
     policy = dict(seed)
     if isinstance(current, dict):
+        # JSON 에서 온 값이라 선언 타입이 object 다. 좁힌 결과를 이름 붙은 dict 로 받는 이유는
+        # 검사기가 isinstance 만으로는 키 타입을 Never 로 읽어 첨자 접근을 거절하기 때문이다.
+        owned: dict = current
         for key in PROJECT_OWNED_POLICY_KEYS:
-            if key in current:
-                policy[key] = current[key]
+            if key in owned:
+                policy[key] = owned[key]
     return policy
 
 

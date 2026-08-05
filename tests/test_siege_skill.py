@@ -19,6 +19,7 @@ import os
 import re
 import sys
 import unittest
+from typing import Any
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -37,9 +38,22 @@ _USAGE_RE = re.compile(r"^\s{4}asgard siege(?: (?P<verb>[a-z][a-z-]*))?(?P<rest>
 _FLAG_RE = re.compile(r"--[a-z][a-z-]*")
 
 
+def _subcommands(command: Any) -> dict[str, Any]:
+    """하위 명령 표 — 표를 안 드는 명령이면 그 자체가 시험의 전제 붕괴다.
+
+    click 타입을 안 적는 이유는 typer 가 click 을 벤더링해서다 — 여기서 어느 쪽 `Group` 을
+    적어도 다른 설치에서는 어긋난다. 재는 것은 클래스가 아니라 표가 있느냐다."""
+    assert hasattr(command, "commands"), f"하위 명령을 안 드는 명령이다: {command.name}"
+    return command.commands
+
+
+def _siege_command() -> Any:
+    return _subcommands(get_command(cli.app))["siege"]
+
+
 def _siege_group():
     """typer 가 등록한 `siege` 하위 명령 표 — 스킬이 맞춰야 할 정본."""
-    return get_command(cli.app).commands["siege"].commands
+    return _subcommands(_siege_command())
 
 
 def _documented() -> dict[str, set[str]]:
@@ -90,7 +104,7 @@ class SkillMatchesCli(unittest.TestCase):
     def test_every_documented_flag_exists(self) -> None:
         group = _siege_group()
         for verb, flags in _continuation_flags().items():
-            command = group[verb] if verb else get_command(cli.app).commands["siege"]
+            command = group[verb] if verb else _siege_command()
             real = {opt for param in command.params for opt in param.opts if opt.startswith("--")}
             for flag in flags:
                 self.assertIn(flag, real, f"siege {verb} 에 없는 플래그를 적었어요: {flag}")
@@ -149,7 +163,7 @@ class Resolver(unittest.TestCase):
 
     def test_resolved_body_drops_the_frontmatter(self) -> None:
         """resolve 는 본문만 준다 — 프론트매터가 섞이면 주입된 컨텍스트가 YAML 로 시작한다."""
-        (_name, body), = resolve_siege_skills("coordinate parallel workers")
+        ((_name, body),) = resolve_siege_skills("coordinate parallel workers")
         self.assertFalse(body.startswith("---"))
         self.assertTrue(body.startswith("# asgard-siege"))
 

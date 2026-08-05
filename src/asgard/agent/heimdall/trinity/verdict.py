@@ -22,10 +22,11 @@ from ._shared import (
     _classified_findings,
     _craft_blocking,
     _runner_identity,
+    _RunState,
 )
 
 
-class _VerdictMixin:
+class _VerdictMixin(_RunState):
     """판정 턴 — 결정론 베이스라인, 미시 형상 게이트, 문체 게이트, 그리고 LLM 판정자.
 
     `TrinityRun` 가 상속한다 — 혼자서는 아무것도 아니다."""

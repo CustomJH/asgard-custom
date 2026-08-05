@@ -1,6 +1,7 @@
 """asgard CLI — 최상위 명령. 명령 본문은 `asgard.commands.*`에 있고 여기는 표면 선언만 진다."""
 
 import typer
+import typer.core
 
 from .. import ui
 from ._app import app

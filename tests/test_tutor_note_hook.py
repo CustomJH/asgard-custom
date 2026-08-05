@@ -174,7 +174,7 @@ class TutorNoteHookTest(unittest.TestCase):
             tutor_teach.card(
                 tutor_teach.Explanation(
                     base="HEAD",
-                    depth=gaps_only["depth"],
+                    depth=str(gaps_only["depth"]),
                     mission="",
                     steps=(),
                     terms=(),

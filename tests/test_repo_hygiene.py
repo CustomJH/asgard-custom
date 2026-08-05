@@ -55,7 +55,8 @@ class TestSharedSettingsStayShareable(unittest.TestCase):
 
         def walk(node: object, path: str = "") -> None:
             if isinstance(node, dict):
-                for key, value in node.items():
+                for raw_key, value in node.items():
+                    key = str(raw_key)
                     here = f"{path}.{key}" if path else key
                     if any(name in key.lower() for name in SECRET_NAMES):
                         found.append(here)

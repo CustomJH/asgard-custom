@@ -514,9 +514,7 @@ def create_task(payload: dict, root: str) -> tuple[int, str, bytes]:
         return _json_body(400, {"error": "unknown permission mode"})
     with _TASK_LOCK:
         running = sum(
-            task.get("status") in {"queued", "running", "paused"}
-            for task in _TASKS.values()
-            if _visible_task(task)
+            task.get("status") in {"queued", "running", "paused"} for task in _TASKS.values() if _visible_task(task)
         )
         if running >= _MAX_RUNNING:
             return _json_body(409, {"error": "too many running tasks"})

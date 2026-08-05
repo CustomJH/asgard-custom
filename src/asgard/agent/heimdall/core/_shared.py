@@ -2,15 +2,76 @@
 
 from __future__ import annotations
 
-from typing import Protocol
+import threading
+from typing import Callable, Protocol
 
-from ...session import SessionResult
+from ....providers import ResolvedProvider
+from ...session import AgentSession, SessionResult
 
 
 class SessionLike(Protocol):
     """_run_turn이 요구하는 표면 — run() 하나. 테스트 대역(FakeSession)이 AgentSession 상속 없이 만족."""
 
     def run(self, user_content: str) -> SessionResult: ...
+
+
+class _HeimdallState:
+    """믹스인 넷이 공유하는 조정자 상태의 선언 — 값은 `Heimdall.__init__` 이 채운다.
+
+    선언만 있고 대입이 없어서 런타임에는 아무 속성도 안 만든다 (`__annotations__` 항목뿐).
+    믹스인은 자기가 정의하지 않은 이름을 읽는데, 그 이름이 어디서 오는지 적힌 자리가 여태
+    없었다 — 분해 전에는 한 클래스였으므로 물을 일이 아니었고, 분해 뒤에는 검사기가 믹스인
+    하나를 홀로 읽으면서 307건을 냈다. 여기가 그 답이다.
+
+    형제 믹스인이 정의하는 메서드는 `Callable[..., T]` 로 적는다 — `def` 스텁으로 적으면
+    MRO 끝자리에 안 부르는 구현이 하나 더 생긴다. 이쪽은 선언이라 그 몸통이 아예 없다."""
+
+    # ── 세션 좌표 ──
+    rp: ResolvedProvider
+    root: str
+    on_text: Callable[[str], None]
+    on_status: Callable[[str | None], None]
+    policy: dict
+    role_rp: dict[str, ResolvedProvider]
+    _explicit_agent: str
+    _sleep: Callable[[float], None]
+
+    # ── 동시 실행 상태 (모두 _state_lock 아래) ──
+    _state_lock: threading.Lock
+    cancel_event: threading.Event
+    _session_seq: int
+    _sessions: dict[str, dict]
+    _clients: dict[tuple, object]
+
+    # ── 프롬프트 계층 ──
+    lagom: str
+    bragi: str
+    direct_identity: str
+    map_note: str
+    _map_warnings: set[str]
+    _role_agent: dict[str, str]
+    _session_agent: str
+    _agent_note_cache: dict[str, str]
+
+    # ── 턴 누적 ──
+    total_tokens: int
+    cache_read_tokens: int
+    cache_prompt_tokens: int
+    turn_recap: dict
+    last_response_text: str
+    _explore_cmds: int
+    _memory_session_id: str
+    _memory_turn_seq: int
+    _last_quest_id: str | None
+    _last_completion: dict | None
+
+    # ── 형제 믹스인·`Heimdall` 이 정의하는 메서드 ──
+    _complete_text: Callable[..., str]
+    _recap_event: Callable[..., None]
+    _session: Callable[..., AgentSession]
+    _track_cache: Callable[..., None]
+    _persist_turn: Callable[..., None]
+    _trinity: Callable[..., str]
 
 
 def _new_recap() -> dict:

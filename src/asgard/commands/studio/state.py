@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 import threading
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from ... import profiles
 
@@ -26,8 +26,8 @@ class _ProfileTasks(dict[tuple[str, str], dict]):
 
     @staticmethod
     def _key(key: object) -> tuple[str, str]:
-        if isinstance(key, tuple):
-            return key
+        if isinstance(key, tuple) and len(key) == 2:
+            return str(key[0]), str(key[1])
         return _task_owner(profiles.active()), str(key)
 
     def __getitem__(self, key: object) -> dict:
@@ -40,7 +40,9 @@ class _ProfileTasks(dict[tuple[str, str], dict]):
     def __contains__(self, key: object) -> bool:
         return super().__contains__(self._key(key))
 
-    def get(self, key: object, default: object = None) -> dict | object:
+    # 반환이 Any 인 이유는 dict.get 이 오버로드 셋이기 때문이다 — 기본값의 타입이 반환 타입을
+    # 정한다. 단일 시그니처로 그 셋을 다 덮으려면 이 자리 말고는 적을 곳이 없다.
+    def get(self, key: object, default: object = None) -> Any:
         return super().get(self._key(key), default)
 
 

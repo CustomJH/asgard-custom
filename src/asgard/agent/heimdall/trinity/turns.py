@@ -18,9 +18,10 @@ from ..roles import (
     worker_canon_hint,
 )
 from ..toolspec import ASK_TOOL, DISPATCH_TOOL
+from ._shared import _RunState
 
 
-class _TurnsMixin:
+class _TurnsMixin(_RunState):
     """역할 턴 — Thinker·Worker, 그리고 그 앞뒤의 조사·그래프·편대 배정.
 
     `TrinityRun` 가 상속한다 — 혼자서는 아무것도 아니다."""

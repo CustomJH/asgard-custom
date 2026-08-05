@@ -96,7 +96,7 @@ def _parse_assignment(text: str) -> tuple[str, int]:
         # inf·1e400 은 float 으로는 살아남고 int() 에서 OverflowError 를 낸다 — ValueError 만
         # 잡으면 친절한 안내 대신 역추적이 나간다.
         number = int(float(raw.replace("_", "").replace(",", "")))
-    except (ValueError, OverflowError):
+    except ValueError, OverflowError:
         raise ValueError(f"`{key}` 는 수를 받아요 (받은 값: {raw})") from None
     if not 0 < number <= _MAX_UNITS:
         raise ValueError(f"`{key}` 는 1 이상 {_MAX_UNITS:,} 이하여야 해요 (받은 값: {raw})")

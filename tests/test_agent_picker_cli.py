@@ -87,8 +87,9 @@ class AgentPickerCliTest(unittest.TestCase):
     def test_inventory_separates_configured_and_builtin_agents(self) -> None:
         rows = profiles.listing()
         available = {"freyja": {"description": "시각 설계"}}
-        with mock.patch.object(profiles, "listing", return_value=rows), mock.patch.object(
-            profiles, "builtin_roster", return_value=available
+        with (
+            mock.patch.object(profiles, "listing", return_value=rows),
+            mock.patch.object(profiles, "builtin_roster", return_value=available),
         ):
             result = run_cli("agent", "list")
         self.assertEqual(result.exit_code, 0, result.output)

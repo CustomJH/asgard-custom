@@ -18,10 +18,10 @@ from ..classify import (
 from ..roles import (
     _DELIVERY_TIERS,
 )
-from ._shared import SessionLike, _concurrent_label
+from ._shared import SessionLike, _concurrent_label, _HeimdallState
 
 
-class _SessionsMixin:
+class _SessionsMixin(_HeimdallState):
     """세션과 모델 — 역할마다 어느 엔진으로 어떤 프롬프트를 들고 들어가는가, 그리고 그 소비량.
 
     `Heimdall` 가 상속한다 — 혼자서는 아무것도 아니다."""

@@ -18,6 +18,7 @@ import subprocess
 import tempfile
 import threading
 import unittest
+from typing import Any
 from unittest import mock
 
 from asgard.agent.heimdall import Heimdall
@@ -823,7 +824,7 @@ class TestTrajectoryNote(unittest.TestCase):
             with open(os.path.join(quest, "q.jsonl"), "w", encoding="utf-8") as handle:
                 for event in events:
                     handle.write(json.dumps(event) + "\n")
-            run = types.SimpleNamespace(_hd=types.SimpleNamespace(root=root), qid="q")
+            run: Any = types.SimpleNamespace(_hd=types.SimpleNamespace(root=root), qid="q")
             return TrinityRun._trajectory_note(run)
 
     def test_commands_and_exit_codes_reach_the_verdict_turn(self):
@@ -2233,7 +2234,7 @@ class TestSealLane(Base):
         body = SEAL_SKILL_MD.split("---", 2)[2]
         self.assertTrue(has_write_verbs(body))  # 본문은 늘 write 로 읽힌다
         classification = classify_heuristic(body)
-        self.assertIsNotNone(classification)
+        assert classification is not None
         self.assertTrue(classification["write_expected"])
         self.assertNotEqual(classification["task_class"], "vcs")
 

@@ -52,9 +52,16 @@ class TestAsgardCommitBoundary(unittest.TestCase):
             self.skipTest("git 저장소 밖 (sdist 등) — 커밋 경계 검사는 저장소 문맥 전용")
 
     def test_shared_assets_are_not_git_ignored(self):
-        """팀 자산이 무시되면 그 정본이 이 저장소에 존재하지 않는 것과 같다."""
+        """팀 자산이 무시되면 그 정본이 이 저장소에 존재하지 않는 것과 같다.
+
+        없는 자리는 안 묻는다. 디렉터리 전용 예외(`!memory/records/`)는 git 이 그 경로를
+        디렉터리로 볼 수 있을 때만 적용된다 — 디스크에 없는 경로에 대고 물으면 규칙이 아니라
+        부재가 답으로 나온다. 26-08-05 재초기화로 `memory/` 갈래가 통째로 없어졌고(4669fe7),
+        그때 이 검사가 규칙이 아니라 그 부재를 쟀다."""
         for path in SHARED:
             with self.subTest(path=path):
+                if not os.path.exists(os.path.join(ROOT, path)):
+                    self.skipTest(f"{path} 이 이 저장소에 없다 — 무시 여부를 물을 자리가 아니다")
                 self.assertEqual(
                     self._git("check-ignore", "-q", path).returncode,
                     1,

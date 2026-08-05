@@ -25,6 +25,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
+from typing import Any
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -46,13 +47,25 @@ class ActBase(unittest.TestCase):
         if override is not None:
             self.addCleanup(os.environ.__setitem__, store.STATE_ENV, override)
 
-    def json_of(self, call) -> object:
+    def json_of(self, call) -> Any:
         """`--json` 출력을 되읽는다 — 호스트 에이전트가 소비하는 바로 그 모양이다."""
         buffer = io.StringIO()
         with redirect_stdout(buffer):
             code = call()
         self.assertEqual(code, 0, buffer.getvalue())
         return json.loads(buffer.getvalue())
+
+    def task_of(self, task_id: str) -> dict:
+        """장부가 든 그 일감 — 빈손이면 다음 줄에서 뭘 재려 했든 그것이 곧 실패다."""
+        task = orc.task_show(self.root, task_id)
+        assert task is not None, f"장부에 없는 일감: {task_id}"
+        return task
+
+    def unit_of(self, run_id: str, unit: str) -> dict:
+        """DAG 에 선 그 단위 — 없으면 의존을 그릴 자리조차 없다."""
+        task = orc.task_for_unit(self.root, run_id, unit)
+        assert task is not None, f"DAG 에 안 선 단위: {unit}"
+        return task
 
     def quiet(self, call) -> int:
         buffer = io.StringIO()
@@ -80,7 +93,7 @@ class TestOneSiegeByCommandAlone(ActBase):
         self.assertEqual([task["id"] for task in ready], [first], "의존이 남은 일감이 배차 후보에 있다")
 
         dispatch = self.json_of(lambda: siege_act.run_open(first, worker="w-1", json_out=True))
-        self.assertEqual(orc.task_show(self.root, first)["status"], "dispatched")
+        self.assertEqual(self.task_of(first)["status"], "dispatched")
 
         reported = self.json_of(
             lambda: siege_act.run_done(
@@ -124,7 +137,7 @@ class TestOneSiegeByCommandAlone(ActBase):
         for _ in range(orc.MAX_ATTEMPTS):
             dispatch = self.json_of(lambda: siege_act.run_open(task_id, json_out=True))
             self.quiet(lambda: siege_act.run_done(dispatch["id"], "failed", run_id=run_id, task_id=task_id))
-        self.assertEqual(orc.task_show(self.root, task_id)["status"], "failed")
+        self.assertEqual(self.task_of(task_id)["status"], "failed")
         self.assertEqual(self.quiet(lambda: siege_act.run_open(task_id)), 2, "회로가 끊긴 뒤에도 배차가 열린다")
 
 
@@ -161,7 +174,7 @@ class TestTheDomainRefusalsSurviveTheCommandLayer(ActBase):
         self.assertEqual(
             self.quiet(lambda: siege_act.run_done(dispatch["id"], "succeeded", run_id=run_id, task_id=other)), 2
         )
-        self.assertEqual(orc.task_show(self.root, other)["status"], "ready", "남의 일감이 접혔다")
+        self.assertEqual(self.task_of(other)["status"], "ready", "남의 일감이 접혔다")
 
     def test_binding_the_same_quest_twice_reuses_one_run(self):
         """두 번째 호출이 Run 을 또 만들면 같은 퀘스트의 일감과 우편함이 둘로 갈린다."""
@@ -255,17 +268,16 @@ class TestTheHostModesFillTheLedgerOnTheirOwn(ActBase):
         run_id = runs[0]["id"]
         self.assertEqual(runs[0]["quest_id"], qid, "Run 이 퀘스트에 안 묶였다")
 
-        schema = orc.task_for_unit(self.root, run_id, "u-schema")
-        api = orc.task_for_unit(self.root, run_id, "u-api")
-        self.assertIsNotNone(api, "아직 안 잡은 단위가 DAG 에 안 섰다 — 의존을 그릴 수 없다")
+        schema = self.unit_of(run_id, "u-schema")
+        api = self.unit_of(run_id, "u-api")  # 아직 안 잡은 단위도 DAG 에 서야 의존을 그린다
         self.assertEqual(api["deps"], [schema["id"]], "access 가 의존으로 안 옮겨졌다")
         self.assertEqual(schema["status"], "dispatched")
         self.assertEqual(api["status"], "pending")
 
         code, _ = self.ticket(qid, "ticket-finish", unit="u-schema", claim_token=claimed["claim_token"], status="done")
         self.assertEqual(code, 0)
-        self.assertEqual(orc.task_show(self.root, schema["id"])["status"], "completed")
-        self.assertEqual(orc.task_show(self.root, api["id"])["status"], "ready", "앞 단위가 끝났는데 뒤가 안 풀렸다")
+        self.assertEqual(self.task_of(schema["id"])["status"], "completed")
+        self.assertEqual(self.task_of(api["id"])["status"], "ready", "앞 단위가 끝났는데 뒤가 안 풀렸다")
         self.assertEqual(
             [m["type"] for m in orc.inbox(self.root, run_id) if m["type"] == "worker_done"],
             ["worker_done"],
@@ -287,7 +299,7 @@ class TestTheHostModesFillTheLedgerOnTheirOwn(ActBase):
         _, claimed = self.ticket(qid, "ticket-claim", unit="u-1", worker="w-1")
         self.ticket(qid, "ticket-finish", unit="u-1", claim_token=claimed["claim_token"], status="failed")
         run_id = orc.run_list(self.root)[0]["id"]
-        task = orc.task_for_unit(self.root, run_id, "u-1")
+        task = self.unit_of(run_id, "u-1")
         self.assertEqual(task["status"], "ready", "실패한 시도가 재배차를 못 받는다")
         self.assertEqual(len(orc.dispatch_history(self.root, task["id"])), 1)
 

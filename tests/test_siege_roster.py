@@ -31,6 +31,12 @@ from asgard.commands import siege  # noqa: E402
 from asgard.orchestration import store  # noqa: E402
 
 
+def _shown(row: dict | None) -> dict:
+    """장부 조회의 결과 — 빈손이면 다음 줄에서 뭘 재려 했든 그것이 곧 실패다."""
+    assert row is not None, "장부 조회가 빈손이다"
+    return row
+
+
 class RosterBase(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
@@ -103,7 +109,7 @@ class TestOneCallIsOneRow(RosterBase):
         ticket = orc.open_dispatch(self.root, task["id"], worker="w-1", role="worker", agent="asgard-worker")
         with self.assertRaises(orc.OrchestrationError):
             orc.close_agent(self.root, "q-1", "asgard-worker")
-        self.assertEqual(orc.dispatch_show(self.root, dispatch_id=ticket["id"])["state"], "ready")
+        self.assertEqual(_shown(orc.dispatch_show(self.root, dispatch_id=ticket["id"]))["state"], "ready")
 
     def test_live_agents_names_who_is_still_out(self):
         orc.note_agent(self.root, "q-1", "asgard-thor", spec="아직 도는 중")
@@ -245,8 +251,8 @@ class TestTheHostHookRecordsTheCall(RosterBase):
         code, _ = quest_log.ticket_runtime(self.root, self.qid, "ticket-claim", unit="u-1", session="s", worker="w-1")
         self.assertEqual(code, 0)
         run = orc.run_list(self.root)[0]
-        task = orc.task_for_unit(self.root, run["id"], "u-1")
-        self.assertEqual(orc.dispatch_show(self.root, task_id=task["id"])["agent"], "asgard-worker")
+        task = _shown(orc.task_for_unit(self.root, run["id"], "u-1"))
+        self.assertEqual(_shown(orc.dispatch_show(self.root, task_id=task["id"]))["agent"], "asgard-worker")
 
     def test_a_dispatch_outside_a_quest_records_nothing(self):
         """활성 퀘스트가 없으면 DIRECT·탐사 디스패치다 — 장부를 열 자리가 아니다."""

@@ -6,9 +6,10 @@ import json
 
 from ...session import TurnCancelled, ql
 from ..journal import _log_classify
+from ._shared import _HeimdallState
 
 
-class _ClosingMixin:
+class _ClosingMixin(_HeimdallState):
     """턴을 닫는 자리 — 문체 게이트, 최종 보고, 봉인, 되짚기 카드, 그리고 에스컬레이션.
 
     `Heimdall` 가 상속한다 — 혼자서는 아무것도 아니다."""

@@ -190,7 +190,7 @@ def _search_personal(args: dict) -> tuple[str, bool]:
         return "query가 비어 있다", True
     try:
         k = int(args.get("max_results") or 5)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         k = 5
     hits = memory.query(text, k=max(1, min(k, 20)))
     rows, used = [], 0

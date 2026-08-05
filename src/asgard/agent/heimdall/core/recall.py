@@ -8,9 +8,10 @@ from ..journal import _log_classify
 from ..roles import (
     _EXPLORE_NUDGE_MIN,
 )
+from ._shared import _HeimdallState
 
 
-class _RecallMixin:
+class _RecallMixin(_HeimdallState):
     """기억 — 턴에 들이는 회수층과, 턴이 끝난 뒤 무엇을 남길지의 판단. 지도 준비도 여기.
 
     `Heimdall` 가 상속한다 — 혼자서는 아무것도 아니다."""

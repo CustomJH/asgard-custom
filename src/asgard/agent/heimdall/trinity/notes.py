@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from .... import ui
+from ._shared import _RunState
 
 
-class _NotesMixin:
+class _NotesMixin(_RunState):
     """턴에 얹는 글 — 배차 메모, 기억 갈무리, 의도 블록, 궤적 요약.
 
     `TrinityRun` 가 상속한다 — 혼자서는 아무것도 아니다."""

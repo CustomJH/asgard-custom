@@ -43,7 +43,7 @@ def _oversized() -> list[str]:
 class TestFileSize(unittest.TestCase):
     def test_severe_file_count_does_not_exceed_the_recorded_baseline(self):
         baseline = gate_baseline(ROOT).get("severe_files")
-        self.assertIsNotNone(baseline, "pyproject 의 [tool.asgard.health-gate] 에 severe_files 기준선이 없다")
+        assert isinstance(baseline, int), "pyproject 의 [tool.asgard.health-gate] 에 severe_files 기준선이 없다"
         self.assertLessEqual(
             scan(ROOT).severe_files,
             baseline,

@@ -75,6 +75,8 @@ class ScopeParsing(unittest.TestCase):
 
 
 class Repo(unittest.TestCase):
+    # 각 하위 클래스가 자기 시나리오의 기준 스냅샷을 세운다 — 여기서는 선언만 한다.
+    base_snapshot: dict
     """`workspace/` 를 무시하는 임시 저장소 — 무시 파일이 실재하는 조건에서만 의미가 있다."""
 
     def setUp(self):

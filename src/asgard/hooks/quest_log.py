@@ -174,7 +174,7 @@ DEFAULT_POLICY: dict = {
     # 검증 강도 — low: 항상 micro / high: 위험 축(민감 경로·테스트 삭제·큰 non-test diff·shared)이
     # 걸릴 때만 full / full: 항상 full. 기본 low 는 속도 선택이다: full 판정은 상위 티어 모델을
     # 쓰고(_assign_turn 의 bump), micro PASS 가 나오면 completion_decision 이 되돌려 같은 diff 를
-    # 두 번 판정한다. 민감 경로가 넓은 저장소는 사실상 모든 쓰기가 그 값을 치른다.
+    # 두 번 판정한다. 민감 경로가 넓은 저장소는 사실상 모든 쓰기가 그 두 번을 부담한다.
     "verify_level": "low",
     # 하네스 소유 베이스라인 체크 — 비면 보수적 자동 감지 (pytest만)
     "baseline_checks": [],
@@ -2423,7 +2423,7 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
         "nontest_files": len(nt_files),
         "nontest_lines": nt_lines,
         # gate의 full_required 판정과 동일 기준 — 전이(DONE)와 close가 gate와 어긋나면 안 된다.
-        # 위험 축(risk)과 그 축에 설정 강도를 얹은 결과를 함께 싣는다: 전이는 risk에 flags.shared를
+        # 위험 축(risk)과 그 축에 설정 강도를 적용한 결과를 함께 넣는다: 전이는 risk에 flags.shared를
         # 더해 다시 계산하고, close·게이트는 결과만 본다.
         "full_verify_risk": full_risk,
         "full_required": full_verify_required(policy, full_risk),

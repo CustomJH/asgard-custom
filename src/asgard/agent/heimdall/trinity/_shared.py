@@ -5,6 +5,12 @@ from __future__ import annotations
 import os
 import re
 import shlex
+from typing import TYPE_CHECKING, Callable
+
+if TYPE_CHECKING:  # 순환 임포트 — core 가 trinity 를 들여온다. 어노테이션은 지연 평가라 이걸로 충분하다.
+    from ....providers import ResolvedProvider
+    from ..bifrost import BifrostLedger, CoordinatorLoop
+    from ..core import Heimdall
 
 MAX_TRINITY_TURNS = 12  # budget_priors.deep — 이 위는 폭주로 간주, Odin 보고
 _CRAFT_MAX_BLOCKS = 2  # hooks/craft_gate.py MAX_BLOCKS와 동일 유지 (모드 간 같은 상한)
@@ -99,3 +105,52 @@ def _classified_findings(verdict: dict) -> list[dict]:
             }
         )
     return rows
+
+
+class _RunState:
+    """믹스인 셋이 공유하는 순환 상태의 선언 — 값은 `TrinityRun.__init__` 이 채운다.
+
+    선언만 있고 대입이 없어서 런타임에는 아무 속성도 안 만든다. 분해 전에는 한 클래스라
+    물을 일이 없던 것이 분해 뒤에 남았다: 믹스인 하나만 읽는 검사기에게 `self.request` 가
+    어디서 오는지 말해 주는 자리가 없었다.
+
+    형제 믹스인·`TrinityRun` 이 정의하는 메서드는 `Callable[..., T]` 로 적는다 — `def`
+    스텁으로 적으면 MRO 끝자리에 안 부르는 구현이 하나 더 생긴다."""
+
+    # ── 퀘스트 좌표 (생성 시 고정) ──
+    _hd: Heimdall
+    request: str
+    cls: dict
+    dual: bool
+    standard: bool
+    qid: str
+    sid: str
+    tc: str
+
+    # ── 순환 가변 상태 ──
+    _loop: CoordinatorLoop | None
+    bifrost: BifrostLedger
+    fail_history: list[str]
+    gate_sigs: dict[str, int]
+    gate_blocks: int
+    craft_blocks: int
+    coordinator_answers: list[tuple[str, str]]
+    unit_reports: list[dict]
+
+    # ── 턴 스코프 (매 턴 run() 이 재설정) ──
+    role: str
+    sess_role: str
+    why: str
+    level: str
+    budget_note: str
+    model: str | None
+    used_model: str
+    rrp: ResolvedProvider
+
+    # ── 형제 믹스인·`TrinityRun` 이 정의하는 메서드 ──
+    _orchestration_note: Callable[..., str]
+    _intent_block: Callable[..., str]
+    _trajectory_note: Callable[..., str]
+    _tend_memory: Callable[..., None]
+    _quest_paths: Callable[..., list[str]]
+    _fail_and_repair: Callable[..., bool]

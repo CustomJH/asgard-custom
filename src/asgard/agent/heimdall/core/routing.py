@@ -12,9 +12,10 @@ from ..classify import (
     has_write_verbs,
 )
 from ..journal import _log_classify
+from ._shared import _HeimdallState
 
 
-class _RoutingMixin:
+class _RoutingMixin(_HeimdallState):
     """라우팅 — 요청 하나를 어느 레인으로 보낼지. 스킬 분류와 작업 종류 판정.
 
     `Heimdall` 가 상속한다 — 혼자서는 아무것도 아니다."""
