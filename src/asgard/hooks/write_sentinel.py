@@ -72,6 +72,13 @@ def main() -> None:
                 writes = []
         for item in paths:
             rel = os.path.relpath(item, proj) if os.path.isabs(item) else item
+            # 저장소 밖은 안 적는다. 이 목록의 소비자 둘 다 저장소만 볼 수 있다 — verifier-gate 는
+            # `git diff` 로 dirty 를 재고, craft-gate 는 이 저장소의 코드 계약으로 판정한다.
+            # 적어 두면 세션 스크래치패드의 일회용 분석 스크립트가 코드처럼 심판받고, 그 판정이
+            # 서브에이전트의 보고를 밀어낸다 (26-08-05 실측: 감사 워커 2기가 자기 보고 대신
+            # 남이 쓴 스크래치 파일에 대한 반박을 반환했다).
+            if rel.replace("\\", "/").startswith("../") or os.path.isabs(rel):
+                continue
             if rel not in writes and len(writes) < 500:  # cap — 상태 파일 폭주 방지
                 writes.append(rel)
         with open(f, "w", encoding="utf-8") as handle:
