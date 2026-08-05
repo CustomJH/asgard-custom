@@ -61,7 +61,7 @@ class TestMapContext(Base):
         self.assertIn("asgard map impact", matched.text)
         self.assertIn("`route:GET_/api/v1/admin/announcements`", matched.text)
         self.assertIn("`page:/admin/announcements`", matched.text)
-        # 쿼리와 무관한 시드는 싣지 않는다
+        # 쿼리와 무관한 시드는 넣지 않는다
         self.assertNotIn("route:GET_/api/v1/orders", matched.text)
         # 쿼리가 어느 시드와도 안 맞으면 섹션 자체가 없다 — 예산 보호
         unmatched = build_map_context(self.root, "totally unrelated billing task")
@@ -80,7 +80,7 @@ class TestMapContext(Base):
         self.assertIn("Command: `ty check`", body)
         self.assertIn("class PublicAPI", body)
         self.assertIn("def route(request, config)", body)
-        # 문서 레인은 제목과 절 이름까지만 싣는다 — 본문은 지도의 것이 아니다.
+        # 문서 레인은 제목과 절 이름까지만 넣는다 — 본문은 지도의 것이 아니다.
         self.assertIn("`docs/runbook.md` — doc: Deploy runbook · sections: Rollback; Paging", body)
         self.assertNotIn("\ntext\n", body)
         self.assertLessEqual(len(body.encode("utf-8")), 32 * 1024)
@@ -132,7 +132,7 @@ class TestMapContext(Base):
     def test_a_command_covering_two_concepts_beats_a_rarer_single_hit(self):
         """개념 수가 먼저다 — `상태` 하나에 세게 걸린 명령이 `티켓`+`상태`를 이기면 안 된다.
 
-        `auth status` 는 카탈로그에서 `status` 를 가진 유일한 행이라 IDF 만 보면 항상 이긴다.
+        `auth status` 는 카탈로그에서 `status` 를 가진 유일한 행이라 IDF 만 보면 항상 우선한다.
         """
         from asgard.code_map import refresh_map
         from asgard.map_context import build_map_context

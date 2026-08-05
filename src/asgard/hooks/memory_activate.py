@@ -11,6 +11,11 @@
 # `asgard memory recall`을 subprocess로 소비한다. 스캔·오염 제외·예산·provider gate는
 # 전부 CLI(단일 출처)가 수행하고, 이 훅은 출력 전달만 한다 (로직 재구현 금지).
 # asgard 미설치·빈 출력·타임아웃·어떤 오류든 무주입 통과 (fail-open, 항상 exit 0).
+#
+# `ASGARD_MEMORY_NO_DOWNLOAD` 는 자식 넷에게만 뜻이 있다 (이 프로세스는 안 쓴다). `sync-turn`
+# 은 켜든 끄든 같다 — 26-08-05 격리 홈 실측 101ms vs 100ms, 양쪽 페이지 0·벡터 0. 그 명령은
+# 개인 위키를 안 써서 `_vec_upsert` 에 안 닿는다. 위키를 쓰며 벡터가 필요한 자리는 분리 스폰
+# 되는 `memory norn --auto` 하나고, 거기서는 `memory_semantic.detached_env` 가 표식을 뗀다.
 import hashlib
 import json
 import os
@@ -204,10 +209,10 @@ def main():
         exe = shutil.which("asgard")
         if not exe:
             sys.exit(0)  # asgard CLI 부재 = 메모리 기능 없음 — 조용히 통과
-        # 이 훅의 자식들은 전부 10초 상한 안에서 돈다. 신규 설치의 첫 회수가 그 안에서 임베딩
-        # 모델(수십 초)을 받기 시작하면 상한에 잘려 죽고, 다음 프롬프트도 같은 자리에서 다시
-        # 죽는다 — 진전이 없는 채로 시맨틱이 영영 안 켜진다. 그래서 자식에게 "받지 마라"를
-        # 알린다: 시맨틱만 빠지고 어휘·그래프 회수는 그대로 돈다. 준비는 warmup이 맡는다.
+        # 아래 네 자식은 10~20초 상한 안에서 돈다. 신규 설치의 첫 회수가 그 안에서 임베딩
+        # 모델(수십 초)을 받기 시작하면 상한에 잘려 죽고 다음 프롬프트도 같은 자리에서 죽는다 —
+        # 시맨틱이 영영 안 켜진다. 그래서 "받지 마라"를 알린다: 시맨틱만 빠지고 어휘·그래프
+        # 회수는 그대로 돈다. 준비는 warmup 이 맡는다 (표식이 무엇에 닿는지는 파일 머리에).
         os.environ["ASGARD_MEMORY_NO_DOWNLOAD"] = "1"
         if event == "Stop":
             user, assistant = _latest_turn(data)
