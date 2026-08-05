@@ -74,8 +74,12 @@ def _playbook(verb: str) -> str | None:
         return None
 
 
-def _menu(root: str) -> int:
-    """무인자 — 작업 트리를 읽고 다음 두어 개를 고른다. 절대 자동 실행하지 않는다."""
+def _menu(root: str, json_out: bool = False) -> int:
+    """무인자 — 작업 트리를 읽고 다음 두어 개를 고른다. 절대 자동 실행하지 않는다.
+
+    `json_out` 이면 사람용 줄 대신 같은 내용을 한 덩이로 낸다. 종전에는 `--json` 이
+    `set_quiet` 로 이 함수의 출력을 통째로 지워 종료 줄 하나만 남았고, 24개 `--json` 표면 중
+    이것만 파싱이 안 됐다 (26-08-05 감사)."""
     ui.head("thor · 절차 엔진 (Þrúðvangr)")
     changed = thor_gate.changed_paths(root)
     judged = [p for p in changed if thor_gate._language(p)]
@@ -101,12 +105,33 @@ def _menu(root: str) -> int:
         if any(p.endswith((".sql",)) or "migration" in p.lower() for p in changed):
             picks.append(("migrate", "마이그레이션 파일이 변경분에 있어요"))
         picks.append(("sweep", "반환 전이면 여기 — 모든 경로가 여기로 모여요"))
-    ui.phase("다음으로 부를 것")
     seen: set[str] = set()
+    ordered: list[tuple[str, str]] = []
     for verb, why in picks:
-        if verb in seen:
-            continue
-        seen.add(verb)
+        if verb not in seen:
+            seen.add(verb)
+            ordered.append((verb, why))
+    if json_out:
+        survey = None
+        if recorded and not thor_survey.stale(root, recorded):
+            survey = {"ecosystems": list(recorded.ecosystems), "languages": list(recorded.languages)}
+        print(
+            json.dumps(
+                {
+                    "next": [{"verb": verb, "why": why} for verb, why in ordered],
+                    "verbs": {
+                        verb: {"summary": s, "canon": c, "gate": _GATED.get(verb)} for verb, (s, c) in VERBS.items()
+                    },
+                    "changed": len(changed),
+                    "survey": survey,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+    ui.phase("다음으로 부를 것")
+    for verb, why in ordered:
         ui.step(f"asgard thor {verb}")
         ui.step(ui.dim(f"    {why}"))
     if recorded and not thor_survey.stale(root, recorded):
@@ -337,11 +362,26 @@ def _run_gate(root: str, base: str, paths: tuple[str, ...], json_out: bool) -> i
     return 1 if blocking else 0
 
 
-def _show(verb: str) -> int:
+def _show(verb: str, json_out: bool = False) -> int:
+    """플레이북 본문. `--json` 이면 마크다운 대신 봉투에 담는다 — 플래그를 지키던 동사는
+    `survey`·`gate`·`trail` 셋뿐이었고 나머지는 맨 `print` 로 마크다운을 냈다 (26-08-05 감사)."""
     body = _playbook(verb)
     if body is None:
-        ui.warn(f"플레이북을 찾지 못했어요: {verb}")
+        if json_out:
+            print(json.dumps({"verb": verb, "error": "playbook not found"}, ensure_ascii=False))
+        else:
+            ui.warn(f"플레이북을 찾지 못했어요: {verb}")
         return 1
+    summary, canon = VERBS.get(verb, ("", ""))
+    if json_out:
+        print(
+            json.dumps(
+                {"verb": verb, "summary": summary, "canon": canon, "gate": _GATED.get(verb), "playbook": body},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
     print(body)
     return 0
 
@@ -359,7 +399,7 @@ def run_thor(
     ui.set_quiet(json_out or quiet)
     name = verb.strip().lower()
     if not name:
-        return _menu(root)
+        return _menu(root, json_out)
     if name == "gate":
         return _run_gate(root, base, paths, json_out)
     if name == "trail":
@@ -375,4 +415,4 @@ def run_thor(
         if not notes and not json_out:
             _show(name)
         return _run_survey(root, notes, json_out)
-    return _show(name)
+    return _show(name, json_out)

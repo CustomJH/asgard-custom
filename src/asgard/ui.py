@@ -173,7 +173,13 @@ def fail(msg: str) -> None:
 
 
 def done(msg: str = "") -> None:
-    """Closing ✔ line for a command."""
+    """Closing ✔ line for a command.
+
+    `_QUIET` 를 본다 — 형제 출력기(head·phase·step·ok·warn)와 같다. 안 보던 판은 stdout 에
+    무조건 써서 `--json` 표면에 종료 줄을 얹었고, 그게 `asgard thor --json` 이 파싱 불가였던
+    기제다: 명령이 `set_quiet(json_out)` 으로 나머지를 지워도 이 한 줄만 남았다 (26-08-05 감사)."""
+    if _QUIET:
+        return
     tail = f"  {dim('— ' + msg)}" if msg else ""
     sys.stdout.write(f"\n  {paint(_OK, '✔')} {bold('done')}{tail}\n\n")
 
