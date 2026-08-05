@@ -84,6 +84,18 @@ class TutorNoteHookTest(unittest.TestCase):
         os.makedirs(state, exist_ok=True)
         with open(os.path.join(state, "writes-" + sid + ".json"), "w", encoding="utf-8") as fh:
             json.dump(paths, fh)
+        for rel in paths:
+            path = os.path.join(self.root, rel)
+            os.makedirs(os.path.dirname(path) or self.root, exist_ok=True)
+            if not os.path.exists(path):
+                with open(path, "w", encoding="utf-8") as fh:
+                    fh.write("")
+
+    def test_a_scratch_file_created_and_removed_in_the_turn_is_not_reviewed(self) -> None:
+        self._sentinel("scratch", ["app.py", "_scratch.py"])
+        os.remove(os.path.join(self.root, "_scratch.py"))
+
+        self.assertEqual(tutor_note._writes(self.root, "scratch"), ["app.py"])
 
     def test_a_written_session_gets_the_review_card(self) -> None:
         """정상 payload — 이 턴이 쓴 파일이 있고 엔진이 물음을 냈으면 카드가 stdout 으로 나간다."""

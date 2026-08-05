@@ -67,7 +67,43 @@ def _writes(root: str, sid: str) -> list[str]:
             rows = json.load(handle)
     except Exception:
         return []  # 목록이 없으면 이 세션은 쓴 게 없다 — 되짚을 것도 없다
-    return [str(r) for r in rows] if isinstance(rows, list) else []
+    if not isinstance(rows, list):
+        return []
+    out: list[str] = []
+    for raw in rows:
+        value = str(raw or "").strip()
+        if not value or not _reviewable(root, value):
+            continue
+        absolute = os.path.abspath(value if os.path.isabs(value) else os.path.join(root, value))
+        out.append(os.path.relpath(absolute, os.path.abspath(root)).replace(os.sep, "/"))
+    return out
+
+
+def _reviewable(root: str, rel: str) -> bool:
+    """현재 파일 또는 HEAD의 삭제 파일만. 만들었다 지운 scratch 경로는 순변화가 없다."""
+    root_abs = os.path.abspath(root)
+    root_real = os.path.realpath(root_abs)
+    absolute = os.path.abspath(rel if os.path.isabs(rel) else os.path.join(root_abs, rel))
+    try:
+        if os.path.commonpath((root_abs, absolute)) != root_abs:
+            return False
+        relative = os.path.relpath(absolute, root_abs).replace(os.sep, "/")
+        if relative == ".." or relative.startswith("../"):
+            return False
+        if os.path.isfile(absolute) and os.path.commonpath((root_real, os.path.realpath(absolute))) == root_real:
+            return True
+        proc = subprocess.run(
+            ["git", "cat-file", "-e", f"HEAD:{relative}"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            encoding="utf-8",
+            errors="replace",
+        )
+        return proc.returncode == 0
+    except Exception:
+        return False
 
 
 def _lesson(exe: str, root: str, paths: list[str]) -> dict:
@@ -138,11 +174,7 @@ def _card(lesson: dict, points: list[dict], back: list[dict], told: Sequence[str
         # 설명이 물음보다 위에 온다 — 전달된 적 없는 것을 인출부터 시키면 물음은 답이 아니라
         # 침묵을 받는다. 네이티브 `tutor._card`가 같은 자리에 같은 절을 놓는다.
         lines += [*told, ""]
-    moved = sum(
-        len(row.get("units_moved") or ())
-        for row in (lesson.get("files") or [])
-        if isinstance(row, dict)
-    )
+    moved = sum(len(row.get("units_moved") or ()) for row in (lesson.get("files") or []) if isinstance(row, dict))
     if moved:
         lines.append("  구조 이동 — 같은 본문으로 확인된 %d개 단위는 삭제 질문에서 뺐어요." % moved)
     shown = 0

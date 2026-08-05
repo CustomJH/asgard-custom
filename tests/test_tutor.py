@@ -420,6 +420,15 @@ class TurnNoteTest(unittest.TestCase):
             self.assertEqual(tutor.turn_note(root, "no-such-quest"), "")
             self.assertEqual(tutor.turn_note(root, None), "")
 
+    def test_a_scratch_file_created_and_removed_in_the_turn_is_silent(self):
+        with contextlib.ExitStack() as stack:
+            root = self._repo_with_writes(stack)
+            state = os.path.join(root, ".asgard", "state", "writes-scratch.json")
+            with open(state, "w", encoding="utf-8") as handle:
+                json.dump(["_scratch.py"], handle)
+
+            self.assertEqual(tutor.turn_note(root, "scratch"), "")
+
 
 class MidTurnTipsTest(unittest.TestCase):
     """작업 도중 팁은 빚 신호가 있을 때만, 같은 세션에는 한 번만 나온다."""

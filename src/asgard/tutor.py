@@ -1009,7 +1009,29 @@ def _session_writes(root: str, sid: str) -> list[str]:
     if not sid:
         return []
     rows = read_json(os.path.join(root, ".asgard", "state", f"writes-{sid}.json"), [])
-    return [str(row) for row in rows] if isinstance(rows, list) else []
+    if not isinstance(rows, list):
+        return []
+    # 한 턴 안에서 만들었다가 지운 scratch 파일은 현재에도 HEAD에도 없다. 그런 경로를
+    # "읽지 못했다"고 되묻는 것은 순변화가 0인 작업을 부채로 만드는 일이다.
+    return [rel for row in rows if (rel := _session_rel(root, row))]
+
+
+def _session_rel(root: str, raw: object) -> str:
+    root_abs = os.path.abspath(root)
+    root_real = os.path.realpath(root_abs)
+    value = str(raw or "").strip()
+    if not value:
+        return ""
+    absolute = os.path.abspath(value if os.path.isabs(value) else os.path.join(root_abs, value))
+    try:
+        if os.path.commonpath((root_abs, absolute)) != root_abs:
+            return ""
+        if os.path.exists(absolute) and os.path.commonpath((root_real, os.path.realpath(absolute))) != root_real:
+            return ""
+    except ValueError:
+        return ""
+    rel = os.path.relpath(absolute, root_abs).replace(os.sep, "/")
+    return rel if _read(root, rel) is not None or _at_base(root, rel, "HEAD") is not None else ""
 
 
 def _repeat(
