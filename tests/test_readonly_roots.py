@@ -342,5 +342,159 @@ class TestHostProjectStateIsAWorkTarget(Sandboxed):
         self.assertEqual(self.edit(os.path.join(self.repo, ".claude", "settings.json"))[0], 2)
 
 
+class TestOnlyArgumentsAreTreatedAsPaths(Sandboxed):
+    """셸이 인자로 넘기지 않는 글은 경로 후보가 아니다.
+
+    이 자리가 어긋나면 규칙이 아니라 표기 요령을 가르친다: 3차 세션은 같은 관측을 세 번
+    표기만 바꿔 통과시켰고, 그중 하나는 정본 기장 명령이었다 (26-08-05)."""
+
+    def test_a_line_continuation_does_not_split_the_command(self) -> None:
+        # `\` + 줄바꿈은 셸이 지우는 것이지 구분자가 아니다. 조각으로 쪼개지면 정본 기장
+        # 명령이 미분류로 떨어지고, 그 뒤 `.claude/hooks/quest-log.py` 인자가 통제 표면
+        # 갈래에 걸려 퀘스트가 안 열린다.
+        one_line = 'uv run --no-project python .claude/hooks/quest-log.py open q1 --criteria "a b"'
+        wrapped = 'uv run --no-project python .claude/hooks/quest-log.py open q1 \\\n  --criteria "a b"'
+        for command in (one_line, wrapped):
+            with self.subTest(command=command[:40]):
+                self.assertTrue(readonly_guard.is_readonly_bash_safe(command, self.repo))
+                self.assertEqual(self.bash(command)[0], 0)
+
+    def test_a_private_path_named_in_a_commit_message_is_not_a_write(self) -> None:
+        command = 'git commit -m "fix(gate): .asgard/quest 기장이 두 번 열리던 것"'
+        self.assertEqual(self.bash(command)[0], 0)
+
+    def test_a_scaffold_path_named_in_a_commit_message_is_not_a_write(self) -> None:
+        self.assertEqual(self.bash('git commit -m "docs: .claude/hooks/verifier-gate.py 설명"')[0], 0)
+
+    def test_a_heredoc_body_is_not_a_path_argument(self) -> None:
+        command = 'python3 - <<EOF\nprint("compare .claude/hooks/quest-log.py with the shipped copy")\nEOF'
+        self.assertEqual(self.bash(command)[0], 0)
+
+    def test_a_heredoc_body_is_still_code_for_the_forgery_net(self) -> None:
+        # 본문은 인자가 아니지만 코드일 수는 있다 — 기장을 쓰는 본문은 여전히 막힌다.
+        command = "python3 - <<EOF\nopen('.asgard/quest/forged.jsonl','w').write('x')\nEOF"
+        self.assertEqual(self.bash(command)[0], 2)
+
+    def test_an_unterminated_heredoc_does_not_hide_the_arguments_after_it(self) -> None:
+        self.assertEqual(self.bash("cat <<EOF ; rm -rf .claude/hooks")[0], 2)
+
+    def test_a_real_path_operand_is_still_a_write(self) -> None:
+        for command in ("rm -rf .asgard/quest", "cp x .claude/hooks/quest-log.py", "touch .asgard/state/forged"):
+            with self.subTest(command=command):
+                self.assertEqual(self.bash(command)[0], 2)
+
+    def test_the_forgery_net_over_executable_text_stays(self) -> None:
+        # 인자로는 경로가 아니지만 나중에 실행돼 기장을 쓰는 형태 — 여기서만 잡힌다.
+        body = "from pathlib import Path; Path('.asgard/quest/forged.jsonl').write_text('x')"
+        for command in (f'python -c "{body}"', f'for P in "{body}"; do python -c "$P"; done'):
+            with self.subTest(command=command[:40]):
+                self.assertEqual(self.bash(command)[0], 2)
+
+
+class TestSharedMapIsAWorkTarget(Sandboxed):
+    """`.asgard/map/` 는 통제 표면 안에 있지만 팀이 함께 쓰는 지도라 작업 대상이다.
+
+    Canon 이 역할에게 영역 지도를 넓히라고 시키는데 막혀 있으면 그 지시를 아무도 수행할 수
+    없다 (26-08-05: doctor 가 유령 경로를 손으로 지우라고 안내하는데 지울 도구가 없었다)."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        os.makedirs(os.path.join(self.repo, ".asgard", "map"))  # 지도 자리가 실재해야 판정이 성립한다
+
+    def test_the_area_map_opens(self) -> None:
+        self.assertEqual(self.edit(os.path.join(self.repo, ".asgard", "map", "orchestrator.md"))[0], 0)
+
+    def test_the_rest_of_the_harness_state_stays_closed(self) -> None:
+        for rel in (("asgard-setting-project.json",), ("quest", "q1.jsonl"), ("state", "x.json")):
+            with self.subTest(rel=rel):
+                self.assertEqual(self.edit(os.path.join(self.repo, ".asgard", *rel))[0], 2)
+
+    def test_climbing_out_of_the_map_stays_closed(self) -> None:
+        self.assertEqual(self.edit(os.path.join(self.repo, ".asgard", "map", "..", "quest", "q1.jsonl"))[0], 2)
+
+    def test_an_aliased_map_directory_does_not_move_the_base(self) -> None:
+        # 기준을 realpath 로 구하던 판은 링크가 기준 **자체를** 옮겼다: `.asgard/map -> .asgard`
+        # 이면 기장·상태까지 별칭으로 통과했다 (26-08-05 교차검토 재현).
+        os.rmdir(os.path.join(self.repo, ".asgard", "map"))
+        os.symlink(".", os.path.join(self.repo, ".asgard", "map"))
+        self.assertEqual(self.edit(os.path.join(self.repo, ".asgard", "map", "quest", "q1.jsonl"))[0], 2)
+        self.assertEqual(self.edit(os.path.join(self.repo, ".asgard", "map", "orchestrator.md"))[0], 2)
+
+    def test_a_declared_extra_root_does_not_bring_its_own_map(self) -> None:
+        # `diff_state` 는 세션 뿌리의 지도 하나만 다시 읽는다 — 추가 뿌리까지 열면 해시 밖에
+        # 쓰기 가능한 지도가 뿌리 수만큼 생긴다 (26-08-05 2차 교차검토).
+        os.makedirs(os.path.join(self.pair, ".asgard", "map"))
+        _write(
+            os.path.join(self.repo, ".asgard", "asgard-setting-project.json"),
+            {"paths": {"additional_roots": [self.pair]}},
+        )
+        self.assertEqual(self.edit(os.path.join(self.pair, "src", "api.py"))[0], 0)  # 뿌리 자체는 열린다
+        self.assertEqual(self.edit(os.path.join(self.pair, ".asgard", "map", "area.md"))[0], 2)
+
+    def test_the_first_area_map_can_be_created(self) -> None:
+        # 아직 없는 자리를 닫으면 첫 영역 지도를 아무도 못 만든다 (`mkdir .asgard/map` 도 막힌다).
+        import shutil as _shutil
+
+        _shutil.rmtree(os.path.join(self.repo, ".asgard", "map"))
+        self.assertEqual(self.edit(os.path.join(self.repo, ".asgard", "map", "orchestrator.md"))[0], 0)
+
+    def test_only_what_the_hash_binds_is_writable(self) -> None:
+        # 판정 해시는 지도 디렉터리 바로 아래의 `*.md` 만 다시 읽는다 — 여는 폭을 그보다 넓히면
+        # 증거로 안 묶이는 자리에 쓰기가 생긴다.
+        self.assertEqual(self.edit(os.path.join(self.repo, ".asgard", "map", "PROJECT.md"))[0], 0)
+        self.assertEqual(self.edit(os.path.join(self.repo, ".asgard", "map", "areas", "deep.md"))[0], 2)
+        self.assertEqual(self.edit(os.path.join(self.repo, ".asgard", "map", "notes.txt"))[0], 2)
+
+
+class TestTheGuardsOwnBoundaryStaysClosed(Sandboxed):
+    """이 가드의 경계를 정하는 파일은 인자가 아닌 글에서도 막는다.
+
+    거기에 쓸 수 있으면 `work_roots` 가 뿌리를 다시 읽어 나머지 판정이 통째로 무의미해지는데,
+    `.asgard/**` 는 판정 스냅샷에서 빠져 있어 뒤에서 잡아 줄 물리 대조도 없다."""
+
+    def test_a_heredoc_that_writes_the_boundary_file_is_blocked(self) -> None:
+        for target in ("asgard-setting-project.json", ".claude/settings.json"):
+            with self.subTest(target=target):
+                command = f"python3 - <<PY\nopen('.asgard/{target}','w').write('{{}}')\nPY"
+                self.assertEqual(self.bash(command)[0], 2)
+
+    def test_naming_it_in_a_commit_message_is_still_fine(self) -> None:
+        self.assertEqual(self.bash('git commit -m "chore: asgard-setting-project.json 정리"')[0], 0)
+
+
+class TestTheMessageOperandIsNotAnEscapeHatch(Sandboxed):
+    def test_a_command_substitution_in_the_message_is_still_code(self) -> None:
+        command = "git commit -m \"$(python3 -c \\\"open('.asgard/quest/forged.jsonl','w')\\\")\""
+        self.assertEqual(self.bash(command)[0], 2)
+
+    def test_the_combined_and_inline_spellings_are_inert_too(self) -> None:
+        for command in (
+            'git commit -am "fix: .asgard/quest 기장 표기 수정"',
+            'git commit --message=".asgard/state 정리"',
+            'git tag -m ".asgard/receipts 보관" v1',
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(self.bash(command)[0], 0)
+
+    def test_a_flag_that_takes_no_message_does_not_swallow_the_next_path(self) -> None:
+        # `git checkout -m <경로>` 의 `-m` 은 피연산자를 안 받는다 — 하위 명령을 안 보고
+        # 낱글자만 보면 바로 뒤 경로가 통째로 사라져 통제 표면 쓰기가 통과한다.
+        for command in ("git checkout -m .claude", "git checkout -m .claude/settings.json"):
+            with self.subTest(command=command):
+                self.assertEqual(self.bash(command)[0], 2)
+
+    def test_a_dangling_message_flag_does_not_swallow_the_separator(self) -> None:
+        # 구분자를 메시지로 삼키면 프로그램 판정이 `git commit` 에 붙박여 뒤 세그먼트의 경로가
+        # 두 검사 모두에서 사라진다 (26-08-05 Verifier 가 재현).
+        self.assertEqual(self.bash("git commit -m ; ./w -m .asgard/quest/f.jsonl")[0], 2)
+
+    def test_a_newline_reads_like_a_semicolon(self) -> None:
+        # 같은 명령이 `;` 로는 통과하고 줄바꿈으로는 막히면, 규칙이 아니라 표기 요령을 가르친다.
+        for joiner in (" ; ", "\n"):
+            command = f'ls -la{joiner}git commit -m "fix: .asgard/state 가드"'
+            with self.subTest(joiner=repr(joiner)):
+                self.assertEqual(self.bash(command)[0], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

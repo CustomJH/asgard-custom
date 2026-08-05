@@ -38,7 +38,7 @@ READONLY_BASH_HINT = (
     "npm|pnpm|yarn test|lint|check, tests/ scripts. "
     "sed/awk without in-place writes. Allowed commands may be chained with `|`, `&&`, `||`, `;` "
     "(each segment is judged on its own), and `2>/dev/null` / `2>&1` / `< /dev/null` are fine. "
-    "Shell loops of read-only commands are fine (`for f in a b; do wc -c \"$f\"; done`). "
+    'Shell loops of read-only commands are fine (`for f in a b; do wc -c "$f"; done`). '
     "Blocked: file writes, redirection to a file, heredocs, $()/backticks, paths outside the "
     "project (the harness's own isolated unit workspace and this session's scratchpad are allowed). "
     "A `$VAR` is fine as an operand, but not as the script of `python -c` / sed / awk — there the "
@@ -98,6 +98,15 @@ _GIT_READ = {"diff", "status", "log", "show", "grep", "ls-files", "rev-parse"}
 _CONTROL_PATHS = (".claude", ".cursor", ".codex", ".agents", ".asgard")
 _HOOK_DIRS = (".claude/hooks/", ".cursor/hooks/", ".codex/hooks/")
 _PRIVATE_CONTROL_PATHS = (".asgard/quest", ".asgard/receipts", ".asgard/state")
+# 이 가드 **자신의 경계를 정하는** 파일들 (`work_roots` 가 읽는 그 파일들이다). 여기에 쓸 수
+# 있으면 뿌리가 다시 정해져 나머지 판정이 통째로 무의미해지는데, `.asgard/**` 는 판정 스냅샷에서
+# 빠져 있어 (`diff_state` 의 exclude) 뒤에서 잡아 줄 물리 대조도 없다. 넓은 표식과 달리 인자가
+# 아닌 글에서도 찾는 이유가 그것이다 — 히어독 본문에 담아 넘긴 쓰기까지 본다.
+#
+# 한계는 분명하다: 글자를 찾는 검사라 런타임에 조립한 경로(`'.claude/'+'settings.json'`)는 못
+# 본다. 실수와 곧이곧대로의 쓰기를 막는 그물이지 적대 봉쇄가 아니다. 경로 모양으로 적어 두는
+# 것도 그래서다 — 맨 파일명만 보면 그 이름을 **설명하는** 문서 한 줄이 쓰기로 읽힌다.
+_BOUNDARY_FILES = (".asgard/asgard-setting-project.json", ".claude/settings.json", ".claude/settings.local.json")
 
 
 def _git_subcommand(tokens: list[str]) -> str:
@@ -316,6 +325,34 @@ def _control_anchors(roots: tuple[str, ...], markers: tuple[str, ...]) -> list[s
     return anchors
 
 
+def _within_managed_map(roots: tuple[str, ...], candidate: str) -> bool:
+    """팀이 함께 쓰는 영역 지도 파일인가 — `<뿌리>/.asgard/map/<이름>.md` 딱 하나의 깊이.
+
+    `.asgard` 아래 있지만 하네스 상태가 아니라 **작업 대상**이다: Canon 이 역할에게 탐색하며
+    알게 된 구조를 영역 지도에 반영하라고 시키는데, 통제 표면으로 묶어 두면 그 지시를 어느
+    역할도 수행할 수 없다 (26-08-05: doctor 가 유령 경로를 손으로 지우라고 안내하는데 지울
+    도구가 없었다).
+
+    여는 폭은 **판정 해시가 묶는 폭과 같게** 잡는다. `diff_state` 는 지도 디렉터리 바로 아래의
+    `*.md` 만 다시 읽어 해시에 넣는다 — 더 열면 증거로 안 묶이는 자리에 쓰기가 생긴다.
+
+    **세션의 뿌리 하나만** 본다. `diff_state` 가 다시 읽는 것도 그 자리의 지도 하나뿐이라,
+    선언된 추가 뿌리(`paths.additional_roots`)까지 열면 해시 밖에 쓰기 가능한 지도가 뿌리 수만큼
+    생긴다 (26-08-05 2차 교차검토).
+
+    지도 자리가 심링크면 열지 않는다. 기준을 `realpath` 로 구하던 판은 링크가 **기준 자체를**
+    옮겼다: `.asgard/map` 을 `.asgard` 로 걸어 두면 기준이 `.asgard` 가 되어 기장·상태까지
+    별칭으로 통과했다 (26-08-05 재현). `unsafe_map_links` 와 같은 판정이다. 아직 없는 자리는
+    연다 — 닫아 두면 첫 영역 지도를 아무도 못 만들고 그 대가가 얻는 것보다 크다. 나중에
+    링크로 바뀌면 그때 이 판정이 다시 돈다 (훅은 호출마다 새로 뜬다)."""
+    if not roots:
+        return False
+    base = os.path.join(os.path.realpath(roots[0]), ".asgard", "map")
+    if os.path.islink(base) or (os.path.exists(base) and not os.path.isdir(base)):
+        return False
+    return os.path.dirname(candidate) == base and candidate.endswith(".md")
+
+
 def _path_token_targets_control(roots: tuple[str, ...], token: str, markers: tuple[str, ...]) -> bool:
     """Resolve symlink parents before comparing a path operand with protected directories."""
     if not roots or not token or token == "-":
@@ -327,17 +364,132 @@ def _path_token_targets_control(roots: tuple[str, ...], token: str, markers: tup
         if not token:
             return False
     candidate = _resolve_token(roots, token)
-    if _within(os.path.realpath(_studio_workspace()), candidate) or _within_host_state(candidate, roots):
-        return False  # 작업 공간과 이 프로젝트 몫 상태 폴더는 작업 대상이다
+    if (
+        _within(os.path.realpath(_studio_workspace()), candidate)
+        or _within_host_state(candidate, roots)
+        or _within_managed_map(roots, candidate)
+    ):
+        return False  # 작업 공간·이 프로젝트 몫 상태 폴더·공유 지도는 작업 대상이다
     return any(_within(anchor, candidate) for anchor in _control_anchors(roots, markers))
+
+
+# 히어독 여는 낱말 — `<<EOF` · `<<-'EOF'` · `<<\EOF` · `<<"EOF"` · `<<2EOF`. 본문은 다음
+# 줄부터 그 낱말만 적힌 줄까지고, 그 사이는 셸이 인자로 넘기지 않는다 (표준 입력으로 간다).
+# 낱말 문법을 좁게 잡으면 못 알아본 표기의 본문이 인자로 남아, 그 안에 스친 한 마디가 읽기만
+# 하는 명령을 막는다 — 여는 쪽을 넓게 본다.
+_HEREDOC_OPEN = re.compile(r"<<-?\s*\\?(['\"]?)([^\s'\"|&;<>]+)\1")
+
+
+def _without_heredoc_bodies(command: str) -> str:
+    """히어독 본문을 지운 형태 — **인자 후보를 뽑는 자리에서만** 쓴다.
+
+    본문은 인자가 아니다 (셸이 표준 입력으로 흘려보낸다). 지우지 않으면 스크립트 안에 스친 한
+    마디가 경로 인자로 읽혀 관측 명령 전체가 막힌다 (26-08-05 실측: 훅 사본 대조가 이 형태로
+    거부됐다).
+
+    본문이 **코드**일 수는 있다 — 그래서 사설 통제 경로의 텍스트 그물(`_scannable_text`)은
+    본문을 그대로 본다. 여기서 지우는 것은 "이것이 경로 인자인가"라는 질문 하나뿐이다.
+    종료 낱말을 못 찾으면 아무것도 안 지운다: 열기만 하고 안 닫은 히어독까지 지우면 그
+    뒤의 진짜 인자(`cat <<EOF; rm -rf .claude/hooks`)가 통째로 안 보인다."""
+    lines = command.splitlines()
+    out: list[str] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        out.append(line)
+        index += 1
+        for match in _HEREDOC_OPEN.finditer(line):
+            terminator = match.group(2)
+            end = index
+            while end < len(lines) and lines[end].strip() != terminator:
+                end += 1
+            if end < len(lines):
+                index = end + 1  # 종료 낱말 줄 자체도 인자가 아니다
+    return "\n".join(out)
 
 
 def _command_targets_control(roots: tuple[str, ...], command: str, markers: tuple[str, ...]) -> bool:
     try:
-        tokens = shlex.split(command)
+        tokens = _drop_inert_operands(_lex(_without_heredoc_bodies(command)))
     except ValueError:
         return True
     return any(_path_token_targets_control(roots, token, markers) for token in tokens[1:])
+
+
+# 글을 글로만 받는 피연산자 — 그 자리의 문자열은 실행되지도, 열리지도 않는다. 지금은 커밋과
+# 태그 메시지뿐이다 (`-F`는 파일을 받으므로 경로 그대로 검사한다). 짧은 플래그는 뭉쳐 오므로
+# (`git commit -am "…"`) 낱글자 `m` 으로 끝나는 뭉치도 같은 자리로 본다.
+#
+# **하위 명령까지 봐야 한다.** `git` 만 보고 `-m` 을 메시지로 읽으면 `git checkout -m <경로>`
+# 처럼 `-m` 이 피연산자를 안 받는 자리에서 바로 뒤 경로가 통째로 사라진다 — 그 한 자리가
+# 통제 표면 쓰기를 통과시킨다 (26-08-05 2차 교차검토가 잡은 회귀).
+_INERT_SUBCOMMANDS = {"git": {"commit", "tag"}}
+_INERT_VALUE_FLAGS = re.compile(r"^(?:-[A-Za-z]*m|--message)$")
+_INERT_INLINE_FLAG = "--message="
+# 메시지 안의 명령 치환은 **실행된다** — `git commit -m "$(python3 -c '…')"`. 그 자리는
+# 글이 아니라 코드라 빼지 않는다.
+_SUBSTITUTION = re.compile(r"\$\(|`")
+
+
+def _lex(command: str) -> list[str]:
+    """명령을 토큰으로 — 구분자(`|` `&&` `;`)는 **자기 토큰**으로 남는다.
+
+    줄바꿈을 `;` 로 바꾸는 것이 요점이다. `shlex.split` 은 줄바꿈을 그냥 공백으로 삼켜서, 여러
+    줄로 적은 명령은 첫 줄의 프로그램 이름이 끝까지 따라다닌다 — 같은 명령이 `;` 로 적으면
+    통과하고 줄바꿈으로 적으면 막히는, 이 패치가 없애려던 바로 그 표기 차별이 생긴다.
+    인용 안의 줄바꿈도 함께 바뀌지만 그 자리는 글이라 판정이 안 달라진다. `_shell_parts` 와
+    같은 어휘 규칙이다 (구분자 집합 하나만 쓴다)."""
+    lexer = shlex.shlex(re.sub(r"\\\r?\n", " ", command).replace("\n", " ; "), posix=True, punctuation_chars="|&;<>")
+    lexer.whitespace_split = True
+    lexer.commenters = ""
+    return list(lexer)
+
+
+def _drop_inert_operands(tokens: list[str]) -> list[str]:
+    """실행도 개방도 하지 않는 피연산자를 뺀 토큰들 — 지금은 커밋·태그 메시지뿐이다.
+
+    거기 스친 한 마디 때문에 커밋이 막히면 규칙이 아니라 표기 요령을 가르치고, 실제로 3차
+    세션은 매번 표기를 바꿔 우회했다 (26-08-05). 메시지에 든 명령 치환은 예외다 —
+    `git commit -m "$(python3 -c '…')"` 의 그 자리는 글이 아니라 실행되는 코드다."""
+    kept: list[str] = []
+    program, subcommand, skip_next = "", "", False
+    for index, token in enumerate(tokens):
+        if not program or (kept and kept[-1] in _SEGMENT_SEPARATORS):
+            program, subcommand = os.path.basename(token), ""
+        elif not subcommand and program and token != tokens[0] and not token.startswith("-"):
+            subcommand = token
+        if skip_next:
+            skip_next = False
+            # 구분자는 메시지가 아니다. 삼키면 `git commit -m ; ./w -m <경로>` 처럼 앞이 망가진
+            # 명령에서 프로그램 판정이 `git commit` 에 붙박여 뒤 세그먼트의 경로까지 사라진다.
+            if _SUBSTITUTION.search(token) or token in _SEGMENT_SEPARATORS:
+                kept.append(token)
+            continue
+        if subcommand in _INERT_SUBCOMMANDS.get(program, ()):
+            if token.startswith(_INERT_INLINE_FLAG) and not _SUBSTITUTION.search(token):
+                continue
+            if _INERT_VALUE_FLAGS.fullmatch(token) and index + 1 < len(tokens):
+                skip_next = True
+                continue
+        kept.append(token)
+    return kept
+
+
+def _scannable_text(command: str) -> str:
+    """사설 통제 경로 표식을 찾을 글 — 실행도 개방도 하지 않는 자리를 뺀 나머지.
+
+    이 검사는 **판정하는 글과 실행되는 글이 다를 때** 남는 마지막 그물이다. 인자로 푼 토큰이
+    경로가 아닌데도 나중에 기장 파일을 쓰는 형태 — `python -c "$PAYLOAD"` ·
+    `for P in "…write_text('.asgard/quest/x')…"` — 는 여기서만 잡힌다 (26-08-04 교차검증이
+    그 형태로 기장을 실제로 위조했다). 그러니 그물은 남긴다.
+
+    히어독 본문은 **안 뺀다**: 본문은 인자가 아니지만 코드일 수는 있어서, 인자를 뽑는
+    자리(`_command_targets_control`)와 판단이 갈린다. 파싱이 안 되면 원문을 그대로 돌려준다 —
+    못 읽는 글은 좁히지 않는다."""
+    try:
+        return " ".join(_drop_inert_operands(_lex(command)))
+    except ValueError:
+        return command
 
 
 _STREAM_EDITORS = {"sed", "gsed", "awk", "gawk", "nawk", "mawk"}
@@ -441,7 +593,12 @@ def _safe_segment(segment: str, roots: tuple[str, ...] = ()) -> bool:
     while tokens and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", tokens[0]):
         tokens = tokens[1:]
     if not tokens:
-        return False
+        # 대입만 남은 조각(`D=/some/path`)은 부를 명령이 없다 — 셸 변수 하나가 생길 뿐이다.
+        # 이걸 미분류로 떨어뜨리면 조각 하나 때문에 명령 전체가 읽기 레인 밖으로 나가고,
+        # 그 다음 통제 표면 그물이 인자에 스친 `.asgard`·`.claude` 를 잡아 순수 관측이 막힌다
+        # (26-08-05 실측: `D=<경로>; ls "$D"` 형태가 그렇게 거부됐다). 값에 든 명령 치환은
+        # `_shell_parts` 가 이미 앞에서 거부한다.
+        return True
     program = os.path.basename(tokens[0])
     if program in _STREAM_EDITORS:
         return _safe_stream_editor(program, tokens, roots)  # 스크립트 인자는 경로 검사 대상이 아니다
@@ -577,6 +734,12 @@ def _shell_parts(command: str) -> tuple[list[list[str]], bool]:
     command = _DISCARD_REDIRECTION.sub("", command)
     if "$(" in command or "`" in command:
         return [], False
+    # 줄이음(`\` + 줄바꿈)은 셸이 통째로 지우는 것이지 구분자가 아니다. 먼저 안 지우면 아래
+    # 치환이 `\ ; ` 를 만들고, posix shlex 가 그 백슬래시를 탈출부호로 읽어 공백 한 칸짜리
+    # 토큰을 남긴 뒤 명령을 두 조각으로 쪼갠다. 그러면 여러 줄로 적은 정본 기장 명령이
+    # 미분류로 떨어지고, 읽기 전용 레인이 꺼진 자리에서 `.claude/hooks/quest-log.py` 라는
+    # 인자가 통제 표면 갈래에 걸려 퀘스트를 못 연다 (26-08-05 실측 — 이 세션의 첫 명령).
+    command = re.sub(r"\\\r?\n", " ", command)
     # 줄바꿈은 `;`와 같은 구분자다 — 히어독(`<<`)은 아래 토큰 검사가 계속 막는다. 줄바꿈 자체를
     # 금지하면 모델이 관측 뒤에 `\necho "EXIT:$?"` 같은 한 줄을 붙였을 때 명령 전체가 죽는다
     # (26-07-26 실측: 프로토콜 기록 명령이 이 형태로 반복 차단됐다).
@@ -735,6 +898,79 @@ def _allow(protocol: str) -> None:
     raise SystemExit(0)
 
 
+_WRITE_TOOLS = {"Write", "Edit", "NotebookEdit"}
+
+
+def refusal_reason(tool_name: str, command: str, path: str, roots: tuple[str, ...], agent: str) -> str:
+    """이 호출을 막는다면 무엇 때문인가 — `control` · `escape` · `readonly`, 통과면 빈 문자열.
+
+    정책 전부가 여기 한 자리에 있다 (`main`은 프로토콜만 다룬다). 규율은 세션이 아니라
+    **역할**에 붙는다 (tool_kernel.ROLE_CAPABILITIES가 정본): worker 계열은 mutate를 갖고,
+    thinker/verifier/loki/ullr/mimir은 안 갖는다. 신원이 없는 호출은 메인 세션이 전이 함수가
+    배정한 역할을 직접 수행하는 자리(MAIN_WORKER)라 쓰기가 그 역할의 몫이다 — 신원 부재를
+    읽기전용으로 읽으면 모드 B의 단일 변경이 통째로 막힌다: subagent-gate가
+    `[ASGARD_UNIT:<id>]` 없는 asgard-worker 디스패치를 거부하므로 우회로도 없다 (양쪽 차단 =
+    교착). 퀘스트 없는 쓰기는 이 훅의 소관이 아니다 — write-sentinel이 기록하고 Stop의
+    verifier-gate가 물리 대조로 잡는다. 같은 것을 두 시점에 재판하면 교착이 된다."""
+    # 표식 부분문자열 검사는 스튜디오 작업 공간 접두사를 뺀 형태로 한다 — 그 폴더는 `.asgard`
+    # 아래 있지만 하네스 상태가 아니라 작업 대상이다 (`_studio_workspace`).
+    normalized_path = _without_workspace(os.path.normpath(path).replace("\\", "/"))
+    # 하네스가 이 세션·이 프로젝트 몫으로 내준 자리와 공유 지도는 통제 표면이 아니라 작업
+    # 대상이다. 경로에 `.claude` 가 들어 있다는 이유로 여기를 막으면 에이전트가 자기 기억과
+    # 계측 산출물을 한 줄도 못 남긴다.
+    harness_owned = bool(path) and (
+        _within_host_state(os.path.realpath(os.path.expanduser(path)), roots)
+        or _within_unit_workspace(os.path.expanduser(path))
+        or _within_managed_map(roots, _resolve_token(roots, path) if roots else "")
+    )
+    control_write = (
+        tool_name in _WRITE_TOOLS
+        and not harness_owned
+        and (
+            any(marker in normalized_path for marker in _CONTROL_PATHS)
+            or _path_token_targets_control(roots, path, _CONTROL_PATHS)
+        )
+    )
+    # Bash 갈래는 **읽기 전용 레인을 먼저 뺀다**. 사설 통제 경로를 지키는 것은 위조 방지이지
+    # 열람 금지가 아닌데, 종전에는 예외가 없어 `ls .asgard/quest/` 한 줄도 막혔다 — 자기 기장을
+    # 못 읽는 역할이 같은 사실을 알아내려고 턴을 더 썼다 (26-08-04 실측 4회).
+    readonly_shell = tool_name == "Bash" and is_readonly_bash_safe(command, roots=roots)
+    # 사설 통제 경로(기장·영수증·상태)는 **위조를 막는 자리**라 넓은 표식보다 그물이 촘촘하다:
+    # 경로 인자로 안 풀리는 토큰도 나중에 실행돼 기장을 쓸 수 있어서 (`python -c "$PAYLOAD"`)
+    # 명령문 텍스트까지 본다. 그 텍스트에서 실행되지 않는 자리만 뺀다 — `_scannable_text`.
+    scannable = _without_workspace(_scannable_text(command).replace("\\", "/"))
+    private_control_access = (
+        any(marker in normalized_path for marker in _PRIVATE_CONTROL_PATHS)
+        or _path_token_targets_control(roots, path, _PRIVATE_CONTROL_PATHS)
+        or tool_name == "Bash"
+        and not readonly_shell
+        and (
+            any(marker in scannable for marker in _PRIVATE_CONTROL_PATHS)
+            or _command_targets_control(roots, command, _PRIVATE_CONTROL_PATHS)
+        )
+    )
+    # 넓은 통제 표식은 **뿌리 기준으로 푼 경로 인자**로만 판정한다. 명령문 전체를 부분문자열로
+    # 훑던 종전 갈래는 경로가 아닌 언급까지 잡았다: 저장소 밖 호스트 세션 디렉터리나 히어독
+    # 본문에 스친 한 마디가 읽기 전용 조사를 통째로 막았다. 인용 안쪽에 숨긴 쓰기가 이 갈래를
+    # 빠져나가는 것은 받아들인 값이다 — 그쪽은 write-sentinel 이 적고 verifier-gate 가 물리
+    # 대조로 잡는다. 그 대조가 안 닿는 파일 둘만 `_BOUNDARY_FILES` 로 따로 본다.
+    control_shell_write = (
+        tool_name == "Bash"
+        and not readonly_shell
+        and (
+            _command_targets_control(roots, command, _CONTROL_PATHS)
+            or any(name in scannable for name in _BOUNDARY_FILES)
+        )
+    )
+    if private_control_access or control_write or control_shell_write:
+        return "control"
+    if bool(path) and not _path_token_within_root(roots, path):
+        return "escape"
+    if agent in _READONLY_AGENTS and (tool_name in _WRITE_TOOLS or (tool_name == "Bash" and not readonly_shell)):
+        return "readonly"
+    return ""
+
+
 def main() -> None:
     protocol = sys.argv[1] if len(sys.argv) > 1 else "claude"
     try:
@@ -751,80 +987,11 @@ def main() -> None:
     except Exception:
         _allow(protocol)
         return
-    # 규율은 세션이 아니라 **역할**에 붙는다 (tool_kernel.ROLE_CAPABILITIES가 정본): worker 계열은
-    # mutate를 갖고, thinker/verifier/loki/ullr/mimir은 안 갖는다. 신원이 없는 호출은 메인 세션이
-    # 전이 함수가 배정한 역할을 직접 수행하는 자리(MAIN_WORKER)라 쓰기가 그 역할의 몫이다 —
-    # 신원 부재를 읽기전용으로 읽으면 모드 B의 단일 변경이 통째로 막힌다: subagent-gate가
-    # `[ASGARD_UNIT:<id>]` 없는 asgard-worker 디스패치를 거부하므로 우회로도 없다 (양쪽 차단 = 교착).
-    # 퀘스트 없는 쓰기는 이 훅의 소관이 아니다 — write-sentinel이 기록하고 Stop의 verifier-gate가
-    # 물리 대조로 잡는다. 같은 것을 두 시점에 재판하면 조기 교정이 아니라 교착이 된다.
-    readonly = agent in _READONLY_AGENTS
     root = str(data.get("cwd") or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
     roots = work_roots(root)
     path = str(tool_input.get("file_path") or tool_input.get("path") or tool_input.get("notebook_path") or "")
-    # 표식 부분문자열 검사는 스튜디오 작업 공간 접두사를 뺀 형태로 한다 — 그 폴더는 `.asgard`
-    # 아래 있지만 하네스 상태가 아니라 작업 대상이다 (`_studio_workspace`).
-    normalized_path = _without_workspace(os.path.normpath(path).replace("\\", "/"))
-    try:
-        normalized_command = command + " " + " ".join(shlex.split(command))
-    except ValueError:
-        normalized_command = command
-    normalized_command = _without_workspace(normalized_command.replace("\\", "/"))
-    # 하네스가 이 세션·이 프로젝트 몫으로 내준 자리는 통제 표면이 아니라 작업 대상이다
-    # (`_within_host_state`·`_within_unit_workspace`). 경로에 `.claude` 가 들어 있다는 이유로
-    # 여기를 막으면 에이전트가 자기 기억과 계측 산출물을 한 줄도 못 남긴다.
-    harness_owned = bool(path) and (
-        _within_host_state(os.path.realpath(os.path.expanduser(path)), roots)
-        or _within_unit_workspace(os.path.expanduser(path))
-    )
-    control_write = (
-        tool_name in {"Write", "Edit", "NotebookEdit"}
-        and not harness_owned
-        and (
-            any(marker in normalized_path for marker in _CONTROL_PATHS)
-            or _path_token_targets_control(roots, path, _CONTROL_PATHS)
-        )
-    )
-    # Bash 갈래는 **읽기 전용 레인을 먼저 뺀다**. 사설 통제 경로(퀘스트 기장·영수증·상태)를
-    # 지키는 것은 위조 방지이지 열람 금지가 아닌데, 종전에는 예외가 없어 `ls .asgard/quest/`
-    # 한 줄도 막혔다 — 자기 기장을 못 읽는 역할이 같은 사실을 알아내려고 턴을 더 썼다
-    # (26-08-04 실측 4회). 쓰기 형상은 아래 `is_readonly_bash_safe` 가 여전히 전부 잡는다.
-    readonly_shell = tool_name == "Bash" and is_readonly_bash_safe(command, roots=roots)
-    private_control_access = (
-        any(marker in normalized_path for marker in _PRIVATE_CONTROL_PATHS)
-        or _path_token_targets_control(roots, path, _PRIVATE_CONTROL_PATHS)
-        or tool_name == "Bash"
-        and not readonly_shell
-        and (
-            any(marker in normalized_command for marker in _PRIVATE_CONTROL_PATHS)
-            or _command_targets_control(roots, command, _PRIVATE_CONTROL_PATHS)
-        )
-    )
-    path_escape = bool(path) and not _path_token_within_root(roots, path)
-    # 넓은 통제 표식(.claude/.cursor/.codex/.agents/.asgard)은 **뿌리 기준으로 푼 경로 인자**로만
-    # 판정한다. 명령문 전체를 부분문자열로 훑던 종전 갈래는 경로가 아닌 언급까지 잡았다: 저장소
-    # 밖에 있는 호스트 세션 디렉터리(`~/.claude/projects/…`)나 히어독 본문에 스친 한 마디가
-    # 읽기 전용 조사를 통째로 막았고, 그 자리는 이 프로젝트의 통제 표면이 아니다. 인용 안쪽에
-    # 경로를 숨긴 쓰기가 이 갈래를 빠져나가는 것은 받아들인 값이다 — 그쪽은 write-sentinel 이
-    # 적고 Stop 의 verifier-gate 가 물리 대조로 잡는다 (이 파일 위쪽의 같은 분담).
-    control_shell_write = (
-        tool_name == "Bash" and _command_targets_control(roots, command, _CONTROL_PATHS) and not readonly_shell
-    )
-    denied = (
-        private_control_access
-        or path_escape
-        or control_write
-        or control_shell_write
-        or readonly
-        and (tool_name in {"Write", "Edit", "NotebookEdit"} or (tool_name == "Bash" and not readonly_shell))
-    )
-    if denied:
-        if private_control_access or control_write or control_shell_write:
-            reason = "control"
-        elif path_escape:
-            reason = "escape"
-        else:
-            reason = "readonly"
+    reason = refusal_reason(tool_name, command, path, roots, agent)
+    if reason:
         _deny(protocol, _refusal(reason, tool_name, command, path, roots))
     _allow(protocol)
 

@@ -368,6 +368,19 @@ class TestCapabilityPolicy(unittest.TestCase):
         with open(os.path.join(self.root, "base.txt"), encoding="utf-8") as f:
             self.assertEqual(f.read(), "base\n")
 
+    def test_a_bare_assignment_segment_does_not_sink_the_whole_command(self):
+        """`D=<경로>; ls "$D"` 는 관측이다 — 대입 조각 하나가 명령 전체를 미분류로 떨어뜨리지 않는다.
+
+        떨어지면 그 다음 통제 표면 그물이 인자에 스친 표식을 잡아 순수 읽기가 막힌다
+        (26-08-05 실측: 훅 사본 대조와 산출물 목록이 이 형태로 거부됐다)."""
+        # `work_roots()` 가 하는 것과 같게 뿌리를 편다 — macOS 의 `/tmp` 는 심링크라, 안 펴면
+        # 후보만 realpath 되어 같은 자리가 서로 밖으로 읽힌다.
+        roots = (os.path.realpath(self.root),)
+        self.assertTrue(is_readonly_bash_safe('D=notes.txt; ls "$D"', roots=roots))
+        self.assertTrue(is_readonly_bash_safe("COUNT=3 ; pwd", roots=roots))
+        # 대입이 열어 주는 것은 없다 — 뒤 조각은 여전히 자기 힘으로 판정된다.
+        self.assertFalse(is_readonly_bash_safe("D=notes.txt; rm -rf notes.txt", roots=roots))
+
     def test_readonly_role_has_a_node_verification_lane(self):
         """JS/TS 저장소에서 판정자가 아무것도 실행하지 못하면 배달물은 늘 "실행 증거 없음"이다.
 
