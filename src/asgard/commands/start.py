@@ -279,6 +279,10 @@ def _run_summary(h, rp: "ResolvedProvider", result: str, wall: float) -> str:
             {
                 # DIRECT의 빈 문자열은 REPL 이중 출력 방지 sentinel — 헤드리스는 실제 응답을 회수한다
                 "result": result or h.last_response_text,
+                # 이 실행이 연 퀘스트 — 없으면 null (DIRECT 턴은 로그를 안 연다). 종전에는 이 값이
+                # 어디에도 안 나와서, `--json` 을 소비하는 쪽이 방금 만들어진 로그를 찾을 길이
+                # 없었다: 벤치도 스튜디오도 `.asgard/quest/` 를 시각으로 뒤져 짐작해야 했다.
+                "quest_id": getattr(h, "_last_quest_id", None),
                 "tokens": h.total_tokens,
                 "cache_read_tokens": h.cache_read_tokens,  # 프롬프트 캐시 적중분 (~0.1× 과금) — 벤치 비용 산정용
                 "cache_prompt_tokens": h.cache_prompt_tokens,

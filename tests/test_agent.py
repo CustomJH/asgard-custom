@@ -1078,6 +1078,16 @@ class TestRunPrompt(unittest.TestCase):
         self.assertEqual(rc, 0)
         d = json.loads(self.out.getvalue())
         self.assertEqual(d["result"], "과업 완수 — 보고")
+
+    def test_the_summary_names_the_quest_it_opened(self):
+        """소비자가 방금 만들어진 로그를 찾을 길이 없었다 — 시각으로 뒤져 짐작해야 했다.
+
+        퀘스트를 안 연 턴(DIRECT)에는 null 이다: 없는 것을 있는 척하지 않는다."""
+        self._patch()
+        self.S.run_prompt("작업해줘", json_out=True)
+        d = json.loads(self.out.getvalue())
+        self.assertIn("quest_id", d)
+        self.assertIsNone(d["quest_id"])  # FakeHeimdall 은 퀘스트를 안 연다
         self.assertEqual(d["tokens"], 1234)
         self.assertEqual(os.environ.get("ASGARD_UNATTENDED"), "1")  # Canon 8 headless 신호
 
@@ -1132,7 +1142,7 @@ class TestRunPrompt(unittest.TestCase):
         self.assertIn("claude CLI", payload["error"]["message"])
         # 처방이 필드로 온다 — 창이 "그래서 뭘 하면 되나"를 말할 수 있는 근거
         self.assertIn("claude.com/claude-code", payload["error"]["remedy"])
-        # 점검표 전량이 실린다 — 통과분까지 있어야 화면이 무엇을 감췄는지 고를 수 있다
+        # 점검표 전량이 들어간다 — 통과분까지 있어야 화면이 무엇을 감췄는지 고를 수 있다
         self.assertEqual(
             [c["name"] for c in payload["error"]["detail"]["checks"]],
             ["provider", "claude CLI", "claude_agent_sdk SDK"],
