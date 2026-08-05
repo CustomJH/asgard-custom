@@ -136,6 +136,9 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 "thor_rules",
                 "thor_lex",
                 "tutor",
+                # tutor_model — tutor_growth의 안정적인 물음 ID를 품은 Tutor 값 객체.
+                # 조립과 표면은 모르고, tutor가 기존 공개 이름으로 재노출한다.
+                "tutor_model",
                 # review_agent — 튜터 사실을 입력으로 삼되, 오딘 승인 뒤에만 제안을 저장하는
                 # 선택형 리뷰 층. 모델 호출은 함수 안 lazy라 domain 경계를 올리지 않는다.
                 "review_agent",
@@ -298,6 +301,7 @@ SUBTIERS: dict[str, list[tuple[str, frozenset[str]]]] = {
                     "k6_gate",
                     "k6_selftest",
                     "sessions",
+                    "tutor_model",
                 }
             ),
         ),

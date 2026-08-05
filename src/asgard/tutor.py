@@ -33,12 +33,13 @@ import os
 import re
 import subprocess
 import time
-from dataclasses import dataclass, replace
+from dataclasses import replace
 
 from . import craft, craft_lex, loop, surface, tutor_growth, tutor_probes
 from .craft_rules import Unit
 from .health import _read
 from .io_files import read_json, write_json
+from .tutor_model import WEIGHT, Checkpoint, FileChange, Lesson
 
 MAX_PATHS = 400  # 한 번에 읽을 파일 상한 — 초과분은 잘린 사실로 넣는다(조용한 절단 금지)
 REMOVAL_DETAIL_LIMIT = 2  # 같은 파일의 대량 삭제는 단위별 심문이 아니라 책임 묶음 하나로 묻는다
@@ -46,16 +47,6 @@ REMOVAL_DETAIL_LIMIT = 2  # 같은 파일의 대량 삭제는 단위별 심문�
 # surface는 심볼 이름만 알고 줄을 모르는데, `file:1`은 사람이 열어 볼 수 없는 좌표다.
 _Judged = tuple["FileChange", list["Checkpoint"], str | None, dict[str, int]]
 _Moves = dict[tuple[str, str], tuple[tuple[str, str], ...]]
-# 확인 순위 — 사람의 눈은 유한하다. 계약이 깨진 자리가 표식보다 먼저 온다.
-WEIGHT = {
-    "contract-break": 5,
-    "behavior-removed": 4,
-    "test-removed": 4,
-    "silent-failure": 3,
-    "new-dependency": 3,
-    "untested-surface": 2,
-    "todo-left": 1,
-}
 # 종류의 사람 이름 — 표면마다 다시 쓰면 같은 판정이 화면마다 다른 이름으로 불린다.
 KIND_LABEL = {
     "contract-break": "공개 계약 바뀜",
@@ -100,96 +91,6 @@ ANGLES: dict[str, tuple[str, ...]] = {
         "여섯 달 뒤 이 줄을 처음 보는 사람이 무엇을 해야 하는지 알 수 있을까요?",
     ),
 }
-
-
-@dataclass(frozen=True)
-class Checkpoint:
-    """사용자가 **직접** 확인해야 하는 자리 하나.
-
-    `what`은 기계가 뽑은 사실, `why`는 왜 당신 눈이 필요한가, `ask`는 당신이 답할 수 있어야
-    하는 물음이다. 셋을 나눠 두는 이유: 사실과 물음이 한 문장에 섞이면 읽는 쪽이 물음까지
-    설명으로 읽고 넘어간다 — 그러면 읽은 사람은 늘고 답한 사람은 그대로다.
-    """
-
-    kind: str
-    path: str
-    line: int
-    unit: str
-    what: str
-    why: str
-    ask: str
-    key: str = ""  # 식별용 구분자 — 아래 `cid` 주석 참고. 비면 `unit`이 그 일을 한다
-
-    @property
-    def weight(self) -> int:
-        return WEIGHT.get(self.kind, 0)
-
-    @property
-    def where(self) -> str:
-        return f"{self.path}:{self.line}" + (f" {self.unit}" if self.unit else "")
-
-    @property
-    def cid(self) -> str:
-        """이 물음의 이름. 사용자가 답을 되돌려 보낼 때 쓰는 유일한 좌표다.
-
-        **줄 번호를 안 쓴다** — 답을 적는 사이에 위에서 함수가 길어지면 좌표가 바뀌는 식별자는
-        식별자가 아니다. 대신 `key`로 한 파일 안의 물음을 가른다: 의존 물음의 `unit`은 비어
-        있고 한 함수 안의 삼킴도 이름이 같아서, 좌표만으로는 `requests`와 `yaml`이 **같은
-        물음**이 된다(실측). 그러면 답 하나가 안 답한 물음까지 닫는다 — 기록이 거짓이 되는
-        가장 조용한 경로다.
-        """
-        return tutor_growth.cid(self.kind, self.path, self.key or self.unit)
-
-
-@dataclass(frozen=True)
-class FileChange:
-    """파일 1개의 변경 인벤토리 — 보고서 "어떻게 바뀌었나" 절의 재료."""
-
-    path: str
-    added: int
-    removed: int
-    units_added: tuple[str, ...] = ()
-    units_changed: tuple[str, ...] = ()
-    units_removed: tuple[str, ...] = ()
-    new_file: bool = False
-    judged: bool = True  # 단위 수준까지 읽었는가
-    code: bool = True  # 코드로 읽어야 할 파일인가 (문서·설정은 못 읽은 게 아니라 읽을 게 없다)
-    # "원래 이름 → 새 경로 새 이름". 본문 지문이 정확히 같은 경우만 들어온다.
-    units_moved: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
-class Lesson:
-    base: str
-    files: tuple[FileChange, ...]
-    checkpoints: tuple[Checkpoint, ...]
-    undetermined: tuple[tuple[str, str], ...]
-    # 컨트롤러가 이 자리를 고른 근거 (`loop.mandate_for`). 사람이 쓴 변경이면 항상 비어 있다.
-    #
-    # 계약 ①("답을 주지 않는다")과 다투지 않는 이유: 이것은 코드에 대한 답이 아니라 **좌표에
-    # 대한 사실**이다. "이 함수가 왜 이렇게 생겼나"는 여전히 안 적는다(그건 계약 ③ 의 빈칸이고
-    # 저자 몫이다). 여기 싣는 것은 "왜 하필 이 파일 이 줄이었나"인데, 루프가 쓴 변경에는 그
-    # 물음에 답할 저자가 아예 없다 — diff 어디에도 안 적혀 있고 사람이 유도할 방법도 없다.
-    # 빈칸을 비워 두는 것과 답이 없는 물음을 남기는 것은 다르다. 후자는 부채다.
-    mandate: tuple[dict, ...] = ()
-
-    @property
-    def ranked(self) -> tuple[Checkpoint, ...]:
-        # 같은 위험도라면 단위 하나보다 책임 묶음을 먼저 묻는다. 대규모 추출에서 첫 질문이
-        # `client` 같은 세 줄 도우미가 되면 큰 구조를 이해하기 전에 세부 검색부터 하게 된다.
-        def key(point: Checkpoint) -> tuple[int, int, str, int]:
-            grouped_removal = point.kind in {"behavior-removed", "test-removed"} and not point.unit
-            return (-point.weight, 0 if grouped_removal else 1, point.path, point.line)
-
-        return tuple(sorted(self.checkpoints, key=key))
-
-    @property
-    def touched(self) -> tuple[int, int]:
-        return (sum(f.added for f in self.files), sum(f.removed for f in self.files))
-
-    @property
-    def moved(self) -> int:
-        return sum(len(f.units_moved) for f in self.files)
 
 
 # ── git 재료 ───────────────────────────────────────────────────────
