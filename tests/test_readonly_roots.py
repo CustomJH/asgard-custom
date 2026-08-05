@@ -539,6 +539,12 @@ class TestStagingTheControlSurfaceIsNotWriting(Sandboxed):
             with self.subTest(command=command):
                 self.assertEqual(self.bash(command)[0], 2)
 
+    def test_force_staging_is_not_on_the_index_lane(self) -> None:
+        """`-f` 는 무시 규칙을 끄는 플래그다 — 이 레인의 근거가 그 규칙이라 함께 열 수 없다."""
+        for command in ("git add -f -- .asgard", "git add --force .asgard"):
+            with self.subTest(command=command):
+                self.assertEqual(self.bash(command)[0], 2)
+
     def test_config_injection_does_not_ride_in_on_the_index_lane(self) -> None:
         """`-c` 는 임의 헬퍼를 실행한다 — 읽기 레인에서 거르는 것을 여기서도 거른다."""
         for command in ("git -c core.pager=sh add -- .asgard", "git --work-tree=/tmp add -- .asgard"):

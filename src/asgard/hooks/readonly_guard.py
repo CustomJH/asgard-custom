@@ -893,6 +893,11 @@ def is_index_only_git(command: str, roots: tuple[str, ...]) -> bool:
             return False
         if _git_subcommand(part) not in _GIT_INDEX_ONLY:
             return False
+        # `-f` 는 무시 규칙을 끄는 플래그다. 이 레인의 근거가 "무엇이 담기는지는 무시 규칙이
+        # 정한다" 이므로, 그 규칙을 끄는 철자를 함께 열면 근거가 남지 않는다 — `git add -f
+        # .asgard` 한 줄이 기장·상태·배차 DB 를 통째로 색인에 넣는다.
+        if any(token == "-f" or token == "--force" for token in part[1:]):
+            return False
     return True
 
 
