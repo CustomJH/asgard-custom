@@ -23,12 +23,12 @@ from ..agent.runtime import CliPeerRuntime, PeerRuntime, PeerSpec, PeerTurnResul
 try:  # pragma: no cover - 플랫폼별 import 갈래
     import fcntl
 except ImportError:  # pragma: no cover - Windows
-    fcntl = None  # type: ignore[assignment]
+    fcntl = None  # ty: ignore[invalid-assignment] — 플랫폼에 없는 모듈의 자리표시자
 
 try:  # pragma: no cover - 플랫폼별 import 갈래
     import msvcrt
 except ImportError:  # pragma: no cover - POSIX
-    msvcrt = None  # type: ignore[assignment]
+    msvcrt = None  # ty: ignore[invalid-assignment] — 플랫폼에 없는 모듈의 자리표시자
 
 _CHECKPOINT_KIND = "asgard.swarm.checkpoint"
 _CHECKPOINT_SUBJECT = "swarm session checkpoint"
@@ -61,6 +61,14 @@ class SwarmRequest:
     verify_commands: list[str] | None = None
     keep_open: bool = False
     swarm_run: str | None = None
+
+    @property
+    def text(self) -> str:
+        """peer 에게 보낼 작업 문장. `_validate_common` 이 이미 빈 값을 걸렀다.
+
+        `prompt` 를 직접 쓰지 않는 이유는 그 필드가 `str | None` 이고, 그 검사가 다른 함수에
+        있어 호출 지점마다 다시 좁혀야 하기 때문이다."""
+        return (self.prompt or "").strip()
 
     def requested(self) -> bool:
         """네이티브 단일 실행이 아니라 swarm 옵션을 골랐는지 반환한다."""
@@ -122,7 +130,7 @@ def run_swarm(
         os.environ.setdefault("ASGARD_UNATTENDED", "1")
         run_id = canonical_run_id or ""
         if not run_id:
-            run = orc.run_create(root, request.prompt.strip(), coordinator="asgard-run")
+            run = orc.run_create(root, request.text, coordinator="asgard-run")
             run_id = run["id"]
         state = _State(
             root=root,
@@ -481,7 +489,7 @@ def _round_prompts(state: _State, round_number: int, messages: list[dict]) -> di
     for peer in state.peers:
         addressed = [message for message in messages if message["recipient"] == peer.dispatch_id]
         prompts[peer.runtime] = _peer_prompt(
-            state.request.prompt.strip(),
+            state.request.text,
             peer,
             round_number,
             state.request.rounds,
@@ -603,7 +611,7 @@ def _conclude(state: _State, synthesizer: str) -> str:
     if len(state.peers) == 1:
         return state.outputs[synthesizer]
     peer = next(peer for peer in state.peers if peer.runtime == synthesizer)
-    prompt = _synthesis_prompt(state.request.prompt.strip(), peer, state.peers, state.outputs)
+    prompt = _synthesis_prompt(state.request.text, peer, state.peers, state.outputs)
     results, failures = _execute_wave(state, [peer], {synthesizer: prompt})
     _resolve_wave(state, results, failures)
     conclusion = state.outputs[synthesizer]

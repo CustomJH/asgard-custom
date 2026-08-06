@@ -22,6 +22,14 @@ from asgard.commands import start
 from asgard.commands import swarm as swarm_command
 from asgard.orchestration import inbox, run_close, run_create, run_list, run_show, task_list
 
+
+def _run_status(root: str, run_id: str) -> str:
+    """Run 하나의 상태. `run_show` 는 없는 Run 에 None 을 주므로 그 자리를 먼저 세운다."""
+    run = run_show(root, run_id)
+    assert run is not None, f"Run 을 찾지 못했어요: {run_id}"
+    return str(run["status"])
+
+
 _CLAUDE_COMMAND = [
     "claude",
     "-p",
@@ -181,7 +189,7 @@ def test_swarm_exchanges_dispatch_addressed_handoffs_and_verifies_in_order(tmp_p
     assert code == 0
     assert stderr.getvalue() == ""
     assert payload["run_open"] is False
-    assert run_show(str(tmp_path), payload["run_id"])["status"] == "closed"
+    assert _run_status(str(tmp_path), payload["run_id"]) == "closed"
     assert payload["result"] == "합의 결론"
     assert [peer["runtime"] for peer in payload["peers"]] == ["cc", "codex"]
     assert [item["exit_code"] for item in payload["verification"]] == [0, 0]
@@ -247,7 +255,7 @@ def test_open_swarm_run_resumes_saved_peer_sessions(tmp_path, monkeypatch):
     follow = json.loads(follow_stdout.getvalue())
     assert first_code == follow_code == 0
     assert follow["run_id"] == first["run_id"]
-    assert run_show(str(tmp_path), first["run_id"])["status"] == "open"
+    assert _run_status(str(tmp_path), first["run_id"]) == "open"
     assert {peer["runtime"]: peer["session_id"] for peer in follow["peers"]} == {
         "cc": "session-cc",
         "codex": "session-codex",
@@ -415,7 +423,7 @@ def test_failed_existing_swarm_resume_preserves_open_checkpoint(tmp_path, monkey
             peer_runtime=_FailingPeerRuntime(),
         )
 
-    assert run_show(str(tmp_path), run_id)["status"] == "open"
+    assert _run_status(str(tmp_path), run_id) == "open"
     checkpoints = [
         message for message in inbox(str(tmp_path), run_id) if message["subject"] == "swarm session checkpoint"
     ]

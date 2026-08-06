@@ -469,6 +469,10 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
         ("파사드", frozenset({"__init__", "__main__"})),
     ),
     "commands": (
+        # swarm — 명령 표면이 아니라 명령이 쓰는 재료다. start 가 --cc/--codex 갈래에서 이것을
+        # 부르고, 이것은 형제 명령을 하나도 안 부른다 (agent.runtime 과 orchestration 만 쓴다).
+        # 같은 등급에 두면 start→swarm 이 그대로 등급 위반이라 여기가 아래다.
+        ("명령 재료", frozenset({"swarm"})),
         # 명령 구현 대부분이 여기다 — 서로를 안 부른다. 같은 등급이라 새로 부르면 빨개진다.
         (
             "명령",
