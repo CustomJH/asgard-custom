@@ -7,8 +7,8 @@
 ## Orientation
 
 - Project root: `./`
-- Languages by observed source files: Python (566), JavaScript (6), Rust (2)
-- Evidence scan: 778 files; 36 landmarks
+- Languages by observed source files: Python (568), JavaScript (6), Rust (2)
+- Evidence scan: 780 files; 36 landmarks
 
 ## Landmarks
 

@@ -11,7 +11,7 @@
 > Named scanner gaps are evidence too. They weaken absence and blast-radius claims; details live in `map scan --json`.
 
 - Coverage status: partial · 2 named limits
-- test_sources_excluded [repository] — 180 test source files are outside the production relation graph · files 180
+- test_sources_excluded [repository] — 181 test source files are outside the production relation graph · files 181
 - unsupported_source_suffix [.rs] — no relation extractor is configured for Rust (.rs) · files 2
 
 ## Commands
