@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import json
+import subprocess
 import threading
 import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal, Protocol, TypeAlias
+from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeAlias
+
+from .. import errors
 
 if TYPE_CHECKING:
     from ..providers import ResolvedProvider
@@ -75,6 +79,187 @@ class TurnResult:
     @property
     def ok(self) -> bool:
         return self.outcome == "completed"
+
+
+PeerKind: TypeAlias = Literal["cc", "codex"]
+
+
+@dataclass(frozen=True, slots=True)
+class PeerSpec:
+    """로컬 코딩 에이전트 한 명을 실행하는 데 필요한 선택값이다."""
+
+    runtime: PeerKind
+    model: str = ""
+    effort: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class PeerTurnResult:
+    """외부 에이전트 한 턴의 답과 다음 턴에 쓸 세션 식별자다."""
+
+    text: str
+    session_id: str
+    command: tuple[str, ...]
+    returncode: int
+
+
+class PeerRuntime(Protocol):
+    """로컬 프로세스와 이후 원격 transport가 함께 구현할 턴 경계다."""
+
+    def turn(self, spec: PeerSpec, prompt: str, session_id: str = "") -> PeerTurnResult: ...
+
+
+class _CompletedProcess(Protocol):
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+class CliPeerRuntime:
+    """Claude Code와 Codex CLI를 읽기 전용 세션으로 한 턴씩 실행한다."""
+
+    def __init__(
+        self,
+        root: str,
+        *,
+        runner: Callable[..., _CompletedProcess] | None = None,
+        timeout_s: float = 1800.0,
+    ) -> None:
+        self.root = root
+        self._runner = runner or subprocess.run
+        self.timeout_s = max(1.0, float(timeout_s))
+
+    def turn(self, spec: PeerSpec, prompt: str, session_id: str = "") -> PeerTurnResult:
+        """한 peer 턴을 실행하고 같은 세션을 재개할 수 있는 결과를 반환한다."""
+        if spec.runtime not in ("cc", "codex"):
+            raise errors.InvalidInput(
+                f"지원하지 않는 peer runtime이에요: {spec.runtime}",
+                remedy="--cc 또는 --codex 중 하나를 선택하세요.",
+            )
+        if not prompt.strip():
+            raise errors.InvalidInput(
+                "peer에게 보낼 prompt가 비어 있어요.",
+                remedy="실행할 작업이나 동료의 피드백을 prompt로 전달하세요.",
+            )
+
+        command = self._command(spec, prompt, session_id.strip())
+        shown = (*command[:-1], "<prompt>")
+        try:
+            completed = self._runner(
+                command,
+                cwd=self.root,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=self.timeout_s,
+            )
+        except FileNotFoundError as exc:
+            raise errors.UpstreamError(
+                f"{command[0]} CLI를 찾을 수 없어요.",
+                remedy=self._remedy(spec.runtime),
+                detail={"runtime": spec.runtime},
+                cause=exc,
+            ) from exc
+        except subprocess.TimeoutExpired as exc:
+            raise errors.UpstreamError(
+                f"{spec.runtime} peer가 {self.timeout_s:g}초 안에 응답하지 않았어요.",
+                remedy="작업을 더 작게 나누거나 peer 턴 제한을 늘린 뒤 다시 실행하세요.",
+                detail={"runtime": spec.runtime, "timeout_s": self.timeout_s},
+                cause=exc,
+            ) from exc
+        except OSError as exc:
+            raise errors.UpstreamError(
+                f"{spec.runtime} peer 프로세스를 시작하지 못했어요.",
+                remedy=self._remedy(spec.runtime),
+                detail={"runtime": spec.runtime, "exception": type(exc).__name__},
+                cause=exc,
+            ) from exc
+
+        if completed.returncode != 0:
+            raise errors.UpstreamError(
+                f"{spec.runtime} peer가 종료 코드 {completed.returncode}로 끝났어요.",
+                remedy=self._remedy(spec.runtime),
+                detail={"runtime": spec.runtime, "returncode": completed.returncode},
+            )
+        text, returned_session = self._parse(spec.runtime, completed.stdout, session_id.strip())
+        return PeerTurnResult(text, returned_session, shown, completed.returncode)
+
+    @staticmethod
+    def _command(spec: PeerSpec, prompt: str, session_id: str) -> list[str]:
+        if spec.runtime == "cc":
+            command = ["claude", "-p", "--output-format", "json", "--permission-mode", "plan"]
+            if session_id:
+                command.extend(("--resume", session_id))
+            if spec.model:
+                command.extend(("--model", spec.model))
+            if spec.effort:
+                command.extend(("--effort", spec.effort))
+            command.append(prompt)
+            return command
+
+        command = ["codex", "exec"]
+        if session_id:
+            command.append("resume")
+        command.append("--json")
+        if session_id:
+            command.extend(("-c", 'sandbox_mode="read-only"'))
+        else:
+            command.extend(("--sandbox", "read-only"))
+        if spec.model:
+            command.extend(("--model", spec.model))
+        if spec.effort:
+            command.extend(("-c", f"model_reasoning_effort={json.dumps(spec.effort)}"))
+        if session_id:
+            command.append(session_id)
+        command.append(prompt)
+        return command
+
+    def _parse(self, runtime: PeerKind, output: str, prior_session: str) -> tuple[str, str]:
+        try:
+            if runtime == "cc":
+                payload = json.loads(output)
+                if not isinstance(payload, dict):
+                    raise ValueError("Claude result is not an object")
+                text = payload.get("result")
+                session_id = payload.get("session_id") or prior_session
+            else:
+                events = [json.loads(line) for line in output.splitlines() if line.strip()]
+                if not events or not all(isinstance(event, dict) for event in events):
+                    raise ValueError("Codex event stream is empty")
+                session_id = prior_session
+                text = ""
+                for event in events:
+                    if event.get("type") == "thread.started" and event.get("thread_id"):
+                        session_id = event["thread_id"]
+                    item: Any = event.get("item")
+                    if (
+                        event.get("type") == "item.completed"
+                        and isinstance(item, dict)
+                        and item.get("type") == "agent_message"
+                        and isinstance(item.get("text"), str)
+                    ):
+                        text = item["text"]
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise errors.UpstreamError(
+                f"{runtime} peer의 구조화 출력을 읽을 수 없어요.",
+                remedy=f"{runtime} CLI가 JSON 출력 옵션을 지원하는 최신 버전인지 확인하세요.",
+                detail={"runtime": runtime, "exception": type(exc).__name__},
+                cause=exc,
+            ) from exc
+
+        if not isinstance(text, str) or not text.strip() or not isinstance(session_id, str) or not session_id.strip():
+            raise errors.UpstreamError(
+                f"{runtime} peer가 최종 답이나 세션 ID를 돌려주지 않았어요.",
+                remedy="peer CLI 로그인 상태와 JSON 출력 형식을 확인한 뒤 다시 실행하세요.",
+                detail={"runtime": runtime, "has_text": bool(text), "has_session": bool(session_id)},
+            )
+        return text, session_id
+
+    @staticmethod
+    def _remedy(runtime: PeerKind) -> str:
+        if runtime == "cc":
+            return "Claude Code를 설치하고 `claude /login`으로 인증하세요."
+        return "Codex CLI를 설치하고 `codex login`으로 인증하세요."
 
 
 class _HeimdallLike(Protocol):

@@ -389,13 +389,45 @@ def run(
     prompt: str = typer.Argument(None, help="the task to do (leave it out when you pass --resume)"),
     provider: str = typer.Option(None, "--provider", help="use this provider instead"),
     model: str = typer.Option(None, "--model", help="use this model instead"),
+    effort: str = typer.Option(None, "--effort", help="use this effort when exactly one peer is selected"),
     json_: bool = typer.Option(False, "--json", help="stream to stderr, and print one JSON summary to stdout"),
     resume: bool = typer.Option(False, "--resume", help="pick the active Quest back up where it left off"),
     quest: str = typer.Option(None, "--quest", help="pick this particular Quest back up"),
     dual: bool = typer.Option(False, "--dual", help="have thinker and thinker_alt plan side by side"),
+    cc: bool = typer.Option(False, "--cc", help="ask Claude Code as a read-only peer"),
+    codex: bool = typer.Option(False, "--codex", help="ask Codex as a read-only peer"),
+    cc_model: str = typer.Option(None, "--cc-model", help="use this Claude Code model"),
+    cc_effort: str = typer.Option(None, "--cc-effort", help="use this Claude Code effort"),
+    codex_model: str = typer.Option(None, "--codex-model", help="use this Codex model"),
+    codex_effort: str = typer.Option(None, "--codex-effort", help="use this Codex reasoning effort"),
+    rounds: int = typer.Option(2, "--rounds", help="run 1-3 bounded peer exchange rounds"),
+    synth: str = typer.Option(None, "--synth", help="choose the final synthesizer: cc | codex"),
+    verify: list[str] = typer.Option(None, "--verify", help="run this command after synthesis (repeatable)"),
+    keep_open: bool = typer.Option(False, "--keep-open", help="keep this swarm Run open for later prompts"),
+    swarm_run: str = typer.Option(None, "--swarm-run", help="resume peers saved in this open swarm Run"),
 ) -> None:
     from ..commands.start import run_prompt
 
     raise typer.Exit(
-        run_prompt(prompt, provider=provider, model=model, json_out=json_, resume=resume, quest_id=quest, dual=dual)
+        run_prompt(
+            prompt,
+            provider=provider,
+            model=model,
+            effort=effort,
+            json_out=json_,
+            resume=resume,
+            quest_id=quest,
+            dual=dual,
+            cc=cc,
+            codex=codex,
+            cc_model=cc_model,
+            cc_effort=cc_effort,
+            codex_model=codex_model,
+            codex_effort=codex_effort,
+            rounds=rounds,
+            synth=synth,
+            verify_commands=verify,
+            keep_open=keep_open,
+            swarm_run=swarm_run,
+        )
     )

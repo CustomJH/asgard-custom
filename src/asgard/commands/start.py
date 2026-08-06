@@ -19,7 +19,8 @@ from ..providers import ResolvedProvider, resolve
 if TYPE_CHECKING:
     from typing import TextIO
 
-    from ..agent.runtime import TurnEvent, TurnResult
+    from ..agent.runtime import PeerRuntime, TurnEvent, TurnResult
+    from .swarm import SwarmRequest
 
 
 def preflight(
@@ -221,12 +222,88 @@ def run_prompt(
     resume: bool = False,
     quest_id: str | None = None,
     dual: bool = False,
+    cc: bool = False,
+    codex: bool = False,
+    cc_model: str | None = None,
+    cc_effort: str | None = None,
+    codex_model: str | None = None,
+    codex_effort: str | None = None,
+    effort: str | None = None,
+    rounds: int = 2,
+    synth: str | None = None,
+    verify_commands: list[str] | None = None,
+    keep_open: bool = False,
+    swarm_run: str | None = None,
+    peer_runtime: "PeerRuntime | None" = None,
+    verification_runner: Callable[..., object] | None = None,
 ) -> int:
-    """headless 단발 실행 — 벤치·CI 표면. ExecutionSession 턴 1회 후 종료.
+    """headless 단일 실행이나 명시적으로 고른 로컬 peer swarm을 수행한다.
 
-    모드 B는 라우팅 논리레이어 주입 불가(벤치 실측) — 게이트-우선의 측정·강제 표면은
-    이 네이티브 경로다 (하네스가 전이 산출을 코드로 수행, 채택률 100%).
-    exit code: 0 정상 / 1 ⚠ 보고(에스컬레이션·중단·예산 소진) / 2 프리플라이트 실패."""
+    모드 B는 라우팅 논리레이어 주입 불가(벤치 실측) — 네이티브 경로는 하네스가 전이 산출을
+    코드로 수행해 게이트-우선 측정·강제의 채택률을 100%로 유지한다.
+    exit code: 0 정상 / 1 ⚠ 보고·검증 실패 / 2 입력·프리플라이트 실패."""
+    from .swarm import SwarmRequest
+
+    errors.set_json_surface(json_out)
+    request = SwarmRequest(
+        prompt=prompt,
+        provider=provider,
+        model=model,
+        effort=effort,
+        json_out=json_out,
+        resume=resume,
+        quest_id=quest_id,
+        dual=dual,
+        cc=cc,
+        codex=codex,
+        cc_model=cc_model,
+        cc_effort=cc_effort,
+        codex_model=codex_model,
+        codex_effort=codex_effort,
+        rounds=rounds,
+        synth=synth,
+        verify_commands=verify_commands,
+        keep_open=keep_open,
+        swarm_run=swarm_run,
+    )
+    if request.requested():
+        return _run_swarm_request(request, peer_runtime, verification_runner)
+    return _run_native_prompt(prompt, provider, model, json_out, resume, quest_id, dual)
+
+
+def _run_swarm_request(
+    request: "SwarmRequest",
+    peer_runtime: "PeerRuntime | None",
+    verification_runner: Callable[..., object] | None,
+) -> int:
+    from ..orchestration import OrchestrationError
+    from .swarm import run_swarm
+
+    try:
+        return run_swarm(
+            request,
+            peer_runtime=peer_runtime,
+            verification_runner=verification_runner,
+        )
+    except OrchestrationError as exc:
+        raise errors.Unavailable(
+            "swarm 실행 장부를 갱신하지 못했어요.",
+            remedy="`.asgard/orchestration.db`를 열 수 있는지 확인한 뒤 다시 실행하세요.",
+            detail={"exception": type(exc).__name__},
+            cause=exc,
+        ) from exc
+
+
+def _run_native_prompt(
+    prompt: str | None,
+    provider: str | None,
+    model: str | None,
+    json_out: bool,
+    resume: bool,
+    quest_id: str | None,
+    dual: bool,
+) -> int:
+    """기존 네이티브 ExecutionSession 경로를 한 턴 실행한다."""
     import json as _json
 
     root = os.getcwd()
@@ -236,10 +313,7 @@ def run_prompt(
     checks, rp = preflight(root, provider=provider, model=model)
     failure = preflight_error(checks)
     if failure is not None:
-        # `--json`은 **실패에도 JSON**이다. 여기가 여태 계약이 깨지던 자리다: 성공하면 JSON,
-        # 막히면 색칠된 체크리스트 — 그래서 이 명령을 자식 프로세스로 띄우는 스튜디오는
-        # 실패할 때만 파싱할 것이 없었고, 원문을 그대로 화면에 부었다. 기계가 읽는 표면에서
-        # 실패 경로만 사람 말로 새면, 그 표면은 실패를 다룰 수 없는 표면이다.
+        # `--json`은 실패에도 JSON이다. 사람용 점검표가 stdout에 섞이면 스튜디오가 파싱할 수 없다.
         if json_out:
             sys.stdout.write(_json.dumps(errors.json_error(failure), ensure_ascii=False) + "\n")
         else:
@@ -250,10 +324,7 @@ def run_prompt(
 
     sink = sys.stderr if json_out else sys.stdout  # --json: stdout은 최종 JSON 전용
     session = ExecutionSession(rp, root, dual=dual, on_event=_run_events(sink))
-    if resume:
-        result = session.resume(quest_id)
-    else:
-        result = session.submit(prompt or "")
+    result = session.resume(quest_id) if resume else session.submit(prompt or "")
     if json_out:
         sys.stdout.write(_run_summary(result))
     else:
