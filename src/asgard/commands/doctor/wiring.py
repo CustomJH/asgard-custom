@@ -34,7 +34,13 @@ def _stale_role_agents(root: str) -> list[str]:
 
 # Trinity 에셋은 통째로 설치되고 통째로 갱신되므로 이 계층의 fix는 전부 같은 처방이다.
 # 항목별 손복구 절차를 적으면 그 절차가 설치기와 어긋나는 순간 거짓 안내가 된다.
-_TRINITY_FIX = "asgard setup --force로 Trinity 에셋 재설치"
+#
+# 여기 적히는 명령은 실존해야 한다. `asgard setup --force` 는 실존한 적이 없다 —
+# `setup` 은 `setup map` 하나만 가진 typer 그룹이라 그 줄을 그대로 치면 exit 2
+# ("No such option: --force") 다. 진단이 내미는 유일한 손짓이 실행되지 않는 명령이면
+# 사람은 스스로 명령을 추측하게 되고, 그 추측이 `asgard sync` 면 미등록 저장소에서
+# 아무것도 안 깔린 채 성공 줄만 본다 (commands/sync.py `_unregistered_cwd_note`).
+_TRINITY_FIX = "asgard init --force 로 Trinity 에셋 재설치"
 
 _TRINITY_HOOKS = (
     "quest-log.py",
@@ -286,10 +292,13 @@ def _lagom_mode_check(root: str) -> dict | None:
         return None
 
 
-def _memory_wiring_row(root: str, client: _Client, config: dict) -> dict:
-    """한 클라이언트의 Memory v3 배선 — 훅 파일·스냅샷·회수·Stop 동기화·스킬을 각각 센다."""
+def _memory_wiring_missing(root: str, client: _Client, config: dict) -> list[str]:
+    """한 클라이언트의 Memory v3 배선에서 빠진 항목 — 훅 파일·스냅샷·회수·Stop 동기화·스킬.
+
+    행 렌더와 갈라 둔 이유는 두 번째 소비자다: `memory connect` 도 같은 질문을 묻는데
+    (이 저장소 세션 프롬프트에 뱅크가 들어가나), 진단 행의 문자열을 되파싱하면 두 답이 갈라진다."""
     stop_event = "stop" if client.name == "Cursor" else "Stop"
-    missing = [
+    return [
         label
         for ok, label in (
             (os.path.exists(os.path.join(root, client.folder, "hooks", "memory-activate.py")), "hook file"),
@@ -303,6 +312,26 @@ def _memory_wiring_row(root: str, client: _Client, config: dict) -> dict:
         )
         if not ok
     ]
+
+
+def memory_wiring_gaps(root: str) -> list[tuple[str, list[str]]]:
+    """설치된 클라이언트마다 (이름, 빠진 배선 항목). 안 깔린 클라이언트는 목록에 없다.
+
+    빈 목록은 "전부 배선됨"이 아니라 **주입할 클라이언트가 하나도 없음**이다. 그래서 자동
+    회수의 유무는 `any(not missing for _, missing in gaps)` 로 묻는다 — 한 클라이언트라도
+    빠짐없이 걸려 있어야 그 저장소의 세션 프롬프트에 프로젝트 뱅크가 들어간다."""
+    rows = []
+    for client in _MEMORY_CLIENTS:
+        if not os.path.isdir(os.path.join(root, client.folder)):
+            continue
+        config = _client_config(root, client.folder, client.config_name)
+        rows.append((client.name, _memory_wiring_missing(root, client, config)))
+    return rows
+
+
+def _memory_wiring_row(root: str, client: _Client, config: dict) -> dict:
+    """한 클라이언트의 Memory v3 배선 진단 행."""
+    missing = _memory_wiring_missing(root, client, config)
     return {
         "name": f"memory wiring ({client.name})",
         "ok": not missing,

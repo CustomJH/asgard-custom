@@ -17,6 +17,7 @@ import ast
 import io
 import json
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -278,6 +279,158 @@ class TestClientConfigIsolation(unittest.TestCase):
         self.assertFalse(codex["ok"])
         for event in ("SessionStart", "UserPromptSubmit", "SubagentStart", "Stop refresh"):
             self.assertIn(event, codex["detail"], "옆 클라이언트 설정을 근거로 녹색을 내면 안 된다")
+
+
+class TestFixCommandsAreRunnable(unittest.TestCase):
+    """doctor 가 내미는 `asgard …` 는 실행되는 명령이어야 한다.
+
+    `_TRINITY_FIX` 는 배선이 빠진 모든 행의 유일한 손짓이었는데 `asgard setup --force` 라고
+    적혀 있었다. `setup` 은 `setup map` 하나만 가진 그룹이라 그 줄은 exit 2 를 낸다 — 진단이
+    내민 명령이 안 돌면 사람은 스스로 명령을 추측하고, 그 추측이 틀려도 아무도 안 막는다.
+
+    판정 대상은 산문이 아니라 **지시**다: 독스트링은 뺀다 (코드를 읽는 사람 몫). 괄호 안에
+    이름만 적힌 형태(`(또는 setup --force)`)는 `asgard` 접두가 없어 이 검사가 못 본다."""
+
+    _TOKEN = re.compile(r"asgard ((?:[a-z][a-z0-9-]*)(?: [a-z][a-z0-9-]*)*(?: --[a-z][a-z0-9-]*)*)")
+
+    @staticmethod
+    def _resolve(words: list[str]):
+        """CLI 트리를 실제로 걸어간다 — 이름 목록을 복사해 두면 그 목록이 다음 결함이 된다."""
+        import typer
+
+        from asgard.cli import app
+
+        node = typer.main.get_command(app)
+        walked: list[str] = []
+        for word in words:
+            commands = getattr(node, "commands", None)
+            if not commands or word not in commands:
+                break
+            node, _ = commands[word], walked.append(word)
+        return node, walked
+
+    @classmethod
+    def _problems(cls, text: str) -> list[str]:
+        found: list[str] = []
+        for match in cls._TOKEN.finditer(text):
+            parts = match.group(1).split()
+            node, walked = cls._resolve([p for p in parts if not p.startswith("--")])
+            if not walked:
+                continue  # 명령이 아니라 산문이다 ("asgard on PATH")
+            if getattr(node, "commands", None):
+                found.append(f"{match.group(0)!r} — `asgard {' '.join(walked)}` 는 그룹이라 하위 명령이 필요")
+                continue
+            options = {opt for param in node.params for opt in param.opts}
+            found += [
+                f"{match.group(0)!r} — `asgard {' '.join(walked)}` 에 {flag} 없음"
+                for flag in parts
+                if flag.startswith("--") and flag not in options
+            ]
+        return found
+
+    @staticmethod
+    def _instruction_strings(path: Path) -> list[str]:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        docs = {
+            id(holder.body[0].value)
+            for holder in ast.walk(tree)
+            if isinstance(holder, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef)
+            and holder.body
+            and isinstance(holder.body[0], ast.Expr)
+            and isinstance(holder.body[0].value, ast.Constant)
+        }
+        return [
+            node.value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docs
+        ]
+
+    def test_the_checker_catches_the_command_that_started_this(self):
+        self.assertTrue(self._problems("asgard setup --force로 Trinity 에셋 재설치"))
+        self.assertEqual([], self._problems("asgard init --force 로 Trinity 에셋 재설치"))
+
+    def test_every_named_command_in_the_doctor_package_resolves(self):
+        bad: list[str] = []
+        for path in sorted(Path(doctor.__file__).parent.glob("*.py")):
+            bad += [
+                f"{path.name}: {problem}"
+                for text in self._instruction_strings(path)
+                for problem in self._problems(text)
+            ]
+        self.assertEqual([], bad, "doctor 가 없는 명령을 안내한다")
+
+
+class TestBankReachability(unittest.TestCase):
+    """연결된 뱅크를 이 저장소의 세션이 읽을 수 있는가 — 두 사실을 잇는 행.
+
+    26-08-07 실측한 형상: 뱅크는 A 저장소에 등록됐고 회수 배선은 B 저장소에 있었다. 행 둘은
+    각각 자기 사실만 맞게 말했고, "등록된 뱅크가 어떤 프롬프트에도 안 들어간다"는 결론은
+    아무도 말하지 않았다. 클라이언트 폴더가 아예 없으면 배선 행 자체가 안 나와서 초록이었다."""
+
+    @staticmethod
+    def _bank(root: str, project_id: str = "vn_onm_yun") -> None:
+        _write(
+            root,
+            os.path.join(".asgard", "asgard-setting-project.json"),
+            json.dumps(
+                {"project_memory": {"engine": "hindsight", "endpoint": "http://127.0.0.1:9", "project_id": project_id}}
+            ),
+        )
+
+    @staticmethod
+    def _wired_cc(root: str) -> None:
+        _write(root, os.path.join(".claude", "hooks", "memory-activate.py"), "# hook\n")
+        _write(root, os.path.join(".claude", "skills", "asgard-memory", "SKILL.md"), "# skill\n")
+        entry = [{"hooks": [{"type": "command", "command": "python .claude/hooks/memory-activate.py"}]}]
+        _write(
+            root,
+            os.path.join(".claude", "settings.json"),
+            json.dumps({"hooks": {"SessionStart": entry, "UserPromptSubmit": entry, "Stop": entry}}),
+        )
+
+    def _row(self, root: str) -> dict:
+        row = doctor._bank_reachability_check(root)
+        self.assertIsNotNone(row, "뱅크가 안 읽히는데 행이 없다")
+        assert row is not None  # 아래 첨자 접근의 타입 좁히기 (ty)
+        return row
+
+    def test_a_bank_with_no_client_at_all_is_named(self):
+        with tempfile.TemporaryDirectory() as td:
+            self._bank(td)
+            row = self._row(td)
+        self.assertIn("vn_onm_yun", row["detail"])
+        self.assertIn("클라이언트 배선이 하나도 없어요", row["detail"])
+        self.assertEqual([], self._fix_problems(row["fix"]))
+
+    def test_a_half_wired_client_names_what_is_missing(self):
+        with tempfile.TemporaryDirectory() as td:
+            self._bank(td)
+            os.makedirs(os.path.join(td, ".claude"))
+            row = self._row(td)
+        self.assertIn("hook file", row["detail"])
+        self.assertIn("CC", row["detail"])
+
+    def test_one_fully_wired_client_is_enough(self):
+        with tempfile.TemporaryDirectory() as td:
+            self._bank(td)
+            self._wired_cc(td)
+            self.assertIsNone(doctor._bank_reachability_check(td))
+
+    def test_no_bank_means_no_row(self):
+        with tempfile.TemporaryDirectory() as td:
+            self.assertIsNone(doctor._bank_reachability_check(td))
+            os.makedirs(os.path.join(td, ".claude"))
+            self.assertIsNone(doctor._bank_reachability_check(td))
+
+    def test_the_row_reaches_the_doctor_surface(self):
+        with tempfile.TemporaryDirectory() as td:
+            self._bank(td)
+            names = [row["name"] for row in doctor._trinity_checks(td)]
+        self.assertIn("project memory reachability", names)
+
+    @staticmethod
+    def _fix_problems(text: str) -> list[str]:
+        return TestFixCommandsAreRunnable._problems(text)
 
 
 class TestFunctionLengthAnchor(unittest.TestCase):

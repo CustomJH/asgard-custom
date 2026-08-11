@@ -25,11 +25,14 @@ import unittest
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 RECORDS = ".asgard/memory/records"
 
-# 팀의 것 — 함께 읽고 함께 고친다.
+# 팀의 것 — 함께 읽고 함께 고친다. `.asgard/.gitignore` 가 실제로 여는 목록과 같아야 한다:
+# 두 목록이 갈라지면 정본으로 저장된 파일이 여기서 낯선 것으로 잡힌다 (26-08-11: local 레인
+# 문서가 이 저장소에 처음 생기자 `memory/documents/` 가 빠져 있던 것이 드러났다).
 SHARED = (
     ".asgard/.gitignore",
     ".asgard/map",
     ".asgard/memory/records",
+    ".asgard/memory/documents",
     ".asgard/memory/binding.json",
     ".asgard/asgard-setting-project.json",
 )

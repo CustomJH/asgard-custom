@@ -21,6 +21,7 @@ from .engines import (
 from .gate import (
     _baseline_checks_check,
     _classify_misroute_check,
+    _firing_check,
     _gate_event_check,
     _quest_log_writable_check,
     _route_prior_check,
@@ -28,6 +29,8 @@ from .gate import (
     _workspace_trust_check,
 )
 from .memory import (
+    _bank_reachability_check,
+    _injection_budget_check,
     _memory_curator_check,
     _memory_durability_check,
     _memory_semantic_check,
@@ -66,10 +69,16 @@ def _trinity_checks(root: str) -> list[dict]:
     동기화도 한 번을 안 도는데, AGENTS.md 하나가 없다는 이유로 doctor가 그 사실을 통째로
     안 말하고 정책값(`memory inject on`)만 초록으로 보였다. 없는 통로를 켜져 있다고 읽는다.
     `dict | None`을 돌려주는 항목은 그 계층을 못 읽었을 때 빠진다."""
-    memory_check = _shared_memory_check(root)
+    # 뱅크 상태와 주입 경로는 다른 질문이다 — 앞은 backend 가 살아 있는가, 뒤는 이 저장소의
+    # 세션 프롬프트에 그게 들어가는가. 둘이 같이 있어야 "연결은 됐는데 아무 프롬프트에도 안 들어가는"
+    # 뱅크가 행 하나로 보인다. 뒤쪽은 정상이면 행을 안 내므로 평소 표면은 안 길어진다.
+    memory_rows = [
+        row
+        for row in (_shared_memory_check(root), _bank_reachability_check(root), _injection_budget_check(root))
+        if row
+    ]
     if not os.path.exists(os.path.join(root, "AGENTS.md")):
-        rows = _client_wiring_checks(root)
-        return (rows + [memory_check]) if memory_check else rows
+        return _client_wiring_checks(root) + memory_rows
     checks = [
         _trinity_block_check(root),
         _skill_adapter_check(root),
@@ -79,13 +88,13 @@ def _trinity_checks(root: str) -> list[dict]:
     ]
     checks += [row for row in (_custom_manual_check(root), _einherjar_check(root), _lagom_mode_check(root)) if row]
     checks += _client_wiring_checks(root)
-    if memory_check:
-        checks.append(memory_check)
+    checks += memory_rows
     checks += _codebase_map_check(root)
     checks.append(_quest_log_writable_check(root))
     checks += _classify_misroute_check(root)
     checks += _route_prior_check(root)
     checks += _gate_event_check(root)
+    checks += _firing_check(root)
     checks += _skill_bank_check(root)
     checks += _verification_independence_check(root)
     checks += _workspace_trust_check(root)

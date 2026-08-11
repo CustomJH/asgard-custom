@@ -13,6 +13,7 @@ import tempfile
 import threading
 import time
 import unittest
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from unittest import mock
 
@@ -26,6 +27,8 @@ class FakeHindsight(BaseHTTPRequestHandler):
     store: list[dict] = []
     consolidate_requests: list[dict] = []
     recall_results: list[dict] = []
+    recall_requests: list[dict] = []
+    tag_patches: list[tuple[str, list[str]]] = []
     fail_retain = False
     project_uid = "11111111-1111-4111-8111-111111111111"
     binding_id = "22222222-2222-4222-8222-222222222222"
@@ -57,9 +60,16 @@ class FakeHindsight(BaseHTTPRequestHandler):
         else:
             self._json({})
 
+    def do_PATCH(self):
+        body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        document_id = urllib.parse.unquote(self.path.rsplit("/", 1)[-1])
+        type(self).tag_patches.append((document_id, list(body.get("tags") or [])))
+        self._json({"success": True})
+
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         if self.path.endswith("/memories/recall"):
+            type(self).recall_requests.append(body)
             out = {"results": type(self).recall_results}
         elif self.path.endswith("/consolidate"):
             type(self).consolidate_requests.append(body)
@@ -93,6 +103,8 @@ class BridgeBase(unittest.TestCase):
         FakeHindsight.store = []
         FakeHindsight.consolidate_requests = []
         FakeHindsight.recall_results = []
+        FakeHindsight.recall_requests = []
+        FakeHindsight.tag_patches = []
         FakeHindsight.fail_retain = False
         self.tmp = tempfile.mkdtemp(prefix="asgard-bridge-")
         self._old_home = os.environ.get("HOME")
@@ -402,6 +414,248 @@ class TestConfigDiscovery(BridgeBase):
         found = mb.find_config(self.root)
         assert found is not None
         self.assertEqual(found[1]["bank"], "legacy-bank")
+
+
+class TestConfigInheritance(BridgeBase):
+    """연결이 **다른 디렉터리**에 있을 때 세션이 그것을 잇는가 (26-08-11).
+
+    옛 동작은 `.asgard` 를 가진 첫 디렉터리에서 탐색을 끝냈다. 그래서 `project_memory` 가 아직
+    빈 시드인 저장소가 부모의 연결을 가렸고, 짝 저장소는 위쪽에 없어 아예 안 보였다. 두 축을
+    각각 고정한다 — 위로 계속, 그리고 선언된 작업 뿌리로 옆으로."""
+
+    def _seed_only(self, directory: str) -> None:
+        """`.asgard` 는 있는데 project_memory 는 주석·예제뿐인 저장소 (asgard init 직후 형상)."""
+        from asgard.settings import PROJECT_FILE
+        from asgard.templates.trinity import project_settings
+
+        os.makedirs(os.path.join(directory, ".asgard"), exist_ok=True)
+        with open(os.path.join(directory, ".asgard", PROJECT_FILE), "w", encoding="utf-8") as handle:
+            handle.write(project_settings())
+
+    def test_unconnected_seed_does_not_hide_the_parent(self):
+        """빈 시드는 답이 아니다 — 부모의 연결까지 계속 걸어간다."""
+        child = os.path.join(self.root, "packages", "web")
+        os.makedirs(child)
+        self._seed_only(child)
+        found = mb.find_config(child)
+        assert found is not None
+        self.assertEqual(found[0], os.path.realpath(self.root))
+        self.assertEqual(found[1]["bank"], "proj-test")
+
+    def test_declared_work_root_supplies_the_bank(self):
+        """짝 저장소를 `asgard root add` 로 열었으면 그 저장소의 뱅크를 잇는다."""
+        from asgard.settings import save_project
+
+        session = os.path.join(self.tmp, "session")
+        os.makedirs(session)
+        self._seed_only(session)
+        save_project(session, "paths", {"additional_roots": [os.path.join("..", "proj")]})
+        found = mb.find_config(session)
+        assert found is not None
+        # 뿌리는 설정이 사는 자리여야 한다 — 소유권 검증과 Git 정본 record 가 거기 있다.
+        self.assertEqual(found[0], os.path.realpath(self.root))
+        self.assertEqual(found[1]["bank"], "proj-test")
+
+    def test_work_root_is_a_fallback_not_an_override(self):
+        """세션 저장소가 이미 연결돼 있으면 작업 뿌리는 그것을 안 밀어낸다."""
+        from asgard.settings import save_project
+
+        session = os.path.join(self.tmp, "session")
+        os.makedirs(session)
+        mb.write_config(session, f"http://127.0.0.1:{self.port}", "session-bank")
+        save_project(session, "paths", {"additional_roots": [os.path.join("..", "proj")]})
+        found = mb.find_config(session)
+        assert found is not None
+        self.assertEqual(found[1]["bank"], "session-bank")
+
+    def test_disabled_stops_the_search_everywhere(self):
+        """enabled=false 는 부재가 아니라 답이다 — 위로도 옆으로도 더 안 간다."""
+        from asgard.settings import save_project
+
+        child = os.path.join(self.root, "packages", "web")
+        os.makedirs(child)
+        mb.write_config(child, f"http://127.0.0.1:{self.port}", "child-bank")
+        save_project(child, "project_memory", {**dict(mb.find_config(child)[1]), "enabled": False})
+        save_project(child, "paths", {"additional_roots": [os.path.realpath(self.root)]})
+        self.assertIsNone(mb.find_config(child))
+        self.assertIsNone(mb.find_config(child, strict=True))
+
+    def test_broken_settings_do_not_climb_to_a_neighbour_bank(self):
+        """오타 하나가 남의 뱅크를 읽는 길이 되면 안 된다 — 파손은 부재가 아니라 정지다."""
+        from asgard.settings import PROJECT_FILE
+
+        child = os.path.join(self.root, "packages", "web")
+        os.makedirs(os.path.join(child, ".asgard"))
+        with open(os.path.join(child, ".asgard", PROJECT_FILE), "w", encoding="utf-8") as handle:
+            handle.write("{broken json")
+        self.assertIsNone(mb.find_config(child))
+
+
+class TestInjectTimeout(unittest.TestCase):
+    """자동 회수 한 번이 기다리는 초 — 기본 5, 설정으로 올리되 천장이 있다."""
+
+    def test_default_when_unset_or_unreadable(self):
+        from asgard.memory_context import INJECT_TIMEOUT_DEFAULT, inject_timeout
+
+        for cfg in ({}, {"inject_timeout": None}, {"inject_timeout": "느리게"}):
+            self.assertEqual(inject_timeout(cfg), INJECT_TIMEOUT_DEFAULT)
+
+    def test_setting_raises_the_wait_up_to_the_ceiling(self):
+        from asgard.memory_context import INJECT_TIMEOUT_CEILING, inject_timeout
+
+        self.assertEqual(inject_timeout({"inject_timeout": 10}), 10)
+        self.assertEqual(inject_timeout({"inject_timeout": 9999}), INJECT_TIMEOUT_CEILING)
+        self.assertEqual(inject_timeout({"inject_timeout": 0}), 1)
+
+    def test_connection_timeout_no_longer_caps_the_lane(self):
+        """`timeout` 은 명시 조회용이라 자동 주입 상한과 별개다 — 120 을 적어도 매 턴 120 을 안 기다린다."""
+        from asgard.memory_context import INJECT_TIMEOUT_DEFAULT, inject_timeout
+
+        self.assertEqual(inject_timeout({"timeout": 120}), INJECT_TIMEOUT_DEFAULT)
+
+
+class TestInjectableTagPrefilter(BridgeBase):
+    """자동 주입 질의는 게이트가 보는 두 축을 backend 에 미리 건다 — 어차피 떨어질 후보를 안 태운다."""
+
+    def test_record_item_carries_the_confidence_axis_as_a_tag(self):
+        record = project_memory.ProjectRecord(
+            record_id="decision.tagged",
+            kind="decision",
+            title="태그 축 회귀",
+            content="자동 주입 게이트가 보는 축은 태그로도 나와야 서버가 후보를 좁힌다.",
+            source="tests/test_memory_bridge.py",
+            source_revision="rev-1",
+            importance="normal",
+            confidence="verified",
+            status="active",
+        )
+        tags = project_memory.record_item(record, "proj-test", project_uid=self.project_uid)["tags"]
+        self.assertIn("confidence:verified", tags)
+        self.assertIn("status:active", tags)
+
+    def test_injection_query_asks_the_backend_for_the_injectable_subset(self):
+        from asgard.memory_context import INJECTABLE_TAGS, project_recall_rows
+
+        project_recall_rows("어떤 결정이 있었나", start=self.root)
+        sent = FakeHindsight.recall_requests[-1]
+        self.assertEqual(sent.get("tags"), list(INJECTABLE_TAGS))
+        self.assertEqual(sent.get("tags_match"), "all_strict")
+
+    def test_the_prefilter_is_the_same_axis_the_gate_enforces(self):
+        """태그가 게이트보다 넓거나 좁으면 조용히 다른 정책이 된다 — 두 자리를 한 술어로 묶어 둔다."""
+        from asgard.memory_context import INJECTABLE_TAGS, _injectable_knowledge
+
+        axes = {name: value for name, _, value in (tag.partition(":") for tag in INJECTABLE_TAGS)}
+        self.assertTrue(_injectable_knowledge("project", axes["status"], axes["confidence"]))
+        for status, confidence in (("superseded", "verified"), ("active", "observed")):
+            self.assertFalse(_injectable_knowledge("project", status, confidence))
+
+    def test_a_backend_that_cannot_prefilter_still_answers(self):
+        """사전 필터는 최적화다 — 못 받는 backend 에서 예외가 나면 회로차단기가 레인을 꺼 버린다."""
+        from asgard.memory_bridge import client
+        from asgard.project_memory_backends import ProjectMemoryHit
+
+        class OldBackend:
+            engine, api_version, project_id = "hindsight", 2, "proj-test"
+
+            def recall(self, query: str, max_results: int = 8) -> list[ProjectMemoryHit]:
+                return [ProjectMemoryHit(text="옛 계약의 backend 도 답한다", metadata={})]
+
+            def close(self) -> None:
+                return None
+
+        found = mb.find_config(self.root)
+        assert found is not None
+        with (
+            mock.patch.object(client, "get_backend", return_value=OldBackend()),
+            mock.patch.object(mb, "verify_backend_binding", return_value=None),
+        ):
+            hits = client.server_recall(found[1], "무엇이 있나", tags=("status:active",))
+        self.assertEqual(len(hits), 1)
+
+    def test_explicit_recall_can_skip_the_prefilter(self):
+        """`--unfiltered` 는 저장소가 무엇을 들고 있는지 보는 문이다 — 게이트는 그대로 돈다."""
+        from asgard.memory_bridge import server_recall
+
+        found = mb.find_config(self.root)
+        assert found is not None
+        server_recall(found[1], "무엇이 있나", tags=None)
+        self.assertNotIn("tags", FakeHindsight.recall_requests[-1])
+
+
+class TestBreakerSurvivesTheProcess(BridgeBase):
+    """훅은 턴마다 새 프로세스다 — 계수가 프로세스 안에만 있으면 차단기는 한 번도 안 닫힌다."""
+
+    def test_consecutive_outages_close_the_lane_for_the_next_process(self):
+        from asgard.memory_bridge import client
+
+        found = mb.find_config(self.root)
+        assert found is not None
+        cfg = found[1]
+        key = client._recall_health_key(cfg)
+        client.reset_recall_health(cfg)
+
+        for _ in range(client.RECALL_BREAKER_FAILURES):
+            client._recall_failed(key, TimeoutError("timed out"), time.monotonic())
+        client._RECALL_HEALTH.clear()  # 새 프로세스 = 빈 메모리
+
+        self.assertTrue(client._breaker_open(key, time.monotonic()))
+        with self.assertRaises(TimeoutError):
+            client.server_recall(cfg, "무엇이 있나")
+        client.reset_recall_health(cfg)
+        client._RECALL_HEALTH.clear()
+        self.assertFalse(client._breaker_open(key, time.monotonic()))
+
+    def test_a_verdict_is_not_an_outage(self):
+        """드리프트·미신뢰는 판정이라 계수에 안 들어간다 — 사람이 고친 뒤 벌을 주면 안 된다."""
+        from asgard.memory_bridge import client
+
+        found = mb.find_config(self.root)
+        assert found is not None
+        key = client._recall_health_key(found[1])
+        client.reset_recall_health(found[1])
+        for _ in range(client.RECALL_BREAKER_FAILURES + 1):
+            client._recall_failed(key, PermissionError("binding drift"), time.monotonic())
+        client._RECALL_HEALTH.clear()
+        self.assertFalse(client._breaker_open(key, time.monotonic()))
+
+
+class TestTagsOnlyRehydrate(BridgeBase):
+    """태그 축이 늘어난 뒤 기존 뱅크를 따라오게 하는 값싼 길 — 본문 재적재도 재추출도 없다."""
+
+    def _canonical_record(self) -> str:
+        record = project_memory.ProjectRecord(
+            record_id="decision.retag",
+            kind="decision",
+            title="재태그 회귀 기록",
+            content="태그만 갱신하는 경로가 문서 본문을 다시 보내지 않는다는 것을 고정한다.",
+            source="tests/test_memory_bridge.py",
+            source_revision="rev-1",
+            importance="normal",
+            confidence="verified",
+            status="active",
+        )
+        path = os.path.join(self.root, ".asgard", "memory", "records")
+        os.makedirs(path, exist_ok=True)
+        target = os.path.join(path, project_memory.record_filename(record.record_id))
+        with open(target, "w", encoding="utf-8") as fh:
+            fh.write(project_memory.render_canonical_record(record))
+        return target
+
+    def test_tags_only_patches_documents_instead_of_reingesting(self):
+        self._canonical_record()
+        found = mb.find_config(self.root)
+        assert found is not None
+        root, cfg = found
+        plan = project_memory.rehydration_plan(root, cfg)
+        result = project_memory.rehydrate_records(root, cfg, plan["plan_id"], tags_only=True)
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["items_count"], 1)
+        self.assertEqual(FakeHindsight.store, [])  # 본문은 한 번도 안 보냈다
+        (document_id, tags), *rest = FakeHindsight.tag_patches
+        self.assertEqual(rest, [])
+        self.assertTrue(document_id.startswith("asgard:record:"))
+        self.assertIn("confidence:verified", tags)
 
 
 class TestProtocol(BridgeBase):
@@ -1195,6 +1449,38 @@ class TestRelationNeighbourEligibility(BridgeBase):
         found = memory_context._relation_neighbors(self.root, {"policy.retry"})
 
         self.assertEqual([record_id for record_id, _edge, _text in found], ["contract.ratelimit"])
+
+
+class TestConnectNamesAnUninjectedBank(unittest.TestCase):
+    """connect 는 backend 도달성만 보고 성공을 찍는다 — 뱅크를 프롬프트에 넣는 것은 이 저장소의
+    memory-activate 배선이라, 배선 없는 저장소에 연결하면 등록은 되고 자동 회수는 영영 0이다.
+
+    두 소비자(진단 행·connect 경고)가 같은 판정을 쓰는지를 여기서 못박는다. 각자 세면
+    doctor 는 ⚠ 인데 connect 는 아무 말 없는 상태가 다시 선다."""
+
+    @staticmethod
+    def _bank(root: str) -> None:
+        os.makedirs(os.path.join(root, ".asgard"), exist_ok=True)
+        with open(os.path.join(root, ".asgard", "asgard-setting-project.json"), "w", encoding="utf-8") as fh:
+            json.dump(
+                {"project_memory": {"engine": "hindsight", "endpoint": "http://127.0.0.1:9", "project_id": "bank-x"}},
+                fh,
+            )
+
+    def test_the_warning_is_the_doctor_verdict(self):
+        from asgard.commands.doctor.memory import bank_uninjected_note
+        from asgard.commands.memory.backends import _uninjected_note
+
+        with tempfile.TemporaryDirectory() as td:
+            self._bank(td)
+            self.assertIn("bank-x", _uninjected_note(td))
+            self.assertEqual(bank_uninjected_note(td), _uninjected_note(td))
+
+    def test_no_bank_is_silent(self):
+        from asgard.commands.memory.backends import _uninjected_note
+
+        with tempfile.TemporaryDirectory() as td:
+            self.assertEqual("", _uninjected_note(td))
 
 
 if __name__ == "__main__":

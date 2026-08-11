@@ -81,7 +81,16 @@ def artifact_item(
         "update_mode": "replace",
         "strategy": "document",
         "timestamp": "unset",
-        "tags": [f"project:{project_id}", "artifact", f"kind:{candidate.kind}", f"importance:{candidate.importance}"],
+        # status·confidence 는 metadata 와 같은 값을 태그로도 낸다 — 자동 주입 게이트가 보는
+        # 두 축이고, 태그로 있어야 backend 가 후보를 좁힌다 (records.record_item 과 같은 이유).
+        "tags": [
+            f"project:{project_id}",
+            "artifact",
+            f"kind:{candidate.kind}",
+            f"importance:{candidate.importance}",
+            "status:active",
+            "confidence:verified",
+        ],
         "metadata": {
             "source": candidate.path,
             "source_revision": source_revision,

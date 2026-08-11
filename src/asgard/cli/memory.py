@@ -377,6 +377,57 @@ def memory_norn_restore(
 
 
 @memory_app.command(
+    "project-recall", help="search what the project remembers — the same gate the agent's own recall goes through"
+)
+def memory_project_recall(
+    query: str = typer.Argument(..., help="what to look for"),
+    max_results: int = typer.Option(8, "--max-results", help="how many to bring back"),
+    unfiltered: bool = typer.Option(
+        False, "--unfiltered", help="skip the tag prefilter and see what the store holds, gate reasons and all"
+    ),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from ..commands.memory import run_project_recall
+
+    raise typer.Exit(run_project_recall(query, max_results, unfiltered=unfiltered, json_out=json_))
+
+
+@memory_app.command("project-retain", help="write one project record — validated and staged the same way MCP does")
+def memory_project_retain(
+    content: str = typer.Argument(..., help="the record body — self-contained, at least 20 characters"),
+    record_id: str = typer.Option(..., "--record-id", help="stable id, e.g. decision-auth-rotation"),
+    kind: str = typer.Option(..., "--kind", help="decision|policy|incident|experiment|component|contract|migration"),
+    title: str = typer.Option(..., "--title", help="one line, at least 4 characters"),
+    source: str = typer.Option(..., "--source", help="where it came from — a path, URL, commit, or test"),
+    source_revision: str = typer.Option(..., "--source-revision", help="which version of that source"),
+    importance: str = typer.Option("normal", "--importance", help="normal|high|critical"),
+    confidence: str = typer.Option(
+        "observed", "--confidence", help="observed|verified — only verified reaches automatic injection"
+    ),
+    status: str = typer.Option("active", "--status", help="active|superseded|historical"),
+    approve: bool = typer.Option(False, "--approve", help="commit it now instead of leaving it waiting"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from ..commands.memory import run_project_retain
+
+    raise typer.Exit(
+        run_project_retain(
+            content,
+            record_id=record_id,
+            kind=kind,
+            title=title,
+            source=source,
+            source_revision=source_revision,
+            importance=importance,
+            confidence=confidence,
+            status=status,
+            approve=approve,
+            json_out=json_,
+        )
+    )
+
+
+@memory_app.command(
     "project-reflect", help="have a model think over everything the project remembers — take it as advice"
 )
 def memory_project_reflect(
@@ -520,11 +571,14 @@ def memory_project_approve(
 def memory_project_rehydrate(
     yes: bool = typer.Option(False, "--yes", "-y", help="go ahead with the writes you just previewed"),
     plan_id: str | None = typer.Option(None, "--plan-id", help="the plan id the preview printed"),
+    tags_only: bool = typer.Option(
+        False, "--tags-only", help="only bring the tags up to date — no re-ingest, no re-extraction"
+    ),
     json_: bool = typer.Option(False, "--json"),
 ) -> None:
     from ..commands.memory import run_project_rehydrate
 
-    raise typer.Exit(run_project_rehydrate(yes=yes, plan_id=plan_id, json_out=json_))
+    raise typer.Exit(run_project_rehydrate(yes=yes, plan_id=plan_id, json_out=json_, tags_only=tags_only))
 
 
 @memory_app.command("mcp", help="serve the project memory store over MCP — register it once, for your user")

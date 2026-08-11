@@ -205,6 +205,10 @@ def record_item(
             f"kind:{record.kind}",
             f"importance:{record.importance}",
             f"status:{record.status}",
+            # confidence 는 자동 주입 게이트가 유일하게 verified 만 통과시키는 축이라 태그로도
+            # 낸다. 이 태그가 있어야 backend 가 후보를 좁혀 주고, 없으면 뱅크 전체가 리랭커에
+            # 올라간다 — 실측(vn_onm_yun, record 365건): 전체 8.1초 대 verified 15건 2.5초.
+            f"confidence:{record.confidence}",
         ],
         "metadata": {
             "record_id": record.record_id,

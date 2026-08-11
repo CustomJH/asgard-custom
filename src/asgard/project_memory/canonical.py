@@ -295,7 +295,7 @@ def rehydration_plan(root: str, cfg: dict) -> dict:
     return {**approved, "plan_id": plan_id}
 
 
-def rehydrate_records(root: str, cfg: dict, expected_plan_id: str) -> dict:
+def rehydrate_records(root: str, cfg: dict, expected_plan_id: str, *, tags_only: bool = False) -> dict:
     if not re.fullmatch(r"[0-9a-f]{64}", expected_plan_id):
         raise ValueError("invalid rehydrate plan id")
     plan = rehydration_plan(root, cfg)
@@ -303,5 +303,37 @@ def rehydrate_records(root: str, cfg: dict, expected_plan_id: str) -> dict:
         raise ValueError("rehydrate plan changed; run preview again")
     if not plan["items"]:
         return {"success": True, "items_count": 0, "plan_id": plan["plan_id"]}
+    if tags_only:
+        return {**_retag_items(cfg, plan["items"]), "plan_id": plan["plan_id"]}
     result = server_retain_items(cfg, plan["items"])
     return {**result, "plan_id": plan["plan_id"]}
+
+
+def _retag_items(cfg: dict, items: list[dict]) -> dict:
+    """본문은 그대로 두고 태그만 현재 스키마로 맞춘다 (backend 가 지원할 때만).
+
+    태그 축이 늘어난 뒤 기존 뱅크를 따라오게 하는 값싼 길이다 — 전체 retain 은 항목마다
+    서버 추출을 다시 돌리지만 이쪽은 문서 메타데이터만 고친다."""
+    from ..project_memory_backends import get_backend
+
+    backend = get_backend(cfg)
+    try:
+        # 태그만 고치는 것은 backend 계약이 아니라 선택 기능이다 — 없는 backend 는 전체 retain 이
+        # 유일한 길이므로 여기서 조용히 성공을 내지 않는다.
+        set_tags = getattr(backend, "set_document_tags", None)
+        if not callable(set_tags):
+            return {"success": False, "items_count": 0, "error": "backend cannot update tags without re-ingesting"}
+        failed: dict[str, str] = {}
+        done = 0
+        for item in items:
+            document_id = str(item.get("document_id") or "")
+            try:
+                if set_tags(document_id, list(item.get("tags") or [])):
+                    done += 1
+                else:
+                    failed[document_id] = "backend rejected the tag update"
+            except Exception as exc:
+                failed[document_id] = f"{type(exc).__name__}: {exc}"
+    finally:
+        backend.close()
+    return {"success": not failed, "items_count": done, "rejected": failed, "error": ""}

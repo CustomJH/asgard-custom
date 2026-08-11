@@ -189,8 +189,13 @@ def run_project_sync(
     return _guard(_do)
 
 
-def run_project_rehydrate(yes: bool = False, plan_id: str | None = None, json_out: bool = False) -> int:
-    """프로젝트 `.asgard/memory/records/` 정본을 현재 backend에 stable replace한다."""
+def run_project_rehydrate(
+    yes: bool = False, plan_id: str | None = None, json_out: bool = False, tags_only: bool = False
+) -> int:
+    """프로젝트 `.asgard/memory/records/` 정본을 현재 backend에 stable replace한다.
+
+    `tags_only` 는 본문을 다시 보내지 않고 태그만 현재 스키마로 맞춘다 — 태그 축이 늘어난
+    뒤(예: `confidence:`) 기존 뱅크를 서버 재추출 없이 따라오게 하는 길이다."""
 
     def _do() -> int:
         from ... import project_memory
@@ -221,15 +226,16 @@ def run_project_rehydrate(yes: bool = False, plan_id: str | None = None, json_ou
                 ui.head(
                     f"project memory rehydrate plan · engine={target['engine']} · project_id={target['project_id']}"
                 )
+                verb = "retag" if tags_only else "replace"
                 for row in plan["records"]:
-                    ui.step(f"replace · {row['record_id']} · {row['path']}")
+                    ui.step(f"{verb} · {row['record_id']} · {row['path']}")
                 if not plan["records"]:
                     ui.step("canonical records 없음")
                 ui.warn(f"아직 저장하지 않음 — 검토 후 --yes --plan-id {plan['plan_id']} 추가")
             return 0
         if not plan_id:
             raise ValueError("--yes requires the --plan-id from a fresh preview")
-        result = project_memory.rehydrate_records(root, cfg, plan_id)
+        result = project_memory.rehydrate_records(root, cfg, plan_id, tags_only=tags_only)
         output = {
             "success": result.get("success") is True,
             "engine": target["engine"],
@@ -242,12 +248,150 @@ def run_project_rehydrate(yes: bool = False, plan_id: str | None = None, json_ou
             print(_json.dumps(output, ensure_ascii=False, indent=2))
         elif output["success"]:
             ui.ok(
-                f"project memory rehydrated: {output['items_count']} record(s) → "
+                f"project memory {'retagged' if tags_only else 'rehydrated'}: {output['items_count']} record(s) → "
                 f"engine={target['engine']} project_id={target['project_id']}"
             )
         else:
             ui.fail(f"project memory rehydrate failed: {output['error'] or 'backend rejected publication'}")
         return 0 if output["success"] else 1
+
+    return _guard(_do)
+
+
+def run_project_recall(
+    query: str,
+    max_results: int = 8,
+    *,
+    unfiltered: bool = False,
+    json_out: bool = False,
+) -> int:
+    """프로젝트 메모리 조회 — MCP `memory_recall` 과 같은 게이트를 CLI 에서 통과시킨다.
+
+    MCP 서버는 사용자가 열어야 열리므로 조회가 그쪽에만 있으면 닫힌 세션에서는 2차 메모리를
+    아예 못 본다. 두 표면은 같은 `filter_project_hits` 를 쓴다 — 여기서만 무엇을 왜 뺐는지
+    사유별로 같이 낸다 (`--unfiltered` 는 태그 사전 필터 없이 저장소가 무엇을 들고 있는지 본다)."""
+    errors.set_json_surface(json_out)
+
+    def _do() -> int:
+        from ...memory_bridge import server_recall
+        from ...memory_context import INJECTABLE_TAGS, drop_note, filter_project_hits, hit_body, hit_provenance
+
+        found = find_config(os.getcwd())
+        if not found:
+            raise errors.Unavailable("project memory is not connected — run `asgard memory connect <endpoint>`")
+        root, cfg = found
+        if not is_backend_trusted(cfg):
+            raise errors.Unavailable("project memory backend is not trusted on this machine; run asgard memory connect")
+        target = backend_target(cfg)
+        hits = server_recall(cfg, query, max_results, tags=None if unfiltered else INJECTABLE_TAGS)
+        filtered, dropped = filter_project_hits(root, cfg, hits, max_results=max_results, query=query)
+        rows = [
+            {
+                "text": body,
+                "record_id": str((hit.get("metadata") or {}).get("record_id") or ""),
+                "kind": str((hit.get("metadata") or {}).get("kind") or ""),
+                "provenance": hit_provenance(hit["metadata"]),
+            }
+            for hit in filtered
+            if (body := hit_body(hit))
+        ]
+        if json_out:
+            _emit(
+                {
+                    "query": query,
+                    "engine": target["engine"],
+                    "project_id": target["project_id"],
+                    "returned": len(rows),
+                    "candidates": len(hits),
+                    "dropped": dropped,
+                    "results": rows,
+                }
+            )
+            return 0
+        ui.head(f"project memory recall · engine={target['engine']} · project_id={target['project_id']}")
+        for row in rows:
+            print(f"  {row['text']}{row['provenance']}")
+        note = drop_note(dropped)
+        if not rows:
+            ui.warn("주입 자격을 갖춘 기억 없음" + note)
+            ui.step(
+                "저장소에 무엇이 있는지 보려면 --unfiltered, 자격은 scope=project·status=active·confidence=verified 셋이에요"
+            )
+            return 0
+        print(ui.dim(f"후보 {len(hits)}건 중 {len(rows)}건{note} — 힌트일 뿐, 다 됐다는 증거는 아니에요"))
+        return 0
+
+    return _guard(_do)
+
+
+def run_project_retain(
+    content: str,
+    *,
+    record_id: str,
+    kind: str,
+    title: str,
+    source: str,
+    source_revision: str,
+    importance: str = "normal",
+    confidence: str = "observed",
+    status: str = "active",
+    approve: bool = False,
+    json_out: bool = False,
+) -> int:
+    """프로젝트 record 적재 — MCP `memory_retain` 과 같은 검증·승인 경로를 CLI 에서 연다.
+
+    `--approve` 없이는 승인 대기로만 남고 approval_id 를 낸다. 자동저장이 켜져 있으면
+    (`project_memory.autosave`) 대기 없이 바로 커밋한다 — MCP 쪽과 같은 규칙이다."""
+    errors.set_json_surface(json_out)
+
+    def _do() -> int:
+        from ...memory_bridge import autosave_enabled, stage_retain
+        from ...project_memory import ProjectRecord, record_item, validate_record
+
+        found = find_config(os.getcwd())
+        if not found:
+            raise errors.Unavailable("project memory is not connected — run `asgard memory connect <endpoint>`")
+        root, cfg = found
+        if not is_backend_trusted(cfg):
+            raise errors.Unavailable("project memory backend is not trusted on this machine; run asgard memory connect")
+        target = backend_target(cfg)
+        record = ProjectRecord(
+            record_id=record_id,
+            kind=kind,
+            title=title,
+            content=content,
+            source=source,
+            source_revision=source_revision,
+            importance=importance,
+            confidence=confidence,
+            status=status,
+        )
+        validation = validate_record(record, root)
+        if not validation.accepted:
+            raise errors.InvalidInput("등록 기준 위반: " + "; ".join(validation.reasons))
+        item = record_item(
+            record,
+            target["project_id"],
+            project_uid=str(cfg.get("project_uid") or ""),
+            binding_id=str(cfg.get("binding_id") or ""),
+        )
+        approval_id = stage_retain(root, item, target=target)
+        if approve or autosave_enabled(cfg):
+            result = commit_approved_record(root, cfg, approval_id)
+            canonical = result.get("canonical_path") or ""
+            if json_out:
+                _emit({"record_id": record_id, "approval_id": approval_id, "committed": True, "canonical": canonical})
+                return 0
+            if canonical:
+                ui.ok(f"project memory canonical saved → {canonical} (commit this file)")
+            ui.ok(f"project memory saved → engine={target['engine']} project_id={target['project_id']}")
+            return 0
+        if json_out:
+            _emit({"record_id": record_id, "approval_id": approval_id, "committed": False, "canonical": ""})
+            return 0
+        ui.ok(f"승인 대기 · approval_id={approval_id}")
+        ui.step(f"내용을 확인한 뒤 `asgard memory project-approve {approval_id}`")
+        return 0
 
     return _guard(_do)
 
@@ -463,15 +607,23 @@ def run_project_ingest(
     """던진 문서를 파싱·판정해 프로젝트 메모리 승인 대기로 올린다 (기본 미리보기)."""
 
     def _do() -> int:
+        from ...k6 import project_root
         from ...project_memory import ingest
 
-        found = find_config(os.getcwd())
-        if not found:
-            raise errors.Unavailable("project memory is not connected — run `asgard memory connect <endpoint>`")
-        root, cfg = found
-        if yes and not is_backend_trusted(cfg):
-            raise errors.Unavailable("project memory backend is not trusted on this machine; run asgard memory connect")
         ready, failed = ingest.plan(list(paths), strategy=strategy or None, lane=lane or None)
+        # 연결을 묻는 것은 graph 레인뿐이다. local 레인은 저장소 정본(.asgard/memory/documents/)과
+        # 로컬 색인만 쓰므로 백엔드가 없어도, 죽어 있어도 돈다 — 그게 그 레인이 있는 이유다.
+        # 입구에서 무조건 물으면 오프라인으로 쓰라고 만든 길이 오프라인에서 막힌다.
+        graph_bound = any(document.lane == ingest.LANE_GRAPH for document in ready)
+        found = find_config(os.getcwd())
+        if graph_bound and not found:
+            raise errors.Unavailable(
+                "project memory is not connected — run `asgard memory connect <endpoint>` "
+                "(백엔드 없이 넣으려면 --lane local)"
+            )
+        root, cfg = found if found else (str(project_root()), {})
+        if yes and graph_bound and not is_backend_trusted(cfg):
+            raise errors.Unavailable("project memory backend is not trusted on this machine; run asgard memory connect")
         rows: list[dict] = [
             {
                 "name": d.name,

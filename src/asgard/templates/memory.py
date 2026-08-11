@@ -52,8 +52,11 @@ If the user is visibly tired of approving every fact, tell them the switch exist
 ## Project shared memory — Git canon + one selected backend
 
 `<memory-recall scope="project">` comes from the current project backend approved by machine-local trust.
-Never inject or merge Hindsight/Cognee/RedisVL results at the same time. For explicit search, use the MCP
-`memory_recall`. Preview any significant code/doc bootstrap first:
+Never inject or merge Hindsight/Cognee/RedisVL results at the same time. For explicit search, run
+`asgard memory project-recall "<query>"` — the CLI is the path that always exists, since the MCP server
+only runs when the user has opened it. `--unfiltered` shows what the store holds along with the reason
+each hit failed the gate, which is the first thing to check when recall looks empty. Preview any
+significant code/doc bootstrap first:
 
 ```bash
 asgard memory project-scan --all
@@ -61,9 +64,12 @@ asgard memory project-sync --all       # plan only, no external writes
 asgard memory project-sync --all --yes --plan-id <preview-plan-id> # run only after approving the same snapshot
 ```
 
-Saving project facts uses the two-step flow: MCP `memory_retain` → user approval → `memory_retain_commit`.
-When the user turned on `project_memory.autosave`, `memory_retain` commits in that one call and says so in its
+Saving project facts is a two-step flow on either surface: `asgard memory project-retain … ` → user approval →
+`asgard memory project-approve <approval_id>`, or MCP `memory_retain` → approval → `memory_retain_commit`.
+When the user turned on `project_memory.autosave`, both surfaces commit in that one call and say so in the
 response — read the response and report what actually happened instead of assuming either shape.
+Only `confidence: verified` records ever reach automatic injection; `observed` is stored and searchable but
+stays out of prompts until someone verifies it.
 commit writes the canonical record to the repo's `.asgard/memory/records/` first, then reflects it to the backend. Backend
 restore runs only via `asgard memory project-rehydrate` preview → `--yes --plan-id`.
 Always fill `record_id`, `kind`, `title`, `content`, `source`, `source_revision`, `importance`,

@@ -10,6 +10,16 @@ from . import memory
 from .memory_bridge import find_config, is_backend_trusted, server_recall
 
 PROJECT_RECALL_BUDGET = 3000
+# 턴 시작 자동 회수가 원격 하나를 기다리는 상한(초). 명시 MCP 조회의 timeout 과 별개다 —
+# 저쪽은 사람이 기다리기로 하고 부른 것이고, 이쪽은 사람이 부른 적 없는 왕복이다.
+#
+# 5 가 기본인 이유는 죽은 backend 를 매 턴 그만큼만 기다린다는 계약이고, 손잡이를 연 이유는
+# 살아 있는데 느린 backend 가 그 상한에서 죽은 것과 구별되지 않기 때문이다 (26-08-11 실측:
+# 2,085 fact 뱅크의 recall 이 44.9초 — 리랭커 후보 상한을 실제로 적용한 뒤 6.5초. 5초 상한
+# 아래에서는 두 상태 다 빈 회수로 같아 보였다). 값은 `project_memory.inject_timeout` 이고,
+# 올린 만큼 매 턴의 대기가 늘어난다.
+INJECT_TIMEOUT_DEFAULT = 5
+INJECT_TIMEOUT_CEILING = 30
 # 회수 질의 상한 — 턴 원문을 통째로 보내면 backend 임베딩이 요청의 잡음까지 닮은 것을 찾는다.
 # 값의 근거는 취향이 아니라 대조군이다: 같은 backend(Hindsight)를 쓰는 hermes의
 # recall_max_input_chars 기본값이 800 이다. 자르는 쪽은 앞부분 — 사용자의 요청은 앞에 온다.
@@ -237,6 +247,13 @@ def drop_note(tally: dict[str, int]) -> str:
     """제외 안내 한 줄 — 사유별로 갈라 센다. 아무것도 안 빠졌으면 빈 문자열."""
     parts = [f"{label} {tally[key]}건" for key, label in _DROP_LABELS if tally.get(key)]
     return f"\n({' · '.join(parts)} 제외)" if parts else ""
+
+
+# backend 에게 미리 거는 필터 — `_injectable_knowledge` 가 보는 두 축을 그대로 태그로 쓴다.
+# 게이트를 옮긴 것이 아니라 앞당긴 것이다: 어차피 떨어질 후보를 리랭커에 올리지 않는다.
+# 이 태그를 붙이는 자리는 records.record_item·projection 의 artifact item 이고, 그 전에
+# 적재된 뱅크는 태그가 없어 여기서 0건이 나온다 — `asgard memory project-rehydrate` 가 다시 태그한다.
+INJECTABLE_TAGS = ("status:active", "confidence:verified")
 
 
 def _injectable_knowledge(scope: object, status: object, confidence: object) -> bool:
@@ -482,6 +499,18 @@ PROJECT_PREFIX_TEMPLATE = (
 PROJECT_SUFFIX = "\n</memory-recall>"
 
 
+def inject_timeout(cfg: dict) -> int:
+    """자동 회수 한 번이 기다릴 초. 설정이 없거나 못 읽으면 기본값, 천장을 넘으면 천장."""
+    raw = cfg.get("inject_timeout")
+    if raw is None:
+        return INJECT_TIMEOUT_DEFAULT
+    try:
+        value = int(raw)
+    except TypeError, ValueError:
+        return INJECT_TIMEOUT_DEFAULT
+    return max(1, min(value, INJECT_TIMEOUT_CEILING))
+
+
 def project_recall_rows(query: str, *, start: str | None = None, max_results: int = 5) -> tuple[list[str], str]:
     """프로젝트 backend 회수 본문 목록 + project_id — 렌더도 예산도 없다 (조립기가 건다).
 
@@ -495,10 +524,16 @@ def project_recall_rows(query: str, *, start: str | None = None, max_results: in
         return [], ""
     query = query[:RECALL_QUERY_MAX_CHARS]
     # 턴 시작 자동 주입은 원격 장애로 대화를 붙잡지 않는다. 명시 MCP 조회의 긴 timeout과 분리.
-    operation_timeout = min(int(cfg.get("timeout") or 5), 5)
+    operation_timeout = inject_timeout(cfg)
     # raw source artifact가 긴 코드 조각으로 budget을 선점하지 않도록, 더 넓게 검색한 뒤
     # 승인된 구조화 record를 먼저 배치한다. 각 그룹 내부 backend 순위는 유지한다.
-    hits = server_recall(cfg, query, max_results=max(8, max_results * 2), operation_timeout=operation_timeout)
+    hits = server_recall(
+        cfg,
+        query,
+        max_results=max(8, max_results * 2),
+        operation_timeout=operation_timeout,
+        tags=INJECTABLE_TAGS,
+    )
     hits = sorted(
         enumerate(hits),
         key=lambda pair: (

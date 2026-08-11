@@ -82,6 +82,29 @@ def _bind_namespace(
         backend.close()
 
 
+def _uninjected_note(root: str) -> str:
+    """등록한 뱅크가 이 저장소 세션 프롬프트에 안 들어가면 그 사실. 들어가거나 판정 불능이면 빈 문자열.
+
+    connect 는 backend 도달성만 보고 성공을 찍는다. 그런데 뱅크를 실제로 프롬프트에 넣는 것은
+    이 저장소의 memory-activate 배선이라, 배선 없는 저장소에 연결하면 등록은 되고 자동 회수는
+    영영 0인 상태가 조용히 선다 (26-08-07 실측). 등록한 그 자리에서 말해야 다음 명령을 안다."""
+    try:
+        from ..doctor.memory import bank_uninjected_note
+
+        return bank_uninjected_note(root)
+    except Exception:
+        return ""  # 진단 실패가 연결을 실패로 만들지는 않는다
+
+
+def _connected_report(root: str, engine: str, project_id: str, config_path: str) -> None:
+    """연결 성공의 사람 표면 — 등록됐다는 사실과 그게 세션 프롬프트에 들어가는지를 같은 화면에 놓는다."""
+    ui.ok(f"connected: engine={engine} project_id={project_id} → {config_path} (커밋해서 팀과 공유)")
+    if uninjected := _uninjected_note(root):
+        ui.warn(uninjected)
+        ui.step("asgard init --force 로 이 저장소에 메모리 배선을 깔면 프롬프트에 들어가요 (뱅크 설정은 그대로 남아요)")
+    ui.step("팀원 1회 등록: claude mcp add --scope user asgard-memory -- asgard memory mcp")
+
+
 def run_connect(
     endpoint: str,
     project_id: str | None,
@@ -171,11 +194,11 @@ def run_connect(
                     "project_uid": project_uid,
                     "binding_id": binding_id,
                     "config_path": p,
+                    "auto_recall": not _uninjected_note(root),
                 }
             )
             return 0
-        ui.ok(f"connected: engine={selected_engine} project_id={pid} → {p} (커밋해서 팀과 공유)")
-        ui.step("팀원 1회 등록: claude mcp add --scope user asgard-memory -- asgard memory mcp")
+        _connected_report(root, selected_engine, pid, p)
         return 0
 
     return _guard(_do)

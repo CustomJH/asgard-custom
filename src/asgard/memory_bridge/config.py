@@ -193,72 +193,115 @@ def project_memory_section(project: dict) -> dict | None:
     return None
 
 
+# 한 디렉터리에 선언이 아예 없다는 판정. None(꺼짐·깨짐)과 갈라야 하는 이유는 다음 걸음이
+# 다르기 때문이다 — 꺼짐은 답이고 부재는 아직 답이 아니다.
+_NO_DECLARATION = object()
+
+
+def _config_at(directory: str, *, strict: bool):
+    """디렉터리 하나의 프로젝트 메모리 설정. 선언 없으면 `_NO_DECLARATION`, 꺼짐·깨짐이면 None."""
+    from ..settings import PROJECT_FILE, load_project
+
+    asg = os.path.join(directory, ".asgard")
+    project_file = os.path.join(asg, PROJECT_FILE)
+    legacy_file = os.path.join(asg, CONFIG_NAME)
+    if not os.path.isfile(project_file) and not os.path.isfile(legacy_file):
+        return _NO_DECLARATION
+    try:
+        # 설정 파일은 strict 여부와 무관하게 직접 읽는다. `load_project` 는 못 읽은 파일을 빈
+        # 뷰로 돌려주므로(레거시 폴백), 그것만 보면 "깨졌다"와 "안 적었다"가 같아진다. 탐색이
+        # 위로 계속 가게 된 뒤로 그 구분이 안전 판정이 됐다 — 쉼표 하나 때문에 부모나 짝
+        # 저장소의 뱅크를 대신 읽으면 안 된다.
+        if os.path.isfile(project_file):
+            with open(project_file, encoding="utf-8") as source:
+                raw = json.load(source)
+            if not isinstance(raw, dict):
+                raise ValueError("project settings must be a JSON object")
+            if project_memory_section(raw) is None:
+                return _NO_DECLARATION
+            if project_memory_disabled(project_memory_section(raw)):
+                return None
+        elif os.path.isfile(legacy_file):
+            with open(legacy_file, encoding="utf-8") as source:
+                raw = json.load(source)
+            if not isinstance(raw, dict):
+                raise ValueError("legacy project-memory settings must be a JSON object")
+        mem = project_memory_section(load_project(directory))
+        if mem is None:
+            return _NO_DECLARATION
+        if project_memory_disabled(mem):
+            return None
+        # 신원(uid·binding)은 사이드카가 정본 — 설정 파일 잔존 값(구 스키마)이 있으면 그 값 우선.
+        sidecar = read_binding_sidecar(directory)
+        mem = dict(mem)
+        for key in ("project_uid", "binding_id"):
+            if not str(mem.get(key) or "").strip() and sidecar.get(key):
+                mem[key] = sidecar[key]
+        settings = parse_settings(mem)
+        normalized = dict(mem)
+        normalized.update(
+            {
+                "engine": settings.engine,
+                "project_id": settings.project_id,
+                "endpoint": settings.endpoint,
+                "timeout": settings.timeout,
+                "options": dict(settings.options),
+                "project_uid": settings.project_uid,
+                "binding_id": settings.binding_id,
+                # 기존 정책/manifest 코드가 쓰는 호환 alias. backend에는 canonical key가 전달된다.
+                "bank": settings.project_id,
+                "server": settings.endpoint,
+            }
+        )
+        return directory, normalized
+    except Exception as exc:
+        if strict:
+            raise ProjectMemoryConfigError(f"malformed project-memory configuration at {asg}") from exc
+        # 깨진 설정에서 위로 더 걸어가면 오타 하나가 남의 뱅크를 읽는 길이 된다 — 여기서 멈춘다.
+        return None
+
+
+def _declared_work_roots(root: str) -> list[str]:
+    """이 프로젝트가 `paths.additional_roots` 로 연 저장소들의 절대 경로."""
+    from ..settings import declared_roots
+
+    return declared_roots(root)
+
+
 def find_config(start: str | None = None, *, strict: bool = False) -> tuple[str, dict] | None:
-    """프로젝트 메모리 섹션(project_memory — engine·project_id)을 위로 걸어가며 탐색한다.
+    """프로젝트 메모리 설정을 찾는다 — 위로 걸어가고, 없으면 선언된 작업 뿌리를 본다.
 
     구 server·bank 설정은 Hindsight로 정규화한다. 반환 dict에는 전환 기간 동안 기존 호출부를
     위한 server·bank alias도 제공하지만, 저장 정본은 engine·endpoint·project_id다.
-    깨진 JSON·필수 키 누락은 없음과 동일 (fail-safe — 툴 미노출이 오동작보다 낫다)."""
-    from ..settings import PROJECT_FILE
+    깨진 JSON·필수 키 누락은 없음과 동일 (fail-safe — 툴 미노출이 오동작보다 낫다).
 
+    탐색이 두 축인 이유는 26-08-11 실측한 형상이다. `.asgard` 는 있는데 `project_memory` 가
+    아직 빈 시드(`_comment`·`_example` 뿐)인 저장소에서 옛 코드는 그 자리에서 멈췄다 —
+    모노레포 하위 폴더가 부모의 연결을 못 봤고, 짝 저장소는 애초에 위쪽에 없었다. 그래서
+    ① 선언이 **없는** 자리는 답이 아니라고 보고 계속 올라가고, ② 그래도 못 찾으면 이 프로젝트가
+    `asgard root add` 로 연 저장소들을 본다. 두 축 다 반환하는 뿌리는 설정이 실제로 사는
+    디렉터리다 — 소유권 검증(project_uid·binding_id)과 Git 정본 record 가 거기 있어야
+    신뢰 게이트가 그대로 선다.
+
+    꺼짐(`enabled: false`)은 부재와 다르다. 그것은 "여기서는 쓰지 않는다"는 답이므로 위로도
+    옆으로도 더 안 간다."""
     d = os.path.realpath(start or os.getcwd())
+    nearest_project = ""
     while True:
-        asg = os.path.join(d, ".asgard")
-        project_file = os.path.join(asg, PROJECT_FILE)
-        legacy_file = os.path.join(asg, CONFIG_NAME)
-        if os.path.isfile(project_file) or os.path.isfile(legacy_file):
-            try:
-                from ..settings import load_project
-
-                if strict and os.path.isfile(project_file):
-                    with open(project_file, encoding="utf-8") as source:
-                        raw = json.load(source)
-                    if not isinstance(raw, dict):
-                        raise ValueError("project settings must be a JSON object")
-                    if project_memory_section(raw) is None:
-                        return None
-                    if project_memory_disabled(project_memory_section(raw)):
-                        return None
-                elif strict and os.path.isfile(legacy_file):
-                    with open(legacy_file, encoding="utf-8") as source:
-                        raw = json.load(source)
-                    if not isinstance(raw, dict):
-                        raise ValueError("legacy project-memory settings must be a JSON object")
-                project = load_project(d)
-                mem = project_memory_section(project)
-                if mem is None or project_memory_disabled(mem):
-                    return None
-                # 신원(uid·binding)은 사이드카가 정본 — 설정 파일 잔존 값(구 스키마)이 있으면 그 값 우선.
-                sidecar = read_binding_sidecar(d)
-                mem = dict(mem)
-                for key in ("project_uid", "binding_id"):
-                    if not str(mem.get(key) or "").strip() and sidecar.get(key):
-                        mem[key] = sidecar[key]
-                settings = parse_settings(mem)
-                normalized = dict(mem)
-                normalized.update(
-                    {
-                        "engine": settings.engine,
-                        "project_id": settings.project_id,
-                        "endpoint": settings.endpoint,
-                        "timeout": settings.timeout,
-                        "options": dict(settings.options),
-                        "project_uid": settings.project_uid,
-                        "binding_id": settings.binding_id,
-                        # 기존 정책/manifest 코드가 쓰는 호환 alias. backend에는 canonical key가 전달된다.
-                        "bank": settings.project_id,
-                        "server": settings.endpoint,
-                    }
-                )
-                return d, normalized
-            except Exception as exc:
-                if strict:
-                    raise ProjectMemoryConfigError(f"malformed project-memory configuration at {asg}") from exc
-            return None
+        outcome = _config_at(d, strict=strict)
+        if outcome is not _NO_DECLARATION:
+            return outcome  # type: ignore[return-value] — 센티넬을 걸러 낸 뒤라 tuple|None 뿐이다
+        if not nearest_project and os.path.isdir(os.path.join(d, ".asgard")):
+            nearest_project = d
         parent = os.path.dirname(d)
         if parent == d:
-            return None
+            break
         d = parent
+    for target in _declared_work_roots(nearest_project) if nearest_project else []:
+        outcome = _config_at(target, strict=strict)
+        if outcome is not _NO_DECLARATION and outcome is not None:
+            return outcome  # type: ignore[return-value]
+    return None
 
 
 def write_config(

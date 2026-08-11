@@ -147,6 +147,97 @@ class TestIngestPreviewShowsWhatWasBlocked(SurfaceBase):
         self.assertTrue(payload["failed"][0]["findings"])
 
 
+class TestLocalLaneIngestWorksOffline(SurfaceBase):
+    """local 레인은 저장소 정본과 로컬 색인만 쓴다 — 백엔드가 없어도 들어가고 회수돼야 한다.
+
+    26-08-11 실측: 명령 입구가 레인을 보기 전에 연결부터 물어서, 오프라인으로 쓰라고 만든
+    길이 오프라인에서 막혔다 (`project memory is not connected`)."""
+
+    def write(self, name: str, body: str) -> str:
+        path = os.path.join(self.root, name)
+        with open(path, "w", encoding="utf-8") as sink:
+            sink.write(body)
+        return path
+
+    def test_unconnected_project_still_takes_a_local_document(self):
+        from asgard.commands.memory import run_project_ingest
+        from asgard.memory_context import project_document_note
+
+        self.assertIsNone(mb.find_config(self.root))  # 연결 없음이 이 시험의 전제다
+        self.write("runbook.md", "# 배포 런북\n\n" + "배포 절차는 빌드·검사·배포 세 단계다. " * 8)
+        text = self.screen(lambda: run_project_ingest(["runbook.md"], lane="local", yes=True))
+
+        self.assertEqual(self.rc, 0)
+        self.assertIn("저장소 정본", text)
+        canonical = os.path.join(self.root, ".asgard", "memory", "documents")
+        self.assertTrue(os.listdir(canonical))
+        # 넣은 것이 실제로 주입까지 가는지 — 파일이 생긴 것만으로는 레인이 산 것이 아니다.
+        self.assertIn("배포 절차", project_document_note("배포 절차", start=self.root))
+
+    def test_graph_lane_still_names_the_missing_connection(self):
+        """연결이 필요한 레인은 그대로 막되, 오프라인으로 넣는 길을 같이 말한다."""
+        from asgard.commands.memory import run_project_ingest
+
+        self.write("runbook.md", "# 배포 런북\n\n" + "배포 절차는 빌드·검사·배포 세 단계다. " * 8)
+        text = self.screen(lambda: run_project_ingest(["runbook.md"], lane="graph", yes=True))
+
+        self.assertNotEqual(self.rc, 0)
+        self.assertIn("not connected", text)
+        self.assertIn("--lane local", text)
+
+
+class TestProjectMemoryWorksWithoutMcp(SurfaceBase):
+    """MCP 서버는 사용자가 열어야 열린다 — 조회와 적재가 그쪽에만 있으면 닫힌 세션은 2차를 통째로 못 쓴다.
+
+    두 표면은 같은 게이트를 지나야 한다. 다르면 "MCP 로는 되는데 CLI 로는 안 되는" 상태가
+    생기고, 그건 사용자가 아니라 배선이 답을 바꾼 것이다."""
+
+    def test_both_doors_exist_for_reading_and_writing(self):
+        from asgard.commands.memory import run_project_recall, run_project_retain
+        from asgard.memory_bridge import _TOOLS
+
+        mcp = {tool["name"] for tool in _TOOLS}
+        self.assertIn("memory_recall", mcp)
+        self.assertIn("memory_retain", mcp)
+        self.assertTrue(callable(run_project_recall))
+        self.assertTrue(callable(run_project_retain))
+
+    def test_unconnected_project_names_the_command_that_connects(self):
+        from asgard.commands.memory import run_project_recall
+
+        self.assertIsNone(mb.find_config(self.root))
+        text = self.screen(lambda: run_project_recall("무엇이 있나"))
+        self.assertNotEqual(self.rc, 0)
+        self.assertIn("asgard memory connect", text)
+
+    def test_a_record_the_gate_refuses_is_named_not_silently_dropped(self):
+        from asgard.commands.memory import run_project_retain
+
+        mb.write_config(self.root, "http://127.0.0.1:9/api", "surface-proj", project_uid="uid-a", binding_id="bind-a")
+        found = mb.find_config(self.root)
+        assert found is not None
+        target = mb.backend_target(found[1])
+        path = mb._trust_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as sink:
+            json.dump(
+                {target["fingerprint"]: {k: target[k] for k in ("engine", "project_id", "project_uid", "binding_id")}},
+                sink,
+            )
+        text = self.screen(
+            lambda: run_project_retain(
+                "짧다",  # 20자 미만 — 자립 기준 미달
+                record_id="decision.short",
+                kind="decision",
+                title="짧은 본문",
+                source="tests",
+                source_revision="rev-1",
+            )
+        )
+        self.assertNotEqual(self.rc, 0)
+        self.assertIn("등록 기준 위반", text)
+
+
 class TestAutosaveTellsTheThreeStatesApart(SurfaceBase):
     """리포의 요청과 이 기계의 승인은 다른 것이다 — 한 칸에 뭉치면 미승인이 off로 보인다."""
 

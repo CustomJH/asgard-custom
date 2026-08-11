@@ -218,7 +218,9 @@ class ProjectMemoryBackend(Protocol):
 
     def readiness(self) -> BackendReadiness: ...
 
-    def recall(self, query: str, max_results: int = 8) -> list[ProjectMemoryHit]: ...
+    def recall(
+        self, query: str, max_results: int = 8, *, tags: Sequence[str] | None = None
+    ) -> list[ProjectMemoryHit]: ...
 
     def retain(self, records: Sequence[ProjectMemoryRecord]) -> BackendWriteResult: ...
 
@@ -372,21 +374,28 @@ class HindsightBackend:
             return BackendReadiness("unavailable", self.engine, self.project_id, type(exc).__name__)
         return BackendReadiness("ready", self.engine, self.project_id)
 
-    def recall(self, query: str, max_results: int = 8) -> list[ProjectMemoryHit]:
+    def recall(self, query: str, max_results: int = 8, *, tags: Sequence[str] | None = None) -> list[ProjectMemoryHit]:
         # Hindsight ranks extracted facts, but Asgard's project-memory trust gate
         # intentionally accepts only the exact Git-canonical document text. Ask
         # for each fact's source chunk and return that verbatim while preserving
         # the ranked fact's ownership/provenance metadata.
-        output = self._post(
-            "/memories/recall",
-            {
-                "query": query,
-                "types": ["world", "experience"],
-                "budget": "mid",
-                "max_tokens": 2048,
-                "include": {"entities": None, "chunks": {"max_tokens": 4096}},
-            },
-        )
+        #
+        # types 는 world·experience 로 둔다. Hindsight 의 observation 은 여러 fact 를 합친
+        # 신념 계층이라 정본과 바이트가 안 맞고, 게이트가 요구하는 대조를 통과할 수 없다
+        # (실측 26-08-11: observation 만 부르면 14.1초에 통과 0건).
+        payload: dict[str, object] = {
+            "query": query,
+            "types": ["world", "experience"],
+            "budget": "mid",
+            "max_tokens": 2048,
+            "include": {"entities": None, "chunks": {"max_tokens": 4096}},
+        }
+        if tags:
+            # all_strict = 전부 만족 + 태그 없는 항목 제외. 서버가 리랭킹 전에 후보를 줄이므로
+            # 지연이 뱅크 크기가 아니라 이 태그가 고르는 부분집합 크기를 따라간다.
+            payload["tags"] = list(tags)
+            payload["tags_match"] = "all_strict"
+        output = self._post("/memories/recall", payload)
         rows = output.get("results")
         results = rows if isinstance(rows, list) else []
         raw_chunks = output.get("chunks")
@@ -419,6 +428,15 @@ class HindsightBackend:
             if len(hits) >= limit:
                 break
         return hits
+
+    def set_document_tags(self, document_id: str, tags: Sequence[str]) -> bool:
+        """이미 적재된 문서의 태그만 바꾼다 — 본문은 안 건드리므로 재추출이 없다.
+
+        태그 스키마가 늘어났을 때(예: `confidence:`) 뱅크 전체를 다시 적재하지 않기 위한 길이다.
+        전체 retain 은 항목마다 서버 LLM 추출을 다시 돌리지만 이쪽은 메타데이터 갱신 한 번이다."""
+        path = f"/documents/{urllib.parse.quote(document_id, safe='')}"
+        output = self._request("PATCH", path, {"tags": list(tags)})
+        return output.get("success") is not False
 
     def retain(self, records: Sequence[ProjectMemoryRecord]) -> BackendWriteResult:
         allowed = self.retain_fields()

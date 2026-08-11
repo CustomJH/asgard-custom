@@ -232,7 +232,14 @@ def _call_tool(name: str, args: dict, root: str, cfg: dict) -> tuple[str, bool]:
     """툴 실행 — 반환 = (텍스트, is_error). 서버 오류는 텍스트로 (세션 불사)."""
     try:
         if name == "memory_recall":
-            hits = server_recall(cfg, str(args.get("query", "")), int(args.get("max_results") or 8))
+            from ..memory_context import INJECTABLE_TAGS
+
+            hits = server_recall(
+                cfg,
+                str(args.get("query", "")),
+                int(args.get("max_results") or 8),
+                tags=INJECTABLE_TAGS,
+            )
             from ..memory_context import filter_project_hits
 
             filtered, dropped = filter_project_hits(

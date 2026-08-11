@@ -10,15 +10,19 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import inspect
 import json
+import os
 import re
 import secrets
 import threading
 import time
+from collections.abc import Sequence
 
 from ..project_memory_backends import (
     BINDING_DOCUMENT_ID,
     BackendWriteResult,
+    ProjectMemoryBackend,
     ProjectMemoryHit,
     ProjectMemoryRecord,
     get_backend,
@@ -54,9 +58,15 @@ PROTOCOL_VERSION = "2025-03-26"
 #      기다려도 줄 것이 없으므로 이쪽은 방어를 하나도 안 깎는다. 세는 것은 **접속 실패**
 #      (OSError — urllib·소켓 계열)뿐이다: 드리프트(PermissionError)나 규약 위반은 판정이지
 #      장애가 아니고, 판정을 기억해 두면 사람이 고친 뒤에도 그 시간만큼 벌을 받는다.
+#      차단기는 **프로세스를 넘어야** 뜻이 있다. 이 레인을 매 턴 부르는 것은 훅이고, 훅은
+#      턴마다 새 프로세스라 프로세스 안 dict 로만 세면 계수는 언제나 0에서 시작한다 —
+#      죽었거나 느린 backend 를 상대로 매 턴 상한만큼 꼬박 기다리게 된다 (26-08-11 실측:
+#      상한 5초 × 매 턴). 그래서 계수를 기계 단위 파일에 적는다. 저장소가 아니라 홈인 이유는
+#      두 가지다: backend 가 느린 것은 이 기계의 사정이고, `.asgard/` 는 팀이 공유한다.
 RECALL_BINDING_TTL = 60.0
 RECALL_BREAKER_FAILURES = 2
 RECALL_BREAKER_COOLDOWN = 60.0
+RECALL_HEALTH_NAME = "recall-health.json"
 
 _RECALL_HEALTH: dict[str, dict[str, float]] = {}
 _RECALL_HEALTH_GUARD = threading.Lock()
@@ -82,11 +92,40 @@ def _binding_fresh(key: str, now: float) -> bool:
         return now - _RECALL_HEALTH.get(key, {}).get("verified_at", 0.0) < RECALL_BINDING_TTL
 
 
+def _health_path() -> str:
+    """차단기 계수가 사는 기계 단위 파일 — 훅이 턴마다 새 프로세스라 여기 적어야 이어진다."""
+    return os.path.join(os.path.expanduser("~"), ".asgard", RECALL_HEALTH_NAME)
+
+
+def _load_health() -> dict:
+    try:
+        with open(_health_path(), encoding="utf-8") as source:
+            value = json.load(source)
+        return value if isinstance(value, dict) else {}
+    except Exception:
+        return {}  # 못 읽으면 차단기가 없는 것과 같다 — 회수를 막지 않는다 (fail-open)
+
+
+def _save_health(state: dict) -> None:
+    path = _health_path()
+    try:
+        os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+        tmp = f"{path}.{os.getpid()}.tmp"
+        with open(tmp, "w", encoding="utf-8") as sink:
+            json.dump(state, sink)
+        os.replace(tmp, path)
+    except Exception:
+        pass  # 계수를 못 적는 것이 회수를 막을 이유는 아니다 (fail-open)
+
+
 def _breaker_open(key: str, now: float) -> bool:
     if not key:
         return False
     with _RECALL_HEALTH_GUARD:
-        return now < _RECALL_HEALTH.get(key, {}).get("open_until", 0.0)
+        if now < _RECALL_HEALTH.get(key, {}).get("open_until", 0.0):
+            return True
+    # 파일에 적힌 시각은 벽시계다 — monotonic 은 프로세스마다 원점이 달라 넘길 수 없다.
+    return time.time() < float(_load_health().get(key, {}).get("open_until") or 0.0)
 
 
 def _recall_succeeded(key: str, now: float) -> None:
@@ -94,6 +133,8 @@ def _recall_succeeded(key: str, now: float) -> None:
         return
     with _RECALL_HEALTH_GUARD:
         _RECALL_HEALTH[key] = {"verified_at": now, "failures": 0.0, "open_until": 0.0}
+    if key in (state := _load_health()):
+        _save_health({name: row for name, row in state.items() if name != key})
 
 
 def _recall_failed(key: str, error: BaseException, now: float) -> None:
@@ -110,6 +151,15 @@ def _recall_failed(key: str, error: BaseException, now: float) -> None:
         entry["failures"] += 1
         if entry["failures"] >= RECALL_BREAKER_FAILURES:
             entry["open_until"] = now + RECALL_BREAKER_COOLDOWN
+    state = _load_health()
+    stored = state.get(key)
+    row: dict = stored if isinstance(stored, dict) else {}
+    failures = float(row.get("failures") or 0.0) + 1
+    state[key] = {
+        "failures": failures,
+        "open_until": (time.time() + RECALL_BREAKER_COOLDOWN) if failures >= RECALL_BREAKER_FAILURES else 0.0,
+    }
+    _save_health(state)
 
 
 def reset_recall_health(cfg: dict | None = None) -> None:
@@ -120,6 +170,11 @@ def reset_recall_health(cfg: dict | None = None) -> None:
             _RECALL_HEALTH.pop(key, None)
         elif cfg is None:
             _RECALL_HEALTH.clear()
+    state = _load_health()
+    if key and key in state:
+        _save_health({name: row for name, row in state.items() if name != key})
+    elif cfg is None and state:
+        _save_health({})
 
 
 def _neutralize(s: str) -> str:
@@ -130,7 +185,30 @@ def _neutralize(s: str) -> str:
 # ── backend-neutral 소비 표면 — recall·retain 둘뿐 ───────────────────────────────
 
 
-def server_recall(cfg: dict, query: str, max_results: int = 8, *, operation_timeout: int | None = None) -> list[dict]:
+def _tag_prefilter(backend: ProjectMemoryBackend, tags: Sequence[str] | None) -> dict:
+    """recall 에 넘길 태그 인자 — 그 인자를 안 받는 backend 면 빈 dict.
+
+    태그 사전 필터는 **최적화이지 경계가 아니다**. 판정은 그대로 `filter_project_hits` 가
+    하고, 이건 어차피 떨어질 후보를 리랭커에 안 보내는 것뿐이다. 그래서 이 인자를 모르는
+    backend 를 만나면 인자를 빼고 부른다 — 여기서 TypeError 를 내면 회로차단기가 그것을
+    연속 실패로 세어 회수 레인 전체를 60초 동안 건너뛴다. 느려지는 것과 꺼지는 것은 다르다."""
+    if not tags:
+        return {}
+    try:
+        accepted = inspect.signature(backend.recall).parameters
+    except TypeError, ValueError:
+        return {"tags": list(tags)}  # 시그니처를 못 읽으면 계약대로 부른다
+    return {"tags": list(tags)} if "tags" in accepted else {}
+
+
+def server_recall(
+    cfg: dict,
+    query: str,
+    max_results: int = 8,
+    *,
+    operation_timeout: int | None = None,
+    tags: Sequence[str] | None = None,
+) -> list[dict]:
     """Exact binding을 확인한 뒤 backend-neutral hit을 반환한다.
 
     턴마다 도는 유일한 원격 읽기라 왕복 수와 장애 시 지연을 여기서 재단한다 — 손잡이 둘의
@@ -153,7 +231,7 @@ def server_recall(cfg: dict, query: str, max_results: int = 8, *, operation_time
     try:
         if not _binding_fresh(key, now):
             verify_backend_binding(cfg, backend=backend)
-        hits = backend.recall(query, max_results=max_results)
+        hits = backend.recall(query, max_results=max_results, **_tag_prefilter(backend, tags))
         # Hindsight에는 compare-and-recall transaction/CAS가 없다. 반환 직전 재검증으로
         # 요청 사이 binding drift가 발생한 결과가 모델 경계로 나가는 것은 막는다.
         # 이 한 번은 캐시가 아무리 신선해도 건너뛰지 않는다.

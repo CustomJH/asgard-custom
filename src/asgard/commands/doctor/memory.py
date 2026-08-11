@@ -34,7 +34,15 @@ def _shared_memory_check(root: str) -> dict | None:
                     }
             except Exception:
                 pass
-            return None
+            # 미연결도 한 줄을 낸다. 행 자체를 빼면 doctor 화면에 개인 메모리 다섯 줄만 남고
+            # 2차 메모리는 이름조차 안 나온다 — 26-08-11 에 "2차 메모리가 왜 회수되지 않느냐"는
+            # 물음이 여기서 답을 못 얻었다. 갓 init 한 저장소의 정상 상태이므로 ok 는 뒤집지 않는다.
+            return {
+                "name": "shared memory backend",
+                "ok": True,
+                "detail": "미연결 — 이 저장소도, 위쪽 폴더도, 선언된 작업 뿌리도 project_memory 를 안 적었어요",
+                "fix": "asgard memory connect <endpoint> (짝 저장소의 뱅크를 쓰려면 `asgard root add <dir> --yes`)",
+            }
         mroot, mcfg = found
         try:
             if not is_backend_trusted(mcfg):
@@ -129,6 +137,111 @@ def _shared_memory_check(root: str) -> dict | None:
             "fix": "프로젝트 memory 설정을 점검하고 asgard memory connect 재실행",
             "security": True,
         }
+
+
+def bank_uninjected_note(root: str) -> str:
+    """뱅크는 연결됐는데 이 저장소의 세션에 자동 주입이 안 붙을 때의 한 줄. 붙으면 빈 문자열.
+
+    26-08-07 실측한 형상: 뱅크(vn_onm_yun)는 한 저장소에 등록돼 있고 회수 배선은 **다른**
+    저장소에 있었다. 두 사실이 각각 자기 행으로만 보고돼서, 어느 행도 틀리지 않은 채로
+    "등록된 뱅크가 어떤 프롬프트에도 안 들어간다"는 결론만 아무도 말하지 않았다.
+
+    판정 대상은 주입 경로 하나다. MCP 브릿지(`memory_recall`)는 사용자 범위 등록이라 배선과
+    무관하게 도므로, 여기서 "못 읽는다"고 말하면 그것대로 거짓이 된다 — 안 붙는 것은 자동
+    회수다. 설정 파일과 파일 존재만 읽는다 (backend 접속 없음) — 그래서 connect 도 같이 쓴다."""
+    from ...memory_bridge import find_config
+    from .wiring import memory_wiring_gaps
+
+    found = find_config(root, strict=True)
+    if not found:
+        return ""
+    _, cfg = found
+    gaps = memory_wiring_gaps(root)
+    if any(not missing for _, missing in gaps):
+        return ""
+    bank = str(cfg.get("project_id") or cfg.get("bank") or "?")
+    where = (
+        "이 저장소엔 클라이언트 배선이 하나도 없어요"
+        if not gaps
+        else " · ".join(f"{name} 빠짐: {', '.join(missing)}" for name, missing in gaps)
+    )
+    return f"뱅크 {bank} 는 연결됐는데 이 저장소의 세션엔 자동 회수가 안 붙어요 — {where}"
+
+
+def _bank_reachability_check(root: str) -> dict | None:
+    """연결된 뱅크에 주입 경로가 없을 때만 한 줄. 정상이면 행 자체가 없다 (조용한 통과).
+
+    배선 행이 이미 ⚠ 인 경우에도 이 행을 함께 낸다 — 빠진 항목의 목록과 "그래서 뱅크가
+    프롬프트에 안 들어간다"는 결론은 다른 문장이고, 사람이 필요한 것은 뒤쪽이다."""
+    try:
+        note = bank_uninjected_note(root)
+    except Exception:
+        return None  # 진단 실패는 doctor를 막지 않는다 (fail-open)
+    if not note:
+        return None
+    return {
+        "name": "project memory reachability",
+        "ok": False,
+        "detail": note,
+        "fix": "asgard init --force 로 메모리 배선을 깔아요 (뱅크 설정은 병합돼 남고, MCP 명시 조회는 배선과 무관해요)",
+    }
+
+
+def _injection_budget_check(root: str) -> dict | None:
+    """자동 주입이 제 시간 안에 실제로 붙는지 — 회수를 한 번 돌려 벽시계로 잰다.
+
+    설정·연결·배선이 다 초록인데도 프롬프트에 아무것도 안 들어가는 상태가 있다. 회수가
+    `project_memory.inject_timeout` 보다 느리면 주입 경로는 예외를 삼키고 빈 문자열을 내므로,
+    죽은 backend 와 느린 backend 가 화면에서 똑같아 보인다 (26-08-11: 회수 8.1초 대 상한 5초).
+    그 둘을 가르는 유일한 방법이 여기서 한 번 재 보는 것이다."""
+    try:
+        import time
+
+        from ...memory_bridge import find_config, server_recall
+        from ...memory_context import INJECTABLE_TAGS, filter_project_hits, inject_timeout
+
+        found = find_config(root, strict=True)
+        if not found:
+            return None
+        mroot, cfg = found
+        budget = inject_timeout(cfg)
+        probe = "project decision policy incident 결정 정책 사건"
+        started = time.perf_counter()
+        try:
+            candidates = server_recall(cfg, probe, max_results=8, operation_timeout=budget, tags=INJECTABLE_TAGS)
+            rows, _ = filter_project_hits(mroot, cfg, candidates, max_results=5, query=probe)
+        except Exception as exc:
+            elapsed = time.perf_counter() - started
+            return {
+                "name": "project memory injection",
+                "ok": False,
+                "detail": f"{type(exc).__name__} after {elapsed:.1f}s · inject_timeout={budget}s — 턴마다 조용히 버려져요",
+                "fix": (
+                    "리랭커 후보를 줄이거나(docker/asgard-project-memory 의 "
+                    "HINDSIGHT_RERANKER_MAX_CANDIDATES) project_memory.inject_timeout 을 올려요"
+                ),
+            }
+        elapsed = time.perf_counter() - started
+        if not candidates:
+            # 후보 0건은 "이 질의에 답이 없다"가 아니다 — 태그 사전 필터가 아무것도 못 고른
+            # 것이고, 뱅크가 confidence 태그보다 먼저 적재됐을 때의 모습이 정확히 이것이다.
+            return {
+                "name": "project memory injection",
+                "ok": False,
+                "detail": f"{elapsed:.1f}s · inject_timeout={budget}s · 태그 사전 필터에 걸린 후보 0건",
+                "fix": (
+                    "자동 주입은 status:active·confidence:verified 태그로 후보를 좁혀요 — 뱅크가 그 태그보다 "
+                    "먼저 적재됐다면 `asgard memory project-rehydrate --tags-only` 로 태그만 맞춰요"
+                ),
+            }
+        return {
+            "name": "project memory injection",
+            "ok": True,
+            "detail": f"{elapsed:.1f}s · inject_timeout={budget}s · 후보 {len(candidates)}건 → 주입 {len(rows)}건",
+            "fix": "",
+        }
+    except Exception:
+        return None  # 진단 실패는 doctor 를 막지 않는다 (fail-open)
 
 
 def _personal_memory_check(root: str) -> dict | None:
