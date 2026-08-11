@@ -19,7 +19,7 @@ from .paths import fsync_dir, is_testfile, mtime
 from .policy import full_verify_required, sensitive_path, verify_strength
 from .runners import gate_first_checks_available, rejected_checks
 from .session import pointer_qid
-from .tree import current_tree_ref, deleted_tests, diff_state, signature_risk, stale_pass_scope
+from .tree import current_tree_ref, deleted_tests, diff_state, peer_base_of, signature_risk, stale_pass_scope
 
 
 def load_priors(root: str) -> dict:
@@ -143,7 +143,12 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
     # 트리를 근거로 쓴다. 여기서 한 번 지어 나눠 주면 그 창이 닫힌다.
     current_ref = current_tree_ref(root) if base_ref and base_ref != "NONE" else None
     cur, changed, lines, nt_lines = diff_state(
-        root, base_ref, ignored_base, quest_events_scope(events), current_ref=current_ref
+        root,
+        base_ref,
+        ignored_base,
+        quest_events_scope(events),
+        current_ref=current_ref,
+        peer_base=peer_base_of(events),
     )
     verifies = [e for e in events if e.get("event") == "verify"]
     passes = [e for e in verifies if e.get("verdict") == "PASS"]

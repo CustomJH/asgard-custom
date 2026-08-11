@@ -35,6 +35,21 @@ def host_session_id() -> str:
     return "-"
 
 
+UNATTENDED_MODES = {"bypassPermissions", "dontAsk"}
+
+
+def unattended(data: dict | None = None) -> bool:
+    """사람이 승인 루프에 있는가 — 없으면 참.
+
+    모델은 headless 여부를 스스로 알 수 없다. 아는 것은 훅뿐이다: `permission_mode` 가 모든 훅
+    stdin 에 공통으로 오고, 네이티브 headless 진입은 `ASGARD_UNATTENDED` 를 세운다. 판정이
+    갈리면 한쪽은 물어도 되는 줄 알고 멈추고 다른 쪽은 진행하므로 정의를 여기 하나만 둔다
+    (종전에는 `unattended_context.py` 와 `verifier_gate.py` 가 각자 적고 주석으로 맞췄다)."""
+    if os.environ.get("ASGARD_UNATTENDED") == "1":
+        return True
+    return str((data or {}).get("permission_mode") or "") in UNATTENDED_MODES
+
+
 def _session_key(session: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]", "_", str(session or "default"))[:64] or "default"
 

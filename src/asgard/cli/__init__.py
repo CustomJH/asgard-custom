@@ -14,6 +14,7 @@ from ._app import _agent, _main, _version, app, main
 # 등록 차례 = `asgard --help` 차례.
 _GROUPS = (
     "root",
+    "roots",
     "review",
     "agent",
     "map",

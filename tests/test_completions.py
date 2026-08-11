@@ -288,7 +288,15 @@ class TestBashFunctional(unittest.TestCase):
                 self.assertTrue(set(subs) <= out, f"'{name}' missing {sorted(set(subs) - out)}")
 
     def test_top_level_prefix(self):
-        self.assertEqual(set(self._complete("asgard ro", 1)), {"role"})
+        """접두사가 실제로 거르는가.
+
+        기대값은 앱에서 뽑는다 — 이름을 박아 두면 `ro` 로 시작하는 명령이 하나 늘 때마다 이
+        시험이 자동완성 결함처럼 빨개진다 (26-08-07: `root` 가 늘면서 `{"role"}` 이 깨졌다)."""
+        commands = set(_visible_commands())
+        expected = {name for name in commands if name.startswith("ro")}
+        self.assertTrue(expected)
+        self.assertLess(expected, commands)  # 거르기가 실제로 줄였는지 — 전량 통과를 막는다
+        self.assertEqual(set(self._complete("asgard ro", 1)), expected)
 
     def test_subcommand_flags(self):
         out = self._complete('asgard init ""', 2)

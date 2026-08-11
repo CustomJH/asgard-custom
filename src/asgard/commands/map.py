@@ -70,6 +70,16 @@ def _atomic_root_write(path: Path, content: str) -> None:
             pass
 
 
+def _drift_steps(result) -> None:
+    """무엇이 어긋났는지 한 줄씩. 두 검사 명령이 같은 목록을 내야 처방도 같아진다."""
+    for path in result.added:
+        ui.step(f"added   {path}")
+    for path in result.removed:
+        ui.step(f"removed {path}")
+    for name in result.peer_drift:
+        ui.step(f"peer map {name} is out of date with its declared work root")
+
+
 def run_setup_map(*, check: bool = False, dry_run: bool = False, json_out: bool = False, quiet: bool = False) -> int:
     root = _project_root(os.getcwd())
     ui.set_quiet(quiet or json_out)
@@ -97,10 +107,7 @@ def run_setup_map(*, check: bool = False, dry_run: bool = False, json_out: bool 
                 ui.done("project map is current")
             else:
                 ui.warn("project map drift detected")
-                for path in result.added:
-                    ui.step(f"added   {path}")
-                for path in result.removed:
-                    ui.step(f"removed {path}")
+                _drift_steps(result)
                 ui.step("run: asgard map update")
             return 0 if ok else 1
 
@@ -182,10 +189,7 @@ def run_map_check(*, json_out: bool = False, quiet: bool = False) -> int:
         ui.done("project map is current")
     else:
         ui.warn("project map drift or invalid area map detected")
-        for path in result.added:
-            ui.step(f"added   {path}")
-        for path in result.removed:
-            ui.step(f"removed {path}")
+        _drift_steps(result)
         for issue in issues:
             ui.step(f"{issue.source}: {issue.reason}")
         if not result.owned:

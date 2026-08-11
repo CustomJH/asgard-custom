@@ -16,6 +16,14 @@ import os
 import re
 import sys
 
+# 발화 계측은 훅과 함께 깔리는 공용 라이브러리가 쥔다 — 이 훅은 자기 이름만 넘긴다.
+_HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
+if _HOOK_DIR not in sys.path:
+    sys.path.append(_HOOK_DIR)
+
+from asgard_hooklib.firing import run  # noqa: E402
+from asgard_hooklib.workspace import work_roots  # noqa: E402
+
 # Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 넣지 못한다 — 인코딩 오류가
 # fail-open에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
 for _stream in (sys.stdout, sys.stderr):
@@ -70,15 +78,22 @@ def main() -> None:
                     writes = json.load(handle)
             except Exception:
                 writes = []
+        # 적는 경계는 **선언된 작업 뿌리**다 — 가드가 쓰기를 허용하는 바로 그 경계 (`work_roots`).
+        # 종전에는 세션 저장소 밖을 통째로 버렸는데, 그러면 `additional_roots` 로 정식 선언한 짝
+        # 저장소의 write 가 한 건도 안 남아 Canon 10 강제가 그 자리에서만 꺼졌다: 퀘스트를 안
+        # 열어도 `orphan-write` 가 안 걸리고, 판정 뒤 변조도 `stale-pass` 가 안 걸린다 (26-08-11
+        # 재현). 뿌리 밖은 여전히 안 적는다 — 세션 스크래치패드의 일회용 분석 스크립트가 코드처럼
+        # 심판받으면 그 판정이 서브에이전트의 보고를 밀어낸다 (26-08-05 실측: 감사 워커 2기가 자기
+        # 보고 대신 남이 쓴 스크래치 파일에 대한 반박을 반환했다).
+        roots = work_roots(proj)
+        home = os.path.realpath(proj)
         for item in paths:
-            rel = os.path.relpath(item, proj) if os.path.isabs(item) else item
-            # 저장소 밖은 안 적는다. 이 목록의 소비자 둘 다 저장소만 볼 수 있다 — verifier-gate 는
-            # `git diff` 로 dirty 를 재고, craft-gate 는 이 저장소의 코드 계약으로 판정한다.
-            # 적어 두면 세션 스크래치패드의 일회용 분석 스크립트가 코드처럼 심판받고, 그 판정이
-            # 서브에이전트의 보고를 밀어낸다 (26-08-05 실측: 감사 워커 2기가 자기 보고 대신
-            # 남이 쓴 스크래치 파일에 대한 반박을 반환했다).
-            if rel.replace("\\", "/").startswith("../") or os.path.isabs(rel):
+            absolute = os.path.realpath(item if os.path.isabs(item) else os.path.join(proj, item))
+            if not any(absolute == r or absolute.startswith(r + os.sep) for r in roots):
                 continue
+            # 표기는 세션 뿌리 기준 상대경로 하나로 통일한다 (`../peer/src/x.ts`). 판정 쪽의
+            # 귀속 집합·변경 목록이 같은 표기를 쓰므로, 갈리면 저널의 파일이 판정과 영영 안 만난다.
+            rel = os.path.relpath(absolute, home).replace("\\", "/")
             if rel not in writes and len(writes) < 500:  # cap — 상태 파일 폭주 방지
                 writes.append(rel)
         with open(f, "w", encoding="utf-8") as handle:
@@ -89,4 +104,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    run("write-sentinel", main)

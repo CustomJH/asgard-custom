@@ -53,6 +53,7 @@ from asgard_hooklib.contracts import (  # noqa: E402
     unmet_contracts,
 )
 from asgard_hooklib.evidence import evidence_breadth, pass_evidence  # noqa: E402
+from asgard_hooklib.firing import event, run  # noqa: E402
 from asgard_hooklib.integrity import EMPTY, ledger_integrity, verification_identity  # noqa: E402
 from asgard_hooklib.paths import git, is_testfile, read_text  # noqa: E402
 from asgard_hooklib.policy import (  # noqa: E402
@@ -68,23 +69,19 @@ from asgard_hooklib.scope import (  # noqa: E402
     unbound_artifacts,  # noqa: F401
     unsafe_map_links,
 )
-from asgard_hooklib.session import host_session_id  # noqa: E402
+from asgard_hooklib.session import UNATTENDED_MODES, host_session_id, unattended  # noqa: E402,F401
 from asgard_hooklib.transition import MIN_DEEP_EVIDENCE  # noqa: E402
 from asgard_hooklib.tree import (  # noqa: E402
     current_tree_ref,  # noqa: F401
     deleted_tests,
     diff_state,
+    dirty_in_roots,
+    peer_base_of,
     stale_pass_scope,
 )
 
 MAX_BLOCKS = 3  # Canon 9 정합 — 동일 세션 4번째 차단 대신 에스컬레이션
-UNATTENDED_MODES = {"bypassPermissions", "dontAsk"}  # unattended_context.py와 동일 유지
 _HOST_PROTOCOL = "claude"
-
-
-def unattended(data):
-    """무인 세션 신호 — 사람이 승인 루프에 없다. permission_mode는 모든 훅 stdin 공통 필드."""
-    return os.environ.get("ASGARD_UNATTENDED") == "1" or str(data.get("permission_mode")) in UNATTENDED_MODES
 
 
 def readonly(cmd, allow):
@@ -106,18 +103,10 @@ def gate_event(root, kind, code, subject=None):
     """게이트 운영 이벤트 영속 기록 — 차단 카운터 파일은 성공 통과 시 삭제되므로 운영 지표가
     안 남는다. doctor가 block/escalation 률을 집계할 수 있게 append-only로 남긴다. fail-open.
 
-    `subject`는 그 차단이 무엇을 두고 걸렸는지다(stale-pass 면 드리프트한 파일). 사유 코드만
-    남기면 어떤 사유가 몇 번인지는 세어도 무엇을 고칠지는 기록에서 알 수 없다."""
-    try:
-        path = os.path.join(root, ".asgard", "state", "gate-events.jsonl")
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        row = {"event": kind, "code": code}
-        if subject:
-            row["subject"] = list(subject)
-        with open(path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(row, ensure_ascii=False) + "\n")
-    except Exception:
-        pass
+    본문은 훅과 함께 깔리는 공용 라이브러리에 있다 — craft 게이트가 같은 파일에 자기 사본으로
+    쓰고 있었고, 두 벌이 갈라진 자리가 `gate` 필드였다 (이쪽만 안 적어서 차단 21건의 주인이
+    비어 있었다)."""
+    event(root, "verifier", kind, code, subject)
 
 
 # ── 차단 메시지 카탈로그 — 코드가 정본, 문장은 렌더링. 자기완결 배포 제약으로 asgard.failures
@@ -368,11 +357,7 @@ def orphan_writes(root, sid, candidates=None):
     writes = _session_writes(root, list(dict.fromkeys([sid, *(candidates or [])])))
     if writes is None:
         return  # 이 세션의 write 기록 없음 → 게이트 대상 아님
-    dirty = []
-    for rel in writes[:500]:
-        rc, out = git(root, "status", "--porcelain", "--", str(rel))
-        if rc == 0 and out.strip():
-            dirty.append(str(rel))
+    dirty = dirty_in_roots(root, writes[:500])
     if not dirty:
         return
     # LAST is published only for APPROVED close. The checks below also reject legacy
@@ -401,7 +386,9 @@ def orphan_writes(root, sid, candidates=None):
                 (event.get("ignored_snapshot") for event in events if isinstance(event.get("ignored_snapshot"), dict)),
                 None,
             )
-            current_hash, last_changed, _, _ = diff_state(root, base_ref, ignored_base, quest_events_scope(events))
+            current_hash, last_changed, _, _ = diff_state(
+                root, base_ref, ignored_base, quest_events_scope(events), peer_base=peer_base_of(events)
+            )
             # LAST 면제도 증거 요구 — 무증거 PASS + close 우회 구멍. 무변경은 관측이 곧 증거.
             evidence = pass_evidence(last, no_change=current_hash == EMPTY)
             fresh = last.get("diff_hash") == current_hash or not stale_pass_scope(root, last, events, last_changed)[0]
@@ -460,7 +447,9 @@ def main():
         ignored_base = next(
             (event.get("ignored_snapshot") for event in events if isinstance(event.get("ignored_snapshot"), dict)), None
         )
-        current, changed, lines, nt_lines = diff_state(root, base_ref, ignored_base, quest_events_scope(events))
+        current, changed, lines, nt_lines = diff_state(
+            root, base_ref, ignored_base, quest_events_scope(events), peer_base=peer_base_of(events)
+        )
         if "<snapshot-unavailable>" in changed:
             block(root, sid, "snapshot-fail")
         cmds = [c for e in events for c in (e.get("commands") or []) if isinstance(c, dict)]
@@ -561,4 +550,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    run("verifier-gate", main)

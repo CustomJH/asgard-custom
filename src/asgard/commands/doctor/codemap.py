@@ -15,17 +15,25 @@ def _map_drift_detail(managed) -> str:
 def _manual_area_issues(root: str, mdir: str) -> tuple[list[str], list[str], int, list[str]]:
     """수동 영역 파일의 (유령, 위험, 항목 수, 영역 목록).
 
-    관리 파일 3종은 수동 영역 문법의 대상이 아니다 — map_context.validate_area_maps와 같은 제외
+    관리 파일은 수동 영역 문법의 대상이 아니다 — map_context.validate_area_maps와 같은 제외
     목록을 써야 한다. GRAPH.md가 빠져 있어 그래프의 API 라우트 노드가 절대경로 파일 참조로
-    읽혔고, 생성 파일에 대해 영원히 지워지지 않는 unsafe가 떴다.
+    읽혔고, 생성 파일에 대해 영원히 지워지지 않는 unsafe가 떴다. 짝 저장소 지도(`PEER-*.md`)도
+    같은 자리다 — 그 행은 뿌리 밖을 가리키는 것이 정상이라, 안 빼면 선언을 한 순간 진단이 빨갛게
+    고정된다.
     """
     import re as _re
+
+    from ...code_map import PEER_MAP_PREFIX
 
     entry_pat = _re.compile(r"^- `([^`]+)`", _re.M)
     ghosts: list[str] = []
     unsafe: list[str] = []
     entries = 0
-    areas = sorted(f for f in os.listdir(mdir) if f.endswith(".md") and f not in ("GRAPH.md", "INDEX.md", "PROJECT.md"))
+    areas = sorted(
+        f
+        for f in os.listdir(mdir)
+        if f.endswith(".md") and f not in ("GRAPH.md", "INDEX.md", "PROJECT.md") and not f.startswith(PEER_MAP_PREFIX)
+    )
     for fname in areas:
         area_path = Path(mdir, fname)
         if _is_link(area_path):
@@ -51,14 +59,19 @@ def _is_link(path: Path) -> bool:
 
 
 def _entry_kind(root: str, entry_text: str) -> str:
-    """항목 하나의 판정 — "ok" | "ghost" | "unsafe". 루트 밖을 가리키면 존재해도 위험이다."""
+    """항목 하나의 판정 — "ok" | "ghost" | "unsafe". 허용된 뿌리 밖을 가리키면 존재해도 위험이다.
+
+    허용된 뿌리는 이 저장소와 선언된 짝 저장소다. 주입면의 `map_context._safe_path` 와 같은 집합을
+    봐야 한다 — 한쪽만 짝을 알면, 사람이 그 저장소를 적은 영역 지도 한 줄이 주입에는 들어가고
+    진단에는 위험으로 뜬다."""
+    from ...map_context import _peer_bases
+
     entry = entry_text.rstrip("/")
-    candidate = Path(root, entry)
-    try:
-        candidate.resolve(strict=False).relative_to(Path(root).resolve())
-    except ValueError:
-        return "unsafe"
     if os.path.isabs(entry):
+        return "unsafe"
+    candidate = Path(root, entry)
+    resolved = candidate.resolve(strict=False)
+    if not any(resolved == base or resolved.is_relative_to(base) for base in _peer_bases(Path(root))):
         return "unsafe"
     return "ghost" if not candidate.exists() else "ok"
 
@@ -86,6 +99,8 @@ def _map_status_detail(managed, areas: list[str], entries: int, ghosts: list[str
         return "INDEX.md drift"
     if not managed.trackable:
         return "managed map is git-ignored — not shareable"
+    if managed.peer_drift:
+        return "declared work root moved on: " + ", ".join(managed.peer_drift[:5])
     return _map_drift_detail(managed)
 
 
@@ -103,7 +118,7 @@ def _codebase_map_check(root: str) -> list[dict]:
         detail = f"unsafe managed map path: symlink/junction: {unsafe_component}"
         return [_map_row(False, detail, "symlink/junction 제거 후 asgard map update 실행")]
     if not os.path.isdir(mdir):
-        return [_map_row(False, "missing .asgard/map/", "asgard sync (또는 setup --force)로 지도 시드 생성")]
+        return [_map_row(False, "missing .asgard/map/", "asgard init --force 로 지도 시드 생성")]
     ghosts, unsafe, entries, areas = _manual_area_issues(root, mdir)
     try:
         managed = check_map(root)

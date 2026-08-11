@@ -59,6 +59,9 @@ class Sandboxed(unittest.TestCase):
         patch = mock.patch.dict(os.environ, {"HOME": base}, clear=False)
         patch.start()
         os.environ.pop("CLAUDE_PROJECT_DIR", None)
+        # 이 스위트를 무인 실행(`asgard start`, 스튜디오)에서 돌리면 그 신호가 프로세스에 남아
+        # 있다 — 거부문의 "묻는가 / 스스로 진행하는가"가 러너의 환경에 따라 갈리면 안 된다.
+        os.environ.pop("ASGARD_UNATTENDED", None)
         self.addCleanup(patch.stop)
 
     def edit(self, path: str, cwd: str | None = None) -> tuple[int, str, str]:
@@ -77,8 +80,117 @@ class TestUndeclaredStaysClosed(Sandboxed):
     def test_refusal_names_the_declaration(self) -> None:
         _, _, err = self.edit(os.path.join(self.stranger, "app.js"))
         self.assertIn("additional_roots", err)
-        self.assertIn("additionalDirectories", err)
         self.assertIn(self.repo, err)  # 지금 서 있는 뿌리를 같이 말해야 어디가 밖인지 안다
+
+    def test_refusal_names_a_command_the_reader_can_run(self) -> None:
+        """처방은 여기서 실행할 수 있어야 한다 — 설정 파일 편집만 지목하면 아래 갈래가 그걸 막는다."""
+        _, _, err = self.edit(os.path.join(self.stranger, "app.js"))
+        self.assertIn("asgard root add", err)
+
+    def test_refusal_fills_in_the_directory_instead_of_a_placeholder(self) -> None:
+        """어디를 열지는 막힌 경로 하나로 정해진다 — 자리표시자를 내면 읽는 쪽이 고르고, 좁게
+        고르면 다음 파일에서 또 막히고 넓게 고르면 이웃 저장소까지 딸려 온다."""
+        os.makedirs(os.path.join(self.stranger, ".git"))
+        deep = os.path.join(self.stranger, "app", "components", "Toggle.vue")
+        _, _, err = self.edit(deep)
+        self.assertIn(f"asgard root add {self.stranger} --yes", err)
+        self.assertNotIn("<dir>", err)
+
+    def test_the_named_directory_is_the_project_not_the_leaf_folder(self) -> None:
+        os.makedirs(os.path.join(self.stranger, ".git"))
+        nested = os.path.join(self.stranger, "packages", "web")
+        os.makedirs(nested)
+        _, _, err = self.edit(os.path.join(nested, "main.ts"))
+        self.assertIn(f"asgard root add {self.stranger} --yes", err)
+
+    def test_a_directory_with_no_project_marker_still_gets_a_concrete_command(self) -> None:
+        _, _, err = self.edit(os.path.join(self.stranger, "loose", "app.js"))
+        self.assertIn(f"asgard root add {os.path.join(self.stranger, 'loose')} --yes", err)
+
+    def test_the_prescribed_directory_is_one_root_add_accepts(self) -> None:
+        """거부문이 지목하는 자리와 명령이 받아 주는 자리는 같아야 한다.
+
+        26-08-11 판정이 잡은 반례: 세션 뿌리가 다른 프로젝트 안에 든 배치(이 저장소의 `ref/*`)
+        에서 가장 가까운 마커가 **뿌리의 조상**이라, 거부문이 그것을 열라고 처방하는데
+        `_reject_target` 은 "이 프로젝트를 품는 자리"라며 거절했다. 오딘의 승인 한 번을 받아 낸
+        뒤에 명령이 실패한다."""
+        from asgard.commands.workroots import _reject_target
+
+        inner = os.path.join(self.stranger, "inner")
+        os.makedirs(os.path.join(self.stranger, ".git"))
+        os.makedirs(os.path.join(inner, ".git"))
+        _, _, err = self.edit(os.path.join(self.stranger, "docs", "note.md"), cwd=inner)
+        prescribed = [line for line in err.splitlines() if "asgard root add" in line]
+        self.assertEqual(len(prescribed), 1, err)  # 처방이 없으면 아래 검사가 공짜로 통과한다
+        target = prescribed[0].split("asgard root add ", 1)[1].split(" --yes")[0]
+        self.assertEqual(_reject_target(os.path.realpath(inner), target), "")
+
+    def test_a_folder_that_does_not_exist_yet_gets_a_command_that_runs(self) -> None:
+        """저장소 옆에 새 폴더를 만들며 쓰는 형상 — `run_root_add` 는 없는 자리를 거절하므로,
+        만드는 줄이 처방에 없으면 오딘의 승인을 받아 낸 뒤에 명령이 끊긴다 (26-08-11 2차 판정)."""
+        import subprocess
+
+        from asgard.commands.workroots import _reject_target
+
+        target = os.path.join(os.path.dirname(self.repo), "newapp")
+        _, _, err = self.edit(os.path.join(target, "README.md"))
+        prescribed = next(line.strip() for line in err.splitlines() if "asgard root add" in line)
+        self.assertEqual(prescribed, f"mkdir -p {target} && asgard root add {target} --yes")
+        # 처방을 글자로 맞추는 데서 그치지 않고, 만드는 절반을 실제로 돌려 나머지 절반이 받는지 본다.
+        subprocess.run(prescribed.split("&&")[0].strip(), shell=True, check=True)
+        self.assertTrue(os.path.isdir(target))
+        self.assertEqual(_reject_target(os.path.realpath(self.repo), target), "")
+
+    def test_an_existing_directory_is_not_told_to_create_itself(self) -> None:
+        os.makedirs(os.path.join(self.stranger, ".git"))
+        _, _, err = self.edit(os.path.join(self.stranger, "src", "app.js"))
+        self.assertIn(f"asgard root add {self.stranger} --yes", err)
+        self.assertNotIn("mkdir", err)
+
+    def test_a_path_above_the_session_root_says_so_instead_of_prescribing(self) -> None:
+        """선언으로 못 여는 경로다 — 담는 디렉터리가 전부 세션 뿌리를 함께 담는다.
+        열 수 없는 자리를 지목하느니 그 프로젝트를 직접 열라고 말한다."""
+        inner = os.path.join(self.stranger, "inner")
+        os.makedirs(inner)
+        _, _, err = self.edit(os.path.join(self.stranger, "note.md"), cwd=inner)
+        self.assertIn("No declaration reaches that path", err)
+        self.assertNotIn("asgard root add", err)
+
+    def test_the_refusal_never_prescribes_a_file_this_guard_blocks(self) -> None:
+        """26-08-07 교착의 두 번째 결: 처방이 `.claude/settings.json` 을 두 번째 길로 내밀면
+        읽는 쪽이 그리로 가고 통제 표면 규칙에 다시 막힌다."""
+        _, _, err = self.edit(os.path.join(self.stranger, "app.js"))
+        self.assertNotIn("additionalDirectories", err)
+        prescription = err.split("Do not write")[0]
+        self.assertNotIn(".claude/settings.json", prescription)
+
+    def test_the_refusal_names_how_to_ask_in_this_host(self) -> None:
+        """ "물어보라"만 있으면 물을 채널이 있는 모드에서도 안 묻는다 — 무엇으로 묻는지까지 댄다."""
+        blocked = os.path.join(self.stranger, "app.js")
+        self.assertIn("AskUserQuestion", self.edit(blocked)[2])
+        payload = {"cwd": self.repo, "tool_name": "Edit", "tool_input": {"file_path": blocked}}
+        _, out, _ = _run(payload, argv=["cursor"])
+        self.assertIn("Ask Odin in your reply", json.loads(out)["agent_message"])
+
+    def test_an_unattended_session_is_told_to_proceed_rather_than_wait(self) -> None:
+        """Canon 8 — 물을 사람이 없는 세션에 "오딘에게 물어라"만 주면 거기서 턴이 끝난다."""
+        payload = {
+            "cwd": self.repo,
+            "permission_mode": "bypassPermissions",
+            "tool_name": "Edit",
+            "tool_input": {"file_path": os.path.join(self.stranger, "app.js")},
+        }
+        err = _run(payload)[2]
+        self.assertNotIn("AskUserQuestion", err)
+        self.assertIn("run it yourself", err)
+        self.assertIn("asgard root add", err)
+
+    def test_the_prescribed_file_is_itself_blocked_so_the_command_is_the_way_in(self) -> None:
+        """26-08-07 교착의 회귀 못 — 뿌리 밖 차단이 지목한 파일을 통제 표면 차단이 막았다."""
+        code, _, err = self.edit(os.path.join(self.repo, ".asgard", "asgard-setting-project.json"))
+        self.assertEqual(code, 2)
+        self.assertIn("control-surface policy blocked", err)
+        self.assertIn("asgard root add", err)
 
     def test_inside_path_is_allowed(self) -> None:
         self.assertEqual(self.edit(os.path.join(self.repo, "src", "app.js"))[0], 0)
@@ -115,7 +227,7 @@ class TestDeclaredRootOpens(Sandboxed):
         )
         code, _, err = self.edit(os.path.join(self.pair, ".claude", "settings.json"))
         self.assertEqual(code, 2)
-        self.assertIn("control-surface", err)
+        self.assertIn("control-surface policy blocked", err)
 
     def test_bash_reaches_the_declared_root(self) -> None:
         _write(
@@ -153,7 +265,7 @@ class TestStudioWorkspaceIsAWorkTarget(Sandboxed):
         target = os.path.join(self.workspace, ".asgard", "asgard-setting-project.json")
         code, _, err = self.edit(target, cwd=self.workspace)
         self.assertEqual(code, 2)
-        self.assertIn("control-surface", err)
+        self.assertIn("control-surface policy blocked", err)
 
     def test_the_studio_state_next_to_it_stays_blocked(self) -> None:
         target = os.path.join(os.path.dirname(self.workspace), "workspace.db")
@@ -162,7 +274,7 @@ class TestStudioWorkspaceIsAWorkTarget(Sandboxed):
     def test_a_command_climbing_out_of_the_workspace_stays_blocked(self) -> None:
         code, _, err = self.bash(f"rm -rf {self.workspace}/../workspace.db", cwd=self.workspace)
         self.assertEqual(code, 2)
-        self.assertIn("control-surface", err)
+        self.assertIn("control-surface policy blocked", err)
 
 
 class TestNativeLaneAgrees(Sandboxed):
@@ -237,7 +349,7 @@ class TestReadingTheControlSurfaceIsNotWriting(Sandboxed):
     def test_forging_the_ledger_is_still_blocked(self) -> None:
         code, _, err = self.bash("echo x > .asgard/quest/forged.jsonl")
         self.assertEqual(code, 2)
-        self.assertIn("control-surface", err)
+        self.assertIn("control-surface policy blocked", err)
 
     def test_deleting_harness_state_is_still_blocked(self) -> None:
         self.assertEqual(self.bash("rm -rf .asgard/state")[0], 2)
@@ -552,6 +664,45 @@ class TestStagingTheControlSurfaceIsNotWriting(Sandboxed):
         for command in ("git -c core.pager=sh add -- .asgard", "git --work-tree=/tmp add -- .asgard"):
             with self.subTest(command=command):
                 self.assertEqual(self.bash(command)[0], 2)
+
+
+class TestTheRefusalNamesTheRealReason(Sandboxed):
+    """차단 사유가 둘로 갈린다 — 아무도 못 고치는 자리(`control`)와 선언 한 줄로 열리는
+    자리(`escape`). 처방이 다르므로 진단이 틀리면 읽는 쪽이 엉뚱한 자리를 고치러 간다.
+
+    26-08-11 실측: 짝 저장소를 조사하는 순수 읽기가 네 번 `control` 로 막혔고, 그 처방
+    (`asgard init` / `asgard sync`)에는 고칠 자리가 아예 없었다. 진짜 사유는 뿌리 밖이었다."""
+
+    def test_reading_another_repo_state_is_an_escape_not_a_control_surface(self) -> None:
+        outside = os.path.join(self.stranger, ".asgard", "state")
+        code, _, err = self.bash(f"ls -la {outside}")
+        self.assertEqual(code, 2)
+        self.assertIn("outside every work root", err)
+        # 이탈 문장도 본문에서 통제 표면 규칙을 언급한다 — 사유를 가르는 것은 첫 줄이다.
+        self.assertNotIn("control-surface policy blocked", err)
+
+    def test_the_escape_refusal_still_prescribes_the_declaration(self) -> None:
+        os.makedirs(os.path.join(self.stranger, ".git"))
+        _, _, err = self.bash(f"cat {os.path.join(self.stranger, '.asgard', 'quest', 'q.jsonl')}")
+        self.assertIn(f"asgard root add {self.stranger} --yes", err)
+
+    def test_this_repo_control_surface_still_reads_as_control(self) -> None:
+        """뿌리 **안**의 통제 표면은 그대로다 — 이 완화가 사려던 것은 사유의 정확도지 접근이 아니다."""
+        code, _, err = self.bash("rm -rf .asgard/state")
+        self.assertEqual(code, 2)
+        self.assertIn("control-surface policy blocked", err)
+
+    def test_a_boundary_file_named_anywhere_stays_a_control_refusal(self) -> None:
+        """뿌리를 정하는 파일은 남의 저장소 경로로 적혀도 통제 표면이다 — 글자로 찾는 그물이
+        여기서 느슨해지면 경계를 정하는 자리가 이탈 진단 뒤로 숨는다."""
+        code, _, err = self.bash(f"cp x {os.path.join(self.stranger, '.claude', 'settings.json')}")
+        self.assertEqual(code, 2)
+        self.assertIn("control-surface policy blocked", err)
+
+    def test_an_interpreter_living_outside_the_root_is_not_an_escape(self) -> None:
+        """명령 이름 자리는 뿌리 판정의 대상이 아니다 — 아니면 모든 훅 호출이 이탈이 된다."""
+        command = "/usr/local/bin/uv run --no-project python .claude/hooks/quest-log.py state"
+        self.assertEqual(self.bash(command)[0], 0)
 
 
 if __name__ == "__main__":

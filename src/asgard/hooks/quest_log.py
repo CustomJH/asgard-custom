@@ -124,7 +124,14 @@ from asgard_hooklib.summary import (  # noqa: E402
 )
 from asgard_hooklib.tickets import ticket_runtime  # noqa: E402
 from asgard_hooklib.transition import completion_decision, transition  # noqa: E402
-from asgard_hooklib.tree import current_tree_ref, diff_state, snapshot_ref  # noqa: E402
+from asgard_hooklib.tree import (  # noqa: E402
+    current_tree_ref,
+    diff_state,
+    peer_base_of,
+    peer_current,
+    peer_snapshot,
+    snapshot_ref,
+)
 
 
 def map_nudge(root: str, base_ref: str | None) -> list[str]:
@@ -303,8 +310,11 @@ def _open_base_ref(root: str, args) -> tuple[str | None, str]:
     return base_ref or "NONE", ""
 
 
-def _open_event(qid: str, args, base_ref: str, request: str, ignored_snapshot: dict) -> dict:
-    """개설 이벤트 — 요청문·기준·시작 트리·위험을 수용 해시 하나로 묶는다."""
+def _open_event(qid: str, args, base_ref: str, request: str, ignored_snapshot: dict, peers: dict) -> dict:
+    """개설 이벤트 — 요청문·기준·시작 트리·위험을 수용 해시 하나로 묶는다.
+
+    `peer_snapshot` 은 선언된 짝 저장소의 시작 트리다. `base_ref` 가 세션 뿌리 하나만 담아서,
+    이것이 없으면 짝 저장소 작업이 판정 내내 무변경으로 읽힌다."""
     risk = {"has_write": not args.no_write}
     if args.task_class:  # prior 집계 축 — 퀘스트가 어느 클래스로 열렸는지 감사 기록
         risk["task_class"] = args.task_class
@@ -317,6 +327,7 @@ def _open_event(qid: str, args, base_ref: str, request: str, ignored_snapshot: d
             "criteria": args.criteria,
             "request": request,
             "ignored_snapshot": ignored_snapshot,
+            "peer_snapshot": peers,
             "execution_id": secrets.token_hex(16),
             "acceptance_hash": acceptance_identity(
                 request=request,
@@ -426,7 +437,7 @@ def _cmd_open(root: str, args) -> int:
     ignored_snapshot = ignored_state(root, artifact_scope(args.criteria))
     if "<snapshot-unavailable>" in ignored_snapshot:
         return _error("ignored-file snapshot unavailable")
-    ev = _open_event(qid, args, base_ref, request, ignored_snapshot)
+    ev = _open_event(qid, args, base_ref, request, ignored_snapshot, peer_snapshot(root) if not args.no_write else {})
     with quest_lock(root, qid):
         if os.path.exists(os.path.join(quest_dir(root), qid + ".jsonl")):
             return _error("quest id already exists; resume it or choose a new id")
@@ -511,7 +522,7 @@ def _verify_evidence(root: str, policy: dict, events: list[dict], ev: dict) -> N
         None,
     )
     ev["diff_hash"], ev["changed_files"], _, _ = diff_state(
-        root, ev["base_ref"], ignored_base, quest_events_scope([*events, ev])
+        root, ev["base_ref"], ignored_base, quest_events_scope([*events, ev]), peer_base=peer_base_of(events)
     )
     unsafe_maps = unsafe_map_links(root)
     if "<snapshot-unavailable>" in ev["changed_files"] and ev["verdict"] == "PASS":
@@ -550,8 +561,10 @@ def _verify_evidence(root: str, policy: dict, events: list[dict], ev: dict) -> N
     cc = run_criteria_checks(root, policy, crit, events, ev["diff_hash"], ran)
     if cc is not None:
         ev["criteria_checks"] = cc
-    # PASS 시점 트리 봉인 — stale 판정의 귀속 범위 대조 축 (stale_pass_scope)
+    # PASS 시점 트리 봉인 — stale 판정의 귀속 범위 대조 축 (stale_pass_scope). 짝 저장소도
+    # 같이 봉인한다: 세션 뿌리만 적으면 PASS 뒤 짝 저장소 변조가 드리프트에 안 잡힌다.
     ev["tree_ref"] = current_tree_ref(root)
+    ev["peer_tree"] = peer_current(root)
     ev["verification_id"] = verification_identity(ev)
 
 
@@ -597,7 +610,7 @@ def _baseline_observe(root: str, policy: dict, events: list[dict], ev: dict) -> 
         (event.get("ignored_snapshot") for event in events if isinstance(event.get("ignored_snapshot"), dict)), None
     )
     ev["diff_hash"], ev["changed_files"], _, _ = diff_state(
-        root, ev["base_ref"], ignored_base, quest_events_scope([*events, ev])
+        root, ev["base_ref"], ignored_base, quest_events_scope([*events, ev]), peer_base=peer_base_of(events)
     )
     snapshot_ok = "<snapshot-unavailable>" not in ev["changed_files"]
     ev["level"] = "micro"
@@ -705,6 +718,7 @@ def _cmd_verify_baseline(root: str, qid: str, events: list[dict], policy: dict, 
     if ev["verdict"] == "PASS":
         # PASS 시점 트리 봉인 — stale 판정의 귀속 범위 대조 축 (append 경로와 동일)
         ev["tree_ref"] = current_tree_ref(root)
+        ev["peer_tree"] = peer_current(root)
         ev["verification_id"] = verification_identity(ev)
     write_event(root, qid, ev)
     fails = [str(f) for c in obs["results"] for f in (c.get("fails") or [])]  # run_baseline 채집 정형 실패 줄

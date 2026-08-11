@@ -97,6 +97,60 @@ def work_roots(root: str | None) -> tuple[str, ...]:
     return tuple(dict.fromkeys(roots))
 
 
+def has_project_marker(directory: str) -> bool:
+    """여기가 프로젝트 뿌리인가 — 마커 둘을 다르게 센다.
+
+    `.git` 은 어디서든 세고, 디렉터리인지는 안 본다: 연결된 worktree 에서는 그것이 파일이라
+    `isdir` 로만 보면 그 뿌리를 지나쳐 올라간다. `.asgard` 는 홈에서만 안 센다 — `~/.asgard` 는
+    전역 에이전트 홈이라 아스가르드를 깐 기계라면 반드시 있고, 그것을 프로젝트로 세면 홈 아래
+    모든 프로젝트가 "홈이라는 바깥 프로젝트 안에 있다"고 판정된다."""
+    if os.path.exists(os.path.join(directory, ".git")):
+        return True
+    return directory != os.path.realpath(os.path.expanduser("~")) and os.path.isdir(os.path.join(directory, ".asgard"))
+
+
+def declarable_root(roots: tuple[str, ...], directory: str) -> bool:
+    """이 디렉터리를 작업 뿌리로 선언할 수 있는가 — `commands.workroots._reject_target` 의 거절 갈래 셋.
+
+    기계 뿌리, 홈 그 자체, 그리고 이미 서 있는 작업 뿌리를 품는 조상. 마지막 것을 열면 그 뿌리의
+    이웃 저장소와 하네스 상태까지 한꺼번에 딸려 온다. 거부문이 지목하는 자리와 명령이 받아 주는
+    자리는 같아야 한다 — 어긋나면 처방이 실패하는 명령이 되고, 그 전에 오딘의 승인 한 번이 이미
+    소모된다 (26-08-11 판정이 중첩 프로젝트에서 재현했다).
+
+    세 번째 갈래를 **작업 뿌리 전부**에 대해 본다. 저쪽은 `_project_root` 하나만 보므로 이 판정이
+    더 엄격하다 — 여기서 통과한 자리는 저기서도 통과하고, 반대는 보장하지 않는다. 처방이 거절될
+    일만 없으면 되는 관계라 이 방향이 맞다."""
+    if directory in ("", os.path.dirname(directory)) or directory == os.path.realpath(os.path.expanduser("~")):
+        return False
+    return not any(root == directory or root.startswith(directory + os.sep) for root in roots)
+
+
+def enclosing_project(path: str, roots: tuple[str, ...] = ()) -> str:
+    """막힌 경로를 담는 가장 가까운 프로젝트 뿌리 — 선언할 자리가 없으면 빈 문자열.
+
+    거부문이 `<dir>` 자리표시자를 내면 어디를 열지 읽는 쪽이 고른다. 좁게 고르면 다음 파일에서
+    또 막히고, 넓게 고르면 이웃한 저장소까지 딸려 온다. 막힌 경로가 하나면 답도 하나라서
+    가드가 직접 센다: 그 파일이 든 디렉터리에서 위로 올라가며 첫 마커를 찾는다.
+
+    올라가기는 `declarable_root` 가 거절하는 자리에서 멈춘다. 거기까지 갔다는 것은 이 경로를
+    담는 **선언 가능한** 프로젝트가 없다는 뜻이라, 그 파일이 든 디렉터리로 물러선다 — 마커가
+    없어도 선언은 되는 자리다. 그것마저 거절될 자리면(홈에 놓인 파일, 또는 세션의 뿌리보다
+    위에 있는 파일) 빈 문자열이고, 그때는 선언으로 열 수 있는 경로가 아예 아니다.
+
+    물러선 자리는 아직 없는 디렉터리일 수 있다 — 저장소 옆에 새 폴더를 만들며 쓰는 형상이다.
+    `run_root_add` 는 없는 자리를 거절하므로 부르는 쪽이 먼저 만들라고 말해야 한다
+    (`hooks.readonly_guard._refusal`). 여기서 조상으로 더 올라가지는 않는다: 올라가면 세션 뿌리를
+    품는 자리가 나와 이웃 저장소까지 딸려 온다."""
+    resolved = os.path.realpath(os.path.expanduser(path))
+    base = resolved if os.path.isdir(resolved) else os.path.dirname(resolved)
+    current = base
+    while declarable_root(roots, current):
+        if has_project_marker(current):
+            return current
+        current = os.path.dirname(current)
+    return base if declarable_root(roots, base) else ""
+
+
 def _studio_workspace() -> str:
     """스튜디오 개인 작업 공간 — `~/.asgard/studio/workspace`
     (`commands.studio_store.scratch_root()`와 같은 자리. 훅은 그 모듈을 임포트하지 못해 같은

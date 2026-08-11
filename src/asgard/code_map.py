@@ -22,10 +22,20 @@ from pathlib import Path
 from .templates.map import MAP_INDEX_MD
 
 _PROJECT_FILE = "PROJECT.md"
+# 짝 저장소 지도의 파일 이름 머리 — 이 머리를 단 파일은 관리 파일이라 영역 지도 문법 검사에서 빠지고
+# (`map_context.validate_area_maps`), 주입면에서는 PROJECT.md·GRAPH.md 와 같은 관리 출처로 읽힌다.
+PEER_MAP_PREFIX = "PEER-"
+# 짝 저장소 한 곳에서 지도에 실을 파일 수 상한. 세션 저장소는 상한이 없는데 짝만 거는 이유는 비용의
+# 임자다 — 지도 새로고침은 UserPromptSubmit 훅이 30초 제한으로 돌리고, 그 안에서 죽으면 조용히
+# 넘어간다(fail-open). 남의 모노레포 하나가 그 예산을 다 먹으면 세션 저장소 지도까지 같이 사라진다.
+# lagom: 고정 숫자다. 저장소마다 달리 잡아야 할 근거가 생기면 `paths` 섹션의 설정 키로 올린다.
+_MAX_PEER_FILES = 6000
 _GENERATED_MARKER = "<!-- asgard:project-map schema=3 -->"
 _GENERATED_MARKER_RE = re.compile(r"^<!-- asgard:project-map schema=\d+ -->$")
 _LEGACY_MARKER = "> Asgard managed orientation map."
 _ENTRY_RE = re.compile(r"^- `([^`]+)` — ", re.M)
+# 짝 지도가 자기 안에 적어 두는 신선도 표식 — 다음 판정은 이 줄만 다시 계산해 비교한다.
+_PEER_REVISION_RE = re.compile(r"^- Source revision: (\S+)$", re.M)
 _MAX_PROJECT_MAP_BYTES = 32 * 1024
 _MAX_LANDMARKS = 200
 _MAX_SURFACE_FILES = 48
@@ -133,6 +143,8 @@ class MapResult:
     landmarks: int
     path: str
     index_changed: bool = False
+    # 이번 새로고침이 다시 쓴 짝 저장소 지도 파일 이름 (선언이 빠져 지운 것도 포함).
+    peers_written: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -145,6 +157,8 @@ class MapCheck:
     removed: tuple[str, ...]
     expected_hash: str
     actual_hash: str
+    # 다시 그려야 하는 짝 저장소 지도 — 내용이 어긋난 것과 선언이 빠진 뒤 남은 것.
+    peer_drift: tuple[str, ...] = ()
 
 
 class MapError(RuntimeError):
@@ -247,6 +261,74 @@ def _files(root: Path) -> list[Path]:
             except OSError:
                 continue
     return sorted(found, key=lambda p: p.as_posix())
+
+
+def peer_roots(root: str | os.PathLike[str]) -> list[tuple[str, Path]]:
+    """(라벨, 절대경로) — 이 프로젝트가 선언한 짝 저장소 전부.
+
+    라벨은 세션 뿌리 기준 상대경로다 (`../helios-application`). 지도 항목이 그 라벨을 그대로 앞에
+    달기 때문에, 세션 뿌리에서 읽는 사람도 에이전트도 적힌 경로를 그대로 열 수 있다. 증거를 모으는
+    훅(`asgard_hooklib.tree.peer_roots`)이 쓰는 표기와 같은 표기다 — 갈리면 지도가 가리키는 파일과
+    판정이 세는 파일이 서로 다른 이름을 갖는다.
+
+    짝 저장소에는 아무것도 쓰지 않는다. 그 저장소가 남의 것이거나(팀 저장소) 옛 판 아스가르드가
+    깔려 있을 수 있어서, 지도는 읽기만 하고 결과물은 전부 세션 저장소의 `.asgard/map/` 에 남는다."""
+    from .settings import declared_roots
+
+    base = Path(root).resolve()
+    out: list[tuple[str, Path]] = []
+    for declared in declared_roots(str(base)):
+        path = Path(declared)
+        if not path.is_dir() or path.is_symlink():
+            continue
+        out.append((os.path.relpath(path, base).replace("\\", "/"), path))
+    return sorted(out)
+
+
+def peer_map_names(labels: list[str]) -> dict[str, str]:
+    """라벨 → 이 지도가 사는 파일 이름. `../helios-application` → `PEER-helios-application.md`.
+
+    `..` 은 파일 이름에 못 쓰므로 떨군다. 그래서 서로 다른 두 짝이 같은 이름으로 접힐 수 있고
+    (`../a/b` 와 `../a-b`), 그때는 라벨 사전순으로 뒤에 번호를 붙여 가른다 — 두 지도가 한 파일을
+    번갈아 덮어쓰면 새로고침마다 내용이 뒤집힌다."""
+    used: dict[str, str] = {}
+    names: dict[str, str] = {}
+    for label in sorted(labels):
+        stem = "-".join(part for part in label.split("/") if part not in {"", ".", ".."}) or "root"
+        stem = _safe_label(stem).replace(" ", "-") or "root"
+        candidate = stem
+        suffix = 2
+        while candidate in used:
+            candidate = f"{stem}-{suffix}"
+            suffix += 1
+        used[candidate] = label
+        names[label] = f"{PEER_MAP_PREFIX}{candidate}.md"
+    return names
+
+
+def _budget_files(files: list[Path], limit: int) -> tuple[list[Path], int]:
+    """상한을 넘는 목록을 최상위 디렉터리 라운드로빈으로 줄인다. (남긴 것, 버린 수).
+
+    정렬 순서대로 자르면 알파벳 뒤쪽 서비스가 통째로 사라진다 — `helios-batch` 부터 채우다가
+    `helios-fe` 를 한 파일도 못 싣는 식이다. 서비스마다 한 파일씩 번갈아 담으면 상한이 걸려도
+    모든 최상위 트리가 지도에 남는다."""
+    if len(files) <= limit:
+        return files, 0
+    groups: dict[str, deque[Path]] = {}
+    for path in files:
+        groups.setdefault(path.parts[0] if len(path.parts) > 1 else "", deque()).append(path)
+    kept: list[Path] = []
+    queues = list(groups.values())
+    while queues and len(kept) < limit:
+        remaining = []
+        for queue in queues:
+            if len(kept) >= limit:
+                break
+            kept.append(queue.popleft())
+            if queue:
+                remaining.append(queue)
+        queues = remaining
+    return sorted(kept, key=lambda p: p.as_posix()), len(files) - len(kept)
 
 
 def _toml(path: Path) -> dict:
@@ -637,46 +719,79 @@ def _document_entries(root: Path, files: list[Path]) -> list[tuple[str, str]]:
     return rendered
 
 
-def _render(root: Path) -> tuple[str, int, int, str]:
-    files = _files(root)
-    entries = _landmarks(root, files)
-    project = _project_name(root)
+def _orientation_rows(root: Path, files: list[Path], landmarks: int, *, peer: str, omitted: int) -> list[str]:
+    """`## Orientation` 본문. 짝 지도는 네 줄을 더 단다 — 뿌리 표기, 그래프 경계, 신선도, 잘린 수."""
     languages = Counter(_LANGUAGE_BY_SUFFIX[p.suffix.lower()] for p in files if p.suffix.lower() in _LANGUAGE_BY_SUFFIX)
     language_text = ", ".join(f"{name} ({count})" for name, count in languages.most_common()) or "not inferred"
+    rows = [
+        f"- Project root: `{peer + '/' if peer else './'}`",
+        f"- Languages by observed source files: {language_text}",
+        f"- Evidence scan: {len(files)} files; {landmarks} landmarks",
+    ]
+    if not peer:
+        return rows
+    rows += [
+        "- Declared work root of the session repository — paths below open as written from `./`.",
+        "- The relation graph (`asgard map impact` / `trace`) covers the session repository only.",
+        f"- Source revision: {_peer_revision(root)}",
+    ]
+    if omitted:
+        rows.append(f"- Files omitted by peer budget: {omitted} of {len(files) + omitted}")
+    return rows
+
+
+def _landmark_rows(entries: dict[str, str], prefix: str) -> list[str]:
+    shown = list(entries.items())[:_MAX_LANDMARKS]
+    rows = [f"- `{prefix}{path}` — {role}" for path, role in shown]
+    if len(entries) > len(shown):
+        rows.append(f"- Additional landmarks omitted by budget: {len(entries) - len(shown)}")
+    if not entries:
+        rows.append("- `(none yet)` — add project files, then rerun `asgard map update`")
+    return rows
+
+
+def _render(root: Path, *, peer: str = "") -> tuple[str, int, int, str]:
+    """지도 문서 하나. `peer` 가 있으면 그 라벨의 짝 저장소 지도이고, 항목 경로 앞에 라벨이 붙는다.
+
+    짝 지도가 세션 지도와 다른 것은 셋이다. 항목 경로가 세션 뿌리 기준이라 그대로 열리고, 검증 명령
+    구간이 없고(그 명령은 저쪽 저장소에서 돌려야 한다), 파일 수에 상한이 있다."""
+    files = _files(root)
+    prefix = peer + "/" if peer else ""
+    omitted_files = 0
+    if peer:
+        files, omitted_files = _budget_files(files, _MAX_PEER_FILES)
+    entries = _landmarks(root, files)
+    project = _project_name(root)
     lines = [
         _GENERATED_MARKER,
-        f"# Project Map — {project}",
+        f"# Peer Map — {project}" if peer else f"# Project Map — {project}",
         "",
         "> Asgard managed orientation map. Regenerate with `asgard map update`; do not hand-edit this file.",
         "> It is a navigation hint, not completion evidence: re-read every path used by a plan.",
         "",
         "## Orientation",
         "",
-        "- Project root: `./`",
-        f"- Languages by observed source files: {language_text}",
-        f"- Evidence scan: {len(files)} files; {len(entries)} landmarks",
+        *_orientation_rows(root, files, len(entries), peer=peer, omitted=omitted_files),
         "",
         "## Landmarks",
         "",
+        *_landmark_rows(entries, prefix),
     ]
-    landmark_rows = list(entries.items())[:_MAX_LANDMARKS]
-    lines.extend(f"- `{path}` — {role}" for path, role in landmark_rows)
-    if len(entries) > len(landmark_rows):
-        lines.append(f"- Additional landmarks omitted by budget: {len(entries) - len(landmark_rows)}")
-    if not entries:
-        lines.append("- `(none yet)` — add project files, then rerun `asgard map update`")
-    commands = _verification_commands(root, files)
-    lines += ["", "## Detected verification", ""]
-    lines.extend(f"- Command: `{command}` — {role}" for command, role in commands)
-    if not commands:
-        lines.append("- No verification command inferred from checked-in manifests.")
+    # 검증 명령은 그 명령이 도는 저장소의 것이다. 짝 지도에 넣으면 주입면이 "질의에 가까운 이
+    # 저장소의 명령"으로 내보내는데, 세션 뿌리에서 돌리면 그 명령은 없거나 다른 프로젝트를 검사한다.
+    if not peer:
+        commands = _verification_commands(root, files)
+        lines += ["", "## Detected verification", ""]
+        lines.extend(f"- Command: `{command}` — {role}" for command, role in commands)
+        if not commands:
+            lines.append("- No verification command inferred from checked-in manifests.")
     # 문서가 공개 표면보다 앞에 오는 이유는 값이 아니라 예산이다: 표면 행이 예산을 먼저 다 쓰면
     # 문서 레인은 큰 리포에서 한 줄도 못 나온다. 둘 다 자기 상한이 있어 서로를 밀어내지는 않는다.
     lines += ["", "## Documents", ""]
     document_rows = _document_entries(root, files)
     if not document_rows:
         lines.append("- No tracked markdown document with a title or sections.")
-    lines.extend(f"- `{path}` — {role}" for path, role in document_rows)
+    lines.extend(f"- `{prefix}{path}` — {role}" for path, role in document_rows)
     lines += ["", "## Public surfaces", ""]
     surface_rows = _surface_entries(root, files)
     footer = [
@@ -690,7 +805,7 @@ def _render(root: Path) -> tuple[str, int, int, str]:
         "",
     ]
     for path, role in surface_rows:
-        candidate = f"- `{path}` — {role}"
+        candidate = f"- `{prefix}{path}` — {role}"
         projected = "\n".join([*lines, candidate, *footer])
         if len(projected.encode("utf-8")) > _MAX_PROJECT_MAP_BYTES:
             lines.append("- Additional public surfaces omitted by byte budget.")
@@ -722,10 +837,62 @@ def _trackable(root: Path, path: Path) -> bool:
         return True
 
 
+def _peer_targets(base: Path) -> dict[str, tuple[str, Path]]:
+    """파일 이름 → (라벨, 짝 저장소 절대경로). 선언이 없으면 빈 사전이다."""
+    peers = peer_roots(base)
+    names = peer_map_names([label for label, _ in peers])
+    return {names[label]: (label, path) for label, path in peers}
+
+
+def _peer_revision(root: Path) -> str:
+    """짝 저장소의 스탯 지문 — 경로·크기·mtime 만 본다, 파일 내용은 안 읽는다.
+
+    이 값이 지도 안에 한 줄로 적히고, 다음 판정은 그 줄만 다시 계산해 비교한다. 대조를 값싸게
+    두는 게 요점이다: 신선도 검사는 판정마다 돌고(`hooks/quest_log.py` 의 지도 최신 확인),
+    짝이 큰 모노레포면 매번 통째로 다시 그리는 값이 턴마다 붙는다.
+
+    mtime 오탐(내용이 같은 touch)은 다시 그리는 쪽으로만 틀린다 — 낡은 지도를 최신이라 부르지
+    않는다. 지도에 실린 파일 집합과 같은 집합을 세야 하므로 상한도 같이 건다."""
+    files, _ = _budget_files(_files(root), _MAX_PEER_FILES)
+    digest = hashlib.sha256()
+    for rel in files:
+        try:
+            stat = (root / rel).stat()
+        except OSError:
+            continue
+        digest.update(f"{rel.as_posix()}\0{stat.st_size}\0{stat.st_mtime_ns}".encode("utf-8", "surrogateescape"))
+        digest.update(b"\0")
+    return "source-stat-sha256:" + digest.hexdigest()
+
+
+def _peer_drift(map_dir: Path, targets: dict[str, tuple[str, Path]]) -> tuple[str, ...]:
+    """다시 그려야 하는 짝 지도 이름 — 스탯 지문이 어긋난 것과, 선언이 사라져 남은 것.
+
+    남은 파일을 드리프트로 세는 이유는 지도의 계약이다. 지도에 있는 경로는 디스크에 있어야 하는데,
+    선언이 빠진 뒤의 짝 지도는 아무도 안 여는 저장소를 가리키며 계속 답을 낸다."""
+    drift = []
+    for name, (_label, path) in targets.items():
+        recorded = _PEER_REVISION_RE.search(_read_map(map_dir / name))
+        if recorded is None or recorded.group(1) != _peer_revision(path):
+            drift.append(name)
+    for path in sorted(map_dir.glob(PEER_MAP_PREFIX + "*.md")):
+        if path.name not in targets and _owned_project_map(_read_map(path)):
+            drift.append(path.name)
+    return tuple(sorted(set(drift)))
+
+
+def _read_map(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
 def check_map(root: str | os.PathLike[str]) -> MapCheck:
     base = Path(root).resolve()
     expected, _, _, _ = _render(base)
     map_dir = _map_dir(base, create=False)
+    peer_drift = _peer_drift(map_dir, _peer_targets(base))
     path = map_dir / _PROJECT_FILE
     index_path = map_dir / "INDEX.md"
     try:
@@ -739,10 +906,11 @@ def check_map(root: str | os.PathLike[str]) -> MapCheck:
     owned = _owned_project_map(actual)
     trackable = _trackable(base, path)
     return MapCheck(
-        ok=actual == expected and trackable and index_current and owned,
+        ok=actual == expected and trackable and index_current and owned and not peer_drift,
         trackable=trackable,
         index_current=index_current,
         owned=owned,
+        peer_drift=peer_drift,
         added=tuple(sorted(_entry_paths(expected) - _entry_paths(actual))),
         removed=tuple(sorted(_entry_paths(actual) - _entry_paths(expected))),
         expected_hash=_hash(expected),
@@ -788,9 +956,24 @@ def refresh_map(root: str | os.PathLike[str], *, dry_run: bool = False, force: b
     except OSError:
         index_current = ""
     index_changed = index_current != MAP_INDEX_MD
+    targets = _peer_targets(base)
+    peers_written = _peer_drift(map_dir, targets)
+    for name in peers_written:
+        # 사람이 쓴 파일은 이름이 같아도 덮지 않는다 — PROJECT.md 와 같은 소유 규칙이다. 선언이
+        # 빠져 지우는 갈래는 `_peer_drift` 가 이미 표식을 봤으므로 여기 안 걸린다.
+        existing = _read_map(map_dir / name)
+        if name in targets and existing and not _owned_project_map(existing) and not force:
+            raise MapOwnershipError(f"refusing to overwrite human-owned {map_dir / name}")
     if not dry_run:
         if index_changed:
             _atomic_write(base, index_path, MAP_INDEX_MD)
         if changed:
             _atomic_write(base, project_path, content)
-    return MapResult(project, changed, files_scanned, landmarks, str(project_path), index_changed)
+        for name in peers_written:
+            target = map_dir / name
+            if name in targets:
+                label, peer_path = targets[name]
+                _atomic_write(base, target, _render(peer_path, peer=label)[0])
+            else:
+                target.unlink(missing_ok=True)
+    return MapResult(project, changed, files_scanned, landmarks, str(project_path), index_changed, peers_written)

@@ -24,9 +24,9 @@ _HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
 if _HOOK_DIR not in sys.path:
     sys.path.append(_HOOK_DIR)
 
+from asgard_hooklib.firing import run  # noqa: E402
 from asgard_hooklib.inject import client, emit_context  # noqa: E402
-
-UNATTENDED_MODES = {"bypassPermissions", "dontAsk"}  # verifier_gate.py와 동일 유지
+from asgard_hooklib.session import UNATTENDED_MODES, unattended  # noqa: E402,F401
 
 
 def main():
@@ -35,7 +35,7 @@ def main():
     except Exception:
         sys.exit(0)
     mode = str(data.get("permission_mode") or "")
-    if os.environ.get("ASGARD_UNATTENDED") != "1" and mode not in UNATTENDED_MODES:
+    if not unattended(data):
         sys.exit(0)
     # NOTE: the `가정:` criteria-prefix token is matched elsewhere in the codebase — keep it literal.
     emit_context(
@@ -54,4 +54,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    run("unattended-context", main)

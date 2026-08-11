@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from .code_map import MapResult, refresh_map
+from .code_map import PEER_MAP_PREFIX, MapResult, refresh_map
 from .map_lex import Groups, group_terms, hits, idf, query_groups
 
 CONTEXT_BUDGET = 4_000
@@ -54,14 +54,30 @@ class MapContext:
     refresh: MapResult | None = None
 
 
-def _safe_path(root: Path, raw: str) -> bool:
+def _peer_bases(root: Path) -> tuple[Path, ...]:
+    """세션 뿌리 + 선언된 짝 저장소 — 지도 항목이 가리켜도 되는 자리 전부."""
+    from .code_map import peer_roots
+
+    return (root.resolve(), *(path.resolve() for _, path in peer_roots(root)))
+
+
+def _safe_path(bases: tuple[Path, ...], raw: str) -> bool:
+    """이 항목이 실제로 존재하는 파일을 가리키는가 — 허용된 뿌리 안에서.
+
+    `bases` 가 여럿인 이유는 짝 저장소다. 짝 지도의 항목은 `../helios-application/src/x.ts` 처럼
+    세션 뿌리 밖을 가리키는데, 그것은 탈출이 아니라 선언된 작업 대상이다. 선언되지 않은 `..` 은
+    여전히 거절한다 — 지도에 적힌 한 줄이 아무 상위 디렉터리나 읽게 만드는 통로가 되면 안 된다."""
     path = Path(raw.rstrip("/"))
-    if not path.parts or path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
+    if not path.parts or path.is_absolute() or any(part in {"", "."} for part in path.parts):
         return False
+    root = bases[0]
     try:
         full = root.joinpath(path)
-        full.resolve().relative_to(root.resolve())
-        return full.exists() and not full.is_symlink()
+        resolved = full.resolve()
+        for base in bases:
+            if resolved == base or resolved.is_relative_to(base):
+                return full.exists() and not full.is_symlink()
+        return False
     except OSError, ValueError:
         return False
 
@@ -99,12 +115,15 @@ def _clip_role(role: str) -> str:
 def validate_area_maps(root: str | os.PathLike[str]) -> tuple[tuple[MapEntry, ...], tuple[AreaIssue, ...]]:
     """Validate human/agent-owned maps without rewriting them."""
     base = Path(root).resolve()
+    bases = _peer_bases(base)
     map_dir = base / ".asgard" / "map"
     entries: list[MapEntry] = []
     issues: list[AreaIssue] = []
     try:
         candidates = sorted(
-            path for path in map_dir.glob("*.md") if path.name not in {"GRAPH.md", "INDEX.md", "PROJECT.md"}
+            path
+            for path in map_dir.glob("*.md")
+            if path.name not in {"GRAPH.md", "INDEX.md", "PROJECT.md"} and not path.name.startswith(PEER_MAP_PREFIX)
         )
     except OSError as exc:
         return (), (AreaIssue(".asgard/map", str(exc)),)
@@ -138,7 +157,7 @@ def validate_area_maps(root: str | os.PathLike[str]) -> tuple[tuple[MapEntry, ..
                 issues.append(AreaIssue(rel, f"line {number} violates map entry grammar"))
                 continue
             entry_path, role = match.groups()
-            if not _safe_path(base, entry_path):
+            if not _safe_path(bases, entry_path):
                 issues.append(AreaIssue(rel, f"line {number} references a stale or unsafe path: {entry_path}"))
                 continue
             entries.append(MapEntry(entry_path, role.strip(), rel, False))
@@ -148,7 +167,7 @@ def validate_area_maps(root: str | os.PathLike[str]) -> tuple[tuple[MapEntry, ..
 
 
 def _managed_entries(
-    root: Path, text: str, source: str = ".asgard/map/PROJECT.md"
+    bases: tuple[Path, ...], text: str, source: str = ".asgard/map/PROJECT.md"
 ) -> tuple[list[MapEntry], list[tuple[str, str]]]:
     entries: list[MapEntry] = []
     commands: list[tuple[str, str]] = []
@@ -162,7 +181,7 @@ def _managed_entries(
         if not match:
             continue
         path, role = match.groups()
-        if path == "(none yet)" or not _safe_path(root, path) or _threat(path, role, source):
+        if path == "(none yet)" or not _safe_path(bases, path) or _threat(path, role, source):
             continue
         entries.append(MapEntry(path, role.strip(), source, True))
     return entries, commands
@@ -260,7 +279,10 @@ def _tier(entry: MapEntry) -> int:
     """
     if not entry.managed:
         return 2
-    return 1 if entry.source.endswith(GRAPH_SOURCE) else 0
+    # 짝 저장소 지도도 뒷줄이다. 질의가 맞으면 점수로 앞서 나오고, 아무것도 안 맞을 때 남는
+    # 방위는 세션 저장소의 것이어야 한다 — 열려 있는 남의 저장소가 기본 답이 되면 안 된다.
+    peer = entry.source.rsplit("/", 1)[-1].startswith(PEER_MAP_PREFIX)
+    return 1 if peer or entry.source.endswith(GRAPH_SOURCE) else 0
 
 
 def _weights(entries: list[MapEntry], groups: Groups) -> dict[str, float]:
@@ -293,6 +315,26 @@ def _score(entry: MapEntry, groups: Groups, weights: dict[str, float]) -> tuple[
     return (-score, _tier(entry), entry.source, entry.path)
 
 
+def _read_map_file(path: Path) -> str:
+    """관리 지도 한 장. 없거나 심링크면 빈 문자열 — 주입이 저장소 밖을 따라가지 않는다."""
+    try:
+        return path.read_text(encoding="utf-8") if not path.is_symlink() else ""
+    except OSError:
+        return ""
+
+
+def _managed_texts(base: Path) -> tuple[str, str, dict[str, str]]:
+    """우리가 그린 지도 전부 — (PROJECT.md, GRAPH.md, {짝 지도 이름: 본문}).
+
+    관계 그래프 카탈로그(GRAPH.md)는 지도의 심화 계층이라 같은 엔트리 문법으로 융합되어 라우트·모델·
+    외부 서비스 증거가 동일 예산 안에서 함께 랭크된다. 짝 저장소 지도도 같은 자격이다 — 사람이 쓴
+    영역 지도와 달리 우리가 그린 파일이라 문법 검사 대상이 아니고, 항목 경로가 세션 뿌리 기준이라
+    그대로 랭킹에 든다."""
+    map_dir = base / ".asgard" / "map"
+    peers = {path.name: _read_map_file(path) for path in sorted(map_dir.glob(PEER_MAP_PREFIX + "*.md"))}
+    return _read_map_file(map_dir / "PROJECT.md"), _read_map_file(map_dir / "GRAPH.md"), peers
+
+
 def build_map_context(
     root: str | os.PathLike[str],
     query: str = "",
@@ -305,22 +347,15 @@ def build_map_context(
     # The map is an opt-in project asset created by `asgard init/map generate`. A refresh request
     # from a hook or `map context --refresh` must not seed tracked files in an unmapped repository.
     refreshed = refresh_map(base) if refresh and (base / ".asgard" / "map").is_dir() else None
-    project_path = base / ".asgard" / "map" / "PROJECT.md"
-    try:
-        managed_text = project_path.read_text(encoding="utf-8")
-    except OSError:
-        managed_text = ""
-    # 관계 그래프 카탈로그(GRAPH.md)는 맵의 심화 계층이다 — 존재하면 같은 엔트리 문법으로
-    # 융합되어 라우트·모델·외부 서비스 증거가 동일 예산 안에서 함께 랭크된다.
-    graph_path = base / ".asgard" / "map" / "GRAPH.md"
-    try:
-        graph_text = graph_path.read_text(encoding="utf-8") if not graph_path.is_symlink() else ""
-    except OSError:
-        graph_text = ""
-    managed_hash = hashlib.sha256((managed_text + "\0" + graph_text).encode()).hexdigest()
-    managed, commands = _managed_entries(base, managed_text)
-    graph_entries, _graph_commands = _managed_entries(base, graph_text, ".asgard/map/GRAPH.md")
+    managed_text, graph_text, peer_texts = _managed_texts(base)
+    bases = _peer_bases(base)
+    managed_hash = hashlib.sha256("\0".join([managed_text, graph_text, *peer_texts.values()]).encode()).hexdigest()
+    managed, commands = _managed_entries(bases, managed_text)
+    graph_entries, _graph_commands = _managed_entries(bases, graph_text, ".asgard/map/GRAPH.md")
     managed = [*managed, *graph_entries]
+    for name, text in peer_texts.items():
+        peer_entries, _peer_commands = _managed_entries(bases, text, f".asgard/map/{name}")
+        managed += peer_entries
     manual: tuple[MapEntry, ...] = ()
     issues: tuple[AreaIssue, ...] = ()
     if not managed_only:

@@ -91,6 +91,39 @@ def without_heredoc_bodies(command: str) -> str:
     return "\n".join(out)
 
 
+def first_escaping_operand(roots: tuple[str, ...], command: str) -> str:
+    """명령의 경로 피연산자 중 선언된 어느 뿌리에도 안 드는 첫 자리 — 없으면 빈 문자열.
+
+    이것은 차단 **사유를 가르는** 데 쓴다. 뿌리 밖 경로는 읽기 레인에서 먼저 떨어지는데, 그
+    뒤의 통제 표면 검사가 명령문 글자에서 `.asgard` 를 찾아내 `control` 로 진단했다. 두 사유는
+    처방이 다르다 — `control` 은 아무도 못 고치는 자리라 `asgard init/sync` 를 지목하고,
+    이탈은 선언 한 줄로 열리는 자리라 `asgard root add` 를 지목한다. 잘못 진단하면 읽는 쪽이
+    엉뚱한 자리를 고치러 간다 (26-08-11 실측: 짝 저장소를 조사하는 순수 읽기가 네 번 그렇게
+    막혔고, 처방대로 고칠 자리가 없었다).
+
+    명령 이름 자리는 건너뛴다 — 인터프리터가 뿌리 밖에 사는 것은 정상이고
+    (`/Users/…/.local/bin/uv run …`), 그것을 이탈로 읽으면 모든 훅 호출이 이탈이 된다."""
+    try:
+        tokens = drop_inert_operands(lex(without_heredoc_bodies(command)))
+    except ValueError:
+        return ""
+    head = True
+    for token in tokens:
+        if token in _SEGMENT_SEPARATORS:
+            head = True
+            continue
+        if head:
+            head = False
+            continue
+        # 경로가 아닌 낱말과 플래그는 뿌리 판정의 대상이 아니다. 뿌리 밖을 가리키려면 구분자가
+        # 있어야 하므로 (`../peer/x`, `/abs/path`) 한 세그먼트짜리 낱말은 여기서 뺀다.
+        if token.startswith("-") or "/" not in token.replace("\\", "/"):
+            continue
+        if not path_token_within_root(roots, token):
+            return token
+    return ""
+
+
 def command_targets_control(roots: tuple[str, ...], command: str, markers: tuple[str, ...]) -> bool:
     try:
         tokens = drop_inert_operands(lex(without_heredoc_bodies(command)))

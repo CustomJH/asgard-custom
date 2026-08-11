@@ -20,6 +20,7 @@ import tempfile
 from .integrity import EMPTY
 from .paths import git, is_junk, is_testfile, read_bytes
 from .scope import UNSCOPED_DRIFT, quest_owned_files, reconcile_ignored, symlink_map_state
+from .workspace import work_roots
 
 
 def snapshot_ref(root: str) -> str | None:
@@ -176,12 +177,123 @@ def current_tree_ref(root: str) -> str | None:
             os.unlink(index_path)
 
 
+def peer_roots(root: str) -> list[tuple[str, str]]:
+    """(라벨, 절대경로) — 선언된 추가 뿌리 중 세션 뿌리가 아닌 저장소.
+
+    라벨은 세션 뿌리 기준 상대경로다 (`../helios-application`). 세션 write 저널과 귀속 집합이
+    같은 표기를 쓰므로 두 목록이 대조된다 — 표기가 갈리면 저널에 남은 파일이 판정의 변경
+    목록과 영영 안 만난다.
+    """
+    base = os.path.realpath(root)
+    out = []
+    for candidate in work_roots(root):
+        # `.git` 은 연결된 worktree 에서 파일이라 `isdir` 로 보면 그 저장소를 통째로 놓친다.
+        if candidate == base or not os.path.exists(os.path.join(candidate, ".git")):
+            continue
+        out.append((os.path.relpath(candidate, base).replace("\\", "/"), candidate))
+    return sorted(out)
+
+
+def peer_base_of(events) -> dict[str, str] | None:
+    """퀘스트 로그에서 짝 저장소 기준선을 꺼낸다 — open 이 적은 `peer_snapshot`.
+
+    적힌 적 없는 로그(구 판본, 짝 저장소가 없던 퀘스트)는 None 이고, 그때 `peer_diff` 는 빈
+    결과를 낸다. 판정 세 자리가 같은 값을 봐야 해서 꺼내는 술어를 하나로 둔다."""
+    return next((e.get("peer_snapshot") for e in events if isinstance(e.get("peer_snapshot"), dict)), None)
+
+
+def peer_snapshot(root: str) -> dict[str, str]:
+    """라벨 → 퀘스트 시작 시점 트리 (`snapshot_ref` 와 같은 형상). open 이 기준선으로 적는다."""
+    return {label: ref for label, path in peer_roots(root) if (ref := snapshot_ref(path))}
+
+
+def peer_current(root: str) -> dict[str, str]:
+    """라벨 → 지금 트리 (`current_tree_ref` 와 같은 형상). PASS 가 자기 시점으로 적는다."""
+    return {label: ref for label, path in peer_roots(root) if (ref := current_tree_ref(path))}
+
+
+def _peer_names(path: str, before: str, after: str) -> list[str]:
+    """두 트리 사이에 바뀐 파일 이름. 짝 저장소의 `.asgard` 는 그 저장소의 하네스 상태라 뺀다."""
+    _, names = git(path, "diff", "--name-only", before, after, "--", ".", ":(exclude).asgard")
+    names = names.decode(errors="replace") if isinstance(names, bytes) else names
+    return [n for n in names.splitlines() if n.strip()]
+
+
+def dirty_in_roots(root: str, rels) -> list[str]:
+    """세션 뿌리 상대 표기의 경로들 중 지금도 워킹트리가 더러운 것.
+
+    `../helios-application/src/x.ts` 처럼 다른 뿌리를 가리키는 표기는 **그 뿌리에서** 본다.
+    세션 뿌리에서 `git status -- ../peer/x.ts` 는 저장소 밖이라 실패하는데, 그 실패를 깨끗함으로
+    읽으면 짝 저장소의 미검증 write 가 통째로 안 잡힌다 (`orphan-write` 백스톱이 그렇게 꺼져
+    있었다). 중첩 저장소는 안쪽 뿌리가 임자라 긴 경로부터 맞춘다."""
+    base = os.path.realpath(root)
+    roots = sorted([base, *(path for _, path in peer_roots(root))], key=len, reverse=True)
+    dirty = []
+    for rel in rels:
+        target = os.path.realpath(os.path.join(base, str(rel)))
+        for candidate in roots:
+            if target != candidate and not target.startswith(candidate + os.sep):
+                continue
+            rc, out = git(candidate, "status", "--porcelain", "--", os.path.relpath(target, candidate))
+            if rc == 0 and out.strip():
+                dirty.append(str(rel))
+            break
+    return dirty
+
+
+def peer_diff(root: str, peer_base: dict[str, str] | None, digest) -> tuple[list[str], int, int]:
+    """짝 저장소의 기준선 ↔ 현재. (바뀐 파일, 변경 라인, 테스트 제외 라인) — 내역은 digest 에 먹인다.
+
+    세션 뿌리 하나만 보던 판정은 짝 저장소 작업을 통째로 "변경 없음"으로 읽었다. 가드는
+    `work_roots` 로 그 자리를 정당한 작업 대상으로 열어 두는데 증거를 모으는 층이 안 따라가면,
+    허용된 그 자리에서만 완료 증명이 꺼진다 — 퀘스트를 안 열어도 `orphan-write` 가 안 걸리고,
+    PASS 뒤 변조도 `stale-pass` 가 안 걸린다 (26-08-11 재현).
+
+    기준선이 없으면(구 로그·짝 저장소 없음) 빈 결과다. 그 자리는 write 저널이 잡는다."""
+    if not peer_base:
+        return [], 0, 0
+    changed: list[str] = []
+    lines = 0
+    nt_lines = 0
+    for label, path in peer_roots(root):
+        base = peer_base.get(label)
+        if not base:
+            continue  # 퀘스트를 연 뒤에 선언된 뿌리 — 이 퀘스트의 기준선이 없다
+        current = current_tree_ref(path)
+        if not current:
+            # 트리를 못 뜨는 짝 저장소는 "변화 없음"이 아니라 "못 봤다"다 — 메인 뿌리의
+            # `<snapshot-unavailable>` 과 같은 자리이고, 게이트가 그 표식으로 차단한다.
+            changed.append(label + "/<snapshot-unavailable>")
+            digest.update(b"peer-unavailable\0" + label.encode("utf-8", "surrogateescape"))
+            continue
+        if current == base:
+            continue
+        rc, diff = git(path, "diff", "--binary", base, current, "--", ".", ":(exclude).asgard", binary=True)
+        if isinstance(diff, str):
+            diff = diff.encode()
+        digest.update(
+            b"peer\0" + label.encode("utf-8", "surrogateescape") + b"\0" + (diff if rc == 0 else b"<diff-failed>")
+        )
+        changed.extend(label + "/" + name for name in _peer_names(path, base, current))
+        _, num = git(path, "diff", "--numstat", base, current, "--", ".", ":(exclude).asgard")
+        num = num.decode(errors="replace") if isinstance(num, bytes) else num
+        for row in num.splitlines():
+            parts = row.split("\t")
+            if len(parts) >= 3 and parts[0].isdigit() and parts[1].isdigit():
+                n = int(parts[0]) + int(parts[1])
+                lines += n
+                if not is_testfile(parts[2]):
+                    nt_lines += n
+    return sorted(changed), lines, nt_lines
+
+
 def diff_state(
     root: str,
     base_ref: str | None,
     ignored_base: dict[str, str] | None = None,
     scope=(),
     current_ref: str | None = None,
+    peer_base: dict[str, str] | None = None,
 ) -> tuple[str, list[str], int, int]:
     """(diff_hash, changed_files, changed_lines, nontest_lines) — base_ref 트리 ↔ 현재 워킹트리 전체.
     커밋 여부와 무관 (base_ref는 open 시점 고정 커밋). `.asgard/**` 제외 — 로그 기록 자체가
@@ -241,7 +353,12 @@ def diff_state(
                 nt_lines += n
     h = hashlib.sha256(diff)
     ignored_changed = reconcile_ignored(root, ignored_base, h, scope)
-    changed = sorted(set(n for n in names.splitlines() if n.strip()) | set(map_changed) | set(ignored_changed))
+    peer_changed, peer_lines, peer_nt_lines = peer_diff(root, peer_base, h)
+    lines += peer_lines
+    nt_lines += peer_nt_lines
+    changed = sorted(
+        set(n for n in names.splitlines() if n.strip()) | set(map_changed) | set(ignored_changed) | set(peer_changed)
+    )
     return (h.hexdigest() if changed else EMPTY), changed, lines, nt_lines
 
 
@@ -283,6 +400,23 @@ def signature_risk(root: str, base_ref: str | None, current_ref: str | None = No
     return any(_SIG_PAT.match(line) for line in out.splitlines())
 
 
+def _peer_drift(root: str, peer_pass) -> set[str]:
+    """PASS 시점 이후 짝 저장소에서 움직인 파일 — 라벨 붙은 세션 뿌리 상대 표기.
+
+    PASS 가 `peer_tree` 를 안 적은 로그(구 판본·짝 저장소 없음)는 빈 집합이다. 그 경우 짝
+    저장소 변화는 `quest_owned_files` 의 write 저널 쪽에서만 잡힌다."""
+    if not isinstance(peer_pass, dict):
+        return set()
+    out: set[str] = set()
+    for label, path in peer_roots(root):
+        was = peer_pass.get(label)
+        now = current_tree_ref(path)
+        if not was or not now or was == now:
+            continue
+        out.update(label + "/" + name for name in _peer_names(path, was, now))
+    return out
+
+
 def stale_pass_scope(root: str, last_pass: dict, events: list[dict], current_changed) -> tuple[list[str], list[str]]:
     """(stale 을 만든 파일, 범위 밖 드리프트) — PASS 이후 트리 변화의 퀘스트 귀속 판정.
 
@@ -312,6 +446,7 @@ def stale_pass_scope(root: str, last_pass: dict, events: list[dict], current_cha
     if rc != 0:
         return [UNSCOPED_DRIFT], []
     drift = {n for n in names.splitlines() if n.strip()}
+    drift |= _peer_drift(root, last_pass.get("peer_tree"))
     drift |= set(map(str, current_changed or [])) ^ {str(p) for p in (last_pass.get("changed_files") or [])}
     hits = sorted(p for p in drift if p in owned or p == ".asgard/map" or p.startswith(".asgard/map/"))
     return hits, sorted(drift - set(hits))

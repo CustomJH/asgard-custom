@@ -27,13 +27,15 @@ _HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
 if _HOOK_DIR not in sys.path:
     sys.path.append(_HOOK_DIR)
 
+from asgard_hooklib.firing import run  # noqa: E402
 from asgard_hooklib.readonly import (  # noqa: E402
     READONLY_BASH_HINT,
     READONLY_WRITE_HINT,
     is_index_only_git,
     is_readonly_bash_safe,
 )
-from asgard_hooklib.shell import command_targets_control, scannable_text  # noqa: E402
+from asgard_hooklib.session import unattended  # noqa: E402
+from asgard_hooklib.shell import command_targets_control, first_escaping_operand, scannable_text  # noqa: E402
 from asgard_hooklib.workspace import (  # noqa: E402
     _BOUNDARY_FILES,
     _CONTROL_PATHS,
@@ -42,6 +44,7 @@ from asgard_hooklib.workspace import (  # noqa: E402
     _within_host_state,
     _within_unit_workspace,
     _without_workspace,
+    enclosing_project,
     path_token_targets_control,
     path_token_within_root,
     within_managed_map,
@@ -49,6 +52,11 @@ from asgard_hooklib.workspace import (  # noqa: E402
 )
 
 _READONLY_AGENTS = {"asgard-thinker", "asgard-verifier", "asgard-loki", "asgard-ullr", "asgard-mimir"}
+
+# 이 호스트에서 오딘에게 묻는 방법. 거부문이 "물어보라"고만 하면 물을 채널이 있는 모드에서도
+# 에이전트가 묻지 않고 멈추거나 혼자 넘어간다 — 무엇으로 묻는지까지 말해야 실행 가능한 처방이다.
+_ASK_CHANNELS = {"claude": "Ask Odin with the AskUserQuestion tool"}
+_ASK_DEFAULT = "Ask Odin in your reply and wait for the answer"
 
 
 def _deny(protocol: str, message: str) -> None:
@@ -62,32 +70,80 @@ def _deny(protocol: str, message: str) -> None:
     raise SystemExit(2)
 
 
-def _refusal(reason: str, tool_name: str, command: str, path: str, roots: tuple[str, ...] = ()) -> str:
+def _escape_refusal(tool_name: str, target: str, path: str, roots: tuple[str, ...], protocol: str, alone: bool) -> str:
+    """뿌리 밖 차단의 문장 — 실행할 명령만으로는 처방이 안 끝나는 유일한 사유다.
+
+    어느 디렉터리를 열지(`enclosing_project`), 무엇으로 물을지(`_ASK_CHANNELS`), 물을 사람이 없을
+    때 어떻게 할지(Canon 8), 그리고 그 자리가 아직 없으면 먼저 만들라는 것까지 한 문장에 담아야
+    읽는 쪽이 왕복 한 번으로 끝낸다. 지목하는 자리는 `commands.workroots.run_root_add` 가 받아
+    주는 자리여야 한다 — 어긋나면 오딘의 승인을 받아 낸 뒤에 명령이 실패한다 (26-08-11 판정이
+    두 형상에서 재현했다: 세션 뿌리를 품는 조상, 아직 없는 디렉터리)."""
+    listed = ", ".join(roots[:4]) or "(none)"
+    opening = f"Asgard workspace policy blocked {tool_name} on a path outside every work root: {target}\n"
+    directory = enclosing_project(path, roots)
+    if not directory:
+        return (
+            f"{opening}Work roots in force: {listed}. No declaration reaches that path: every directory "
+            "containing it also contains this session's root (or is your home directory), and opening one "
+            "of those would pull in every repository beside it. Open that project as its own session — "
+            "start Asgard with it as the working directory — and do the work there."
+        )
+    decide = (
+        f"Nobody is in the approval loop here, so Canon 8 applies: run it yourself and say in your "
+        f"report that you opened {directory}"
+        if alone
+        else f"{_ASK_CHANNELS.get(protocol, _ASK_DEFAULT)} — may agents edit files under {directory}? — then run it"
+    )
+    # 아직 없는 자리는 `run_root_add` 가 거절한다 — 만드는 줄이 처방에 없으면 승인을 받아 낸
+    # 뒤에 명령이 exit 2 로 끊긴다.
+    declaration = f"asgard root add {directory} --yes"
+    if not os.path.isdir(directory):
+        declaration = f"mkdir -p {directory} && {declaration}"
+    return (
+        f"{opening}Work roots in force: {listed}. Widening them is Odin's call. {decide}:\n"
+        f"  {declaration}\n"
+        'That writes {"paths": {"additional_roots": [...]}} into .asgard/asgard-setting-project.json, '
+        "the file all four modes read. Do not write that file or .claude/settings.json by hand — the "
+        "control-surface rule blocks both, so this command is the only way in. A blocked path never "
+        "changed — declare the root instead of retrying a variant."
+    )
+
+
+def _refusal(
+    reason: str,
+    tool_name: str,
+    command: str,
+    path: str,
+    roots: tuple[str, ...] = (),
+    protocol: str = "claude",
+    alone: bool = False,
+) -> str:
     """거부 사유 문장 — 실제 규칙과 도구에 맞아야 가르친다.
 
     통제 표면 차단에 "읽기전용 역할" 문장을 붙이면 쓰기 권한이 있는 역할이 자기 신원을 의심하며
     턴을 태우고, Edit 차단에 Bash 허용목록을 붙이면 없는 레인을 찾는다 (26-07-26 실측).
     하네스 상태 차단과 뿌리 밖 차단도 사유가 다르다: 전자는 아무도 못 고치는 자리라 처방이
     `asgard init/sync`고, 후자는 선언 한 줄로 열리는 자리라 처방이 그 선언이다. 둘을 한 문장으로
-    묶어 두면 열 수 있는 차단이 못 여는 차단처럼 읽힌다 (26-08-04 실측)."""
+    묶어 두면 열 수 있는 차단이 못 여는 차단처럼 읽힌다 (26-08-04 실측).
+
+    처방은 **여기서 실행할 수 있는 것**이어야 한다. 뿌리 밖 차단이 설정 파일 편집만 지목하던
+    동안 그 파일은 바로 아래 통제 표면 규칙이 막고 있었고, 둘이 맞물려 교착이 됐다 (26-08-07
+    실측: 짝 저장소 편집 차단 → 처방대로 연 설정 파일 편집도 차단). 그래서 두 사유 모두
+    `asgard root add` 를 지목한다.
+
+    뿌리 밖 차단은 나머지 셋과 달리 **오딘이 정할 일**을 담고 있어 문장이 따로 산다 —
+    `_escape_refusal`."""
     target = command[:160] if tool_name == "Bash" else (path[:160] or "(no path)")
     if reason == "escape":
-        listed = ", ".join(roots[:4]) or "(none)"
-        return (
-            f"Asgard workspace policy blocked {tool_name} on a path outside every work root: {target}\n"
-            f"Work roots in force: {listed}. To make that directory a work target, declare it — "
-            '.asgard/asgard-setting-project.json → {"paths": {"additional_roots": ["<dir>"]}} '
-            "(read by all four modes), or Claude Code's permissions.additionalDirectories in "
-            ".claude/settings.json. A blocked path never changed — declare the root instead of "
-            "retrying a variant."
-        )
+        return _escape_refusal(tool_name, target, path, roots, protocol, alone)
     if reason == "control":
         return (
             f"Asgard control-surface policy blocked {tool_name}: {target}\n"
             "Harness state (.asgard/, except the shared map .asgard/map/*.md) and the two files "
             "that define this guard's work roots (.claude/settings.json, .claude/settings.local.json) "
             "are not work targets: the verdict's physical diff does not cover them, so a write there "
-            "leaves no evidence. Change them through Asgard's own commands (asgard init/sync). "
+            "leaves no evidence. Change them through Asgard's own commands: `asgard init` / `asgard sync`, "
+            "and `asgard root add <dir> --yes` to declare a work root outside this repo. "
             "Staging and committing them is allowed (git add / git commit) — that is what puts them "
             "inside the diff. The rest of .claude/.cursor/.codex/.agents is an ordinary work target — "
             "edit it directly."
@@ -174,20 +230,31 @@ def refusal_reason(tool_name: str, command: str, path: str, roots: tuple[str, ..
     # 빠져나가는 것은 받아들인 값이다 — 그쪽은 write-sentinel 이 적고 verifier-gate 가 물리
     # 대조로 잡는다. `_BOUNDARY_FILES` 만 글에서도 찾는다: 그 셋은 이 가드의 뿌리를 정하는
     # 파일이라, 열리면 뒤이은 판정이 무엇을 기준으로 했는지부터 무의미해진다.
+    boundary_text = tool_name == "Bash" and any(
+        name in _without_workspace(scannable_text(command).replace("\\", "/")) for name in _BOUNDARY_FILES
+    )
     control_shell_write = (
         tool_name == "Bash"
         and not readonly_shell
         and not index_only_git
-        and (
-            command_targets_control(roots, command, _CONTROL_PATHS)
-            or any(name in _without_workspace(scannable_text(command).replace("\\", "/")) for name in _BOUNDARY_FILES)
-        )
+        and (command_targets_control(roots, command, _CONTROL_PATHS) or boundary_text)
     )
     if (
         _forgery_surface_access(tool_name, command, normalized_path, path, roots, readonly_shell)
         or control_write
         or control_shell_write
     ):
+        # 통제 표면 차단은 **뿌리 안**의 자리를 두고 하는 말이다. 뿌리 밖 경로는 읽기 레인에서
+        # 먼저 떨어지고, 그러면 위조 방지 그물의 글자 검사가 남의 저장소 경로에 스친 `.asgard`
+        # 를 잡아 이 갈래로 흘려보낸다 — 사유도 처방도 틀린 차단이다. 경로 인자 판정으로도,
+        # 경계 파일 글자로도 안 걸렸는데 뿌리 밖 경로가 있다면 그것이 진짜 사유다.
+        if (
+            tool_name == "Bash"
+            and not boundary_text
+            and not command_targets_control(roots, command, _CONTROL_PATHS + _PRIVATE_CONTROL_PATHS)
+            and first_escaping_operand(roots, command)
+        ):
+            return "escape"
         return "control"
     if bool(path) and not path_token_within_root(roots, path):
         return "escape"
@@ -216,10 +283,13 @@ def main() -> None:
     roots = work_roots(root)
     path = str(tool_input.get("file_path") or tool_input.get("path") or tool_input.get("notebook_path") or "")
     reason = refusal_reason(tool_name, command, path, roots, agent)
+    if reason == "escape" and not path:
+        # Bash 호출의 payload 에는 경로 인자가 없다 — 이탈 문장이 지목할 디렉터리를 명령에서 뽑는다.
+        path = first_escaping_operand(roots, command)
     if reason:
-        _deny(protocol, _refusal(reason, tool_name, command, path, roots))
+        _deny(protocol, _refusal(reason, tool_name, command, path, roots, protocol, unattended(data)))
     _allow(protocol)
 
 
 if __name__ == "__main__":
-    main()
+    run("readonly-guard", main)

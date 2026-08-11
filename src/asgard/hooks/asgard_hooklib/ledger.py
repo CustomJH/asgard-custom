@@ -189,6 +189,11 @@ def normalize(ev: dict, events: list[dict], qid: str, session: str) -> dict:
     }
     if isinstance(ev.get("ignored_snapshot"), dict):
         full["ignored_snapshot"] = ev["ignored_snapshot"]
+    # 짝 저장소의 시작 트리 — `base_ref` 가 세션 뿌리 하나만 담아서, 이것이 없으면 선언된 추가
+    # 뿌리의 작업이 판정 내내 무변경으로 읽힌다. 소비자(`peer_base_of`)는 **첫** 이벤트의 값만
+    # 보므로 뒤따르는 stdin 이 기준선을 갈아치울 수 없다 (`ignored_snapshot` 과 같은 규약).
+    if isinstance(ev.get("peer_snapshot"), dict):
+        full["peer_snapshot"] = ev["peer_snapshot"]
     if ev.get("level"):  # verify 전용 부가 필드 — gate의 full-verify 판정 근거
         full["level"] = ev["level"]
     if ev.get("unit") is not None:  # work 전용 부가 필드 — wave 병렬 배정 단위 id

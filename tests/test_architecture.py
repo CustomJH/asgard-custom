@@ -148,10 +148,19 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 # 판정은 tutor 가 소비한다. 여기 있는 이유는 tutor_probes 와 같다: 재기만 하고
                 # 무엇을 할지는 안 정한다.
                 "tutor_debt",
+                # tutor_rationale — 이 변경을 만든 퀘스트의 기록(요청·기준·가정·검증 명령)을 읽는
+                # 자. tutor_probes·tutor_debt 와 같은 자리다: 재기만 하고 무엇을 할지는 안 정하며,
+                # 아스가르드 모듈을 하나도 안 부른다 (퀘스트 로그 파일이 유일한 입력).
+                "tutor_rationale",
                 # tutor_teach — 이번 변경을 사람에게 **설명하는** 재료(읽는 순서·용어·확인 명령).
                 # tutor 는 물음을 만들고 이쪽은 설명을 만든다 — 같은 축의 반대쪽이라 계층이 같다.
                 # 판정 등급인 이유는 부등호다: 계측(tutor_probes)을 읽고 적용(tutor)이 이걸 읽는다.
                 "tutor_teach",
+                # tutor_brief — 일을 시작하기 **전에** 그 자리에 남은 물음을 꺼내는 화면.
+                # tutor_teach 와 같은 자리다: 기록(tutor_growth)과 공용 표(tutor_model)만 읽고,
+                # 적용 등급의 tutor 가 그 이름을 재수출해 표면에 넣는다. tutor 를 부르지 않는
+                # 것이 이 자리의 조건이라 `_normalise` 도 여기서 따로 갖는다.
+                "tutor_brief",
                 "map_context",
                 "map_graph",
                 # map_lex — 질의 어휘 사전. craft_lex·thor_lex와 같은 자리다: 순수 표이고, 그것을
@@ -317,12 +326,23 @@ SUBTIERS: dict[str, list[tuple[str, frozenset[str]]]] = {
         # (tutor_probes)·지도 레인(map_graph·map_context·map_notes).
         (
             "계측",
-            frozenset({"craft_c", "thor_lex", "tutor_probes", "tutor_debt", "map_graph", "map_context", "map_notes"}),
+            frozenset(
+                {
+                    "craft_c",
+                    "thor_lex",
+                    "tutor_probes",
+                    "tutor_debt",
+                    "tutor_rationale",
+                    "map_graph",
+                    "map_context",
+                    "map_notes",
+                }
+            ),
         ),
         # 계측을 합쳐 결론을 낸다. tutor_teach 가 craft 옆인 이유는 방향이다 — 탐침(tutor_probes)과
         # 기록(tutor_growth)을 읽어 "무엇을 어떤 순서로 읽어야 하는가"를 만들고, 그 결론을
         # 적용 등급의 tutor 가 화면에 넣는다. craft 를 부르지 않는 것이 이 자리의 조건이다.
-        ("판정", frozenset({"craft", "tutor_teach"})),
+        ("판정", frozenset({"craft", "tutor_teach", "tutor_brief"})),
         # 결론을 소비한다 — 막고(thor_gate·freyja_gate) 고치고(craft_fix) 되짚는다(tutor).
         ("적용", frozenset({"craft_fix", "freyja_gate", "thor_gate", "tutor"})),
         # 적용 결과와 튜터의 결정론적 사실을 읽어 승인형 제안 기록으로 만든다. 자동 적용은 없다.
@@ -452,6 +472,7 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
             frozenset(
                 {
                     "root",
+                    "roots",
                     "review",
                     "agent",
                     "map",
@@ -499,6 +520,7 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
                     "ticket_api",
                     "tools",
                     "uninstall",
+                    "workroots",
                 }
             ),
         ),
@@ -610,7 +632,7 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
         # 않는 것이 요점이라(배포 인터프리터에는 없다) 여기 바닥에 선다.
         ("바닥", frozenset({"evidence", "inject", "integrity", "paths", "policy", "siege", "workspace"})),
         # 바닥 하나씩만 얹는다. 서로는 안 부른다.
-        ("한 단", frozenset({"ledger", "runners", "scope", "session", "shell", "transition"})),
+        ("한 단", frozenset({"firing", "ledger", "runners", "scope", "session", "shell", "transition"})),
         ("두 단", frozenset({"contracts", "readonly", "tickets", "tree"})),
         # 실행과 관측 — `summary` 가 아래를 거의 다 부르는 유일한 자리다 (관측을 한 함수로 모은다).
         ("조립", frozenset({"baseline", "summary"})),

@@ -38,6 +38,8 @@ LEGACY_MEMORY = "memory-server.json"
 
 WORKSPACE_DIR = "studio"
 WORKSPACE_HOME_ENV = "ASGARD_STUDIO_HOME"
+# `paths` 섹션에서 짝 저장소를 적는 키 — `asgard root add` 가 쓰고, 지도·프로젝트 메모리가 읽는다.
+ROOTS_KEY = "additional_roots"
 
 
 def global_dir() -> str:
@@ -197,6 +199,36 @@ def load_project(root: str) -> dict:
     if d is not None:
         return d
     return _load_legacy_project(root)
+
+
+def declared_roots(root: str) -> list[str]:
+    """이 프로젝트가 `paths.additional_roots` 로 연 저장소들 — 절대 경로, 뿌리 자신과 그 안쪽 제외.
+
+    선언 하나를 읽는 자리를 여기로 모은다. 훅 쪽 `asgard_hooklib.workspace.work_roots` 는 같은
+    선언에 호스트가 적어 둔 `permissions.additionalDirectories` 까지 더해 **쓰기 경계**를 판정하는데,
+    이쪽 소비자(지도·프로젝트 메모리)가 묻는 것은 다른 질문이다: "어느 저장소가 이 작업의 코드인가".
+    폴더를 열어 둔 권한과 그 코드가 이 프로젝트라는 선언은 같지 않아서, 여기서는 프로젝트가 자기
+    설정에 적은 것만 센다.
+
+    뿌리 안쪽 경로는 뺀다 — 이미 그 뿌리를 훑는 쪽이 같이 보고 있어서, 남겨 두면 같은 파일이 두 번
+    들어간다."""
+    paths = load_project(root).get("paths")
+    entries = paths.get(ROOTS_KEY) if isinstance(paths, dict) else None
+    if not isinstance(entries, list):
+        return []
+    base = os.path.realpath(root)
+    out: list[str] = []
+    seen: set[str] = set()
+    for entry in entries:
+        if not isinstance(entry, str) or not entry.strip():
+            continue
+        expanded = os.path.expanduser(entry.strip())
+        target = os.path.realpath(expanded if os.path.isabs(expanded) else os.path.join(base, expanded))
+        if target == base or target.startswith(base + os.sep) or target in seen:
+            continue
+        seen.add(target)
+        out.append(target)
+    return out
 
 
 def own_global(name: str) -> dict:

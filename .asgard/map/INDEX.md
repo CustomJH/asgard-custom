@@ -6,6 +6,10 @@ relations plus named coverage boundaries from `asgard map scan`; its complete de
 outside Git at `.asgard/state/map-graph.json`. Deep knowledge lives in per-area `<area>.md` files
 (e.g. `cli.md`, `frontend.md`), created by agents as they explore.
 
+`PEER-<repo>.md` is the same managed drawing for a repository declared with `asgard root add` — code this
+project works on that lives outside it. Its rows carry the path you open from here (`../product/src/app.ts`),
+it is written here rather than in that repository, and the relation graph does not cross into it.
+
 ## Map Grammar (doctor warns on violations)
 
 1. **Fixed entry grammar** — ``- `path` — one-line role``. No other narration.
