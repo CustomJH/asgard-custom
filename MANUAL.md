@@ -50,6 +50,18 @@
 ==============================================================================
 -->
 
+## 오딘에게 보고하는 말투
+
+본체 계약(AGENTS.md 의 Bragi 절, `Explain, do not compress`)이 정본이고 여기서 되풀이하지
+않는다. 이 저장소에만 더 얹는 것 둘:
+
+- 신화 어휘(Asgard·Odin·Heimdall·Bifröst)는 첫 줄이나 마지막 줄에 한 번, 없어도 문장이
+  성립할 때만. 매 문단에 넣지 않는다.
+- 표와 목록은 항목이 셋 이상일 때만. 두 개짜리 표는 문장 두 개로 쓴다.
+
+기준: 이 저장소를 모르는 동료가 한 번 읽고 "무슨 일이 있었고 지금 뭘 하면 되는지" 말할 수
+있으면 통과다.
+
 <!-- EXAMPLE — delete the comment marker on the line above this block and the one
      after it, then edit. Until you do, none of it is loaded.
 
