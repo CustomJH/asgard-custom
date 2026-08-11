@@ -259,6 +259,21 @@ def _autoregister_cwd() -> None:
         registry.record(root, cc, cursor, codex)
 
 
+def _unregistered_cwd_note(projects: list[dict]) -> str:
+    """지금 서 있는 폴더가 갱신 목록 밖이면 그 사실. 목록 안이거나 프로젝트 형상이 아니면 빈 문자열.
+
+    sync 는 등록된 프로젝트만 만지는데, 성공 줄은 등록된 것들만 세어 보고한다 — 배선이 없는
+    저장소에서 이 명령을 치면 "all projects on the latest core" 를 읽고 고쳐졌다고 믿은 채로
+    떠난다. `_autoregister_cwd` 는 AGENTS.md 의 `asgard:` 마커를 요구하므로, 다른 도구가 만든
+    AGENTS.md 를 가진 저장소는 흡수 대상도 아니다 (26-08-07 실측: helios-application, 마커 0개)."""
+    root = os.path.realpath(os.getcwd())
+    if any(os.path.realpath(str(p["root"])) == root for p in projects):
+        return ""
+    if not any(os.path.isdir(os.path.join(root, d)) for d in (".asgard", ".claude", ".cursor", ".codex")):
+        return ""
+    return f"{root} 는 이 목록에 없어서 아무것도 안 깔렸어요 — 여기에 깔려면 `asgard init` 을 먼저 돌려 주세요"
+
+
 def _profile(project: dict) -> str:
     return "+".join(k for k in ("cc", "cursor", "codex") if project.get(k)) or "universal"
 
@@ -298,6 +313,8 @@ def run_sync(dry_run: bool = False, list_only: bool = False, json_out: bool = Fa
         for row in rows:
             ui.step(f"{row['root']} {ui.dim('(' + row['profile'] + ')')}")
         return 0
+    if not json_out and (note := _unregistered_cwd_note(projects)):
+        ui.warn(note)
     ui.phase("refresh scaffolds")
     failed = 0
     rows: list[dict] = []

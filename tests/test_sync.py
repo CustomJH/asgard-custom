@@ -567,5 +567,38 @@ class TestSyncProject(Base):
         self.assertTrue(entries[0]["cc"])
 
 
+class TestUnregisteredCwd(Base):
+    """서 있는 자리가 갱신 목록 밖이면 sync 는 그렇게 말한다.
+
+    말 안 하던 동안 `cd <미등록 저장소> && asgard sync` 는 남의 프로젝트만 갱신하고
+    "all projects on the latest core" 를 찍었다 — 사람은 여기가 깔린 줄 알고 떠난다.
+    흡수(`_autoregister_cwd`)는 AGENTS.md 의 asgard 마커를 요구하므로, 다른 도구가 만든
+    AGENTS.md 를 가진 저장소는 목록 밖에 그대로 남는다."""
+
+    def _note(self) -> str:
+        from asgard.commands.sync import _unregistered_cwd_note
+
+        cwd = os.getcwd()
+        os.chdir(self.root)
+        try:
+            return _unregistered_cwd_note(registry.load())
+        finally:
+            os.chdir(cwd)
+
+    def test_project_shaped_but_unregistered_cwd_is_named(self):
+        os.makedirs(os.path.join(self.root, ".claude"), exist_ok=True)
+        with open(os.path.join(self.root, "AGENTS.md"), "w", encoding="utf-8") as fh:
+            fh.write("# other tool's guide\n")  # asgard 마커 없음 — 자동등록 대상이 아니다
+        self.assertIn(self.root, self._note())
+
+    def test_registered_cwd_is_silent(self):
+        os.makedirs(os.path.join(self.root, ".claude"), exist_ok=True)
+        registry.record(self.root, cc=True, cursor=False, codex=False)
+        self.assertEqual("", self._note())
+
+    def test_plain_directory_is_silent(self):
+        self.assertEqual("", self._note())
+
+
 if __name__ == "__main__":
     unittest.main()
