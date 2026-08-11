@@ -73,6 +73,19 @@ def evolve_reject(
 
 
 @evolve_app.command(
+    "reset",
+    help="clear the waiting drafts and dig them out again under today's rules — the old ones are kept, not deleted",
+)
+def evolve_reset(
+    yes: bool = typer.Option(False, "--yes", help="do it — without this you only see what would move"),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
+) -> None:
+    from ..commands.evolve import run_reset
+
+    raise typer.Exit(run_reset(yes, json_out))
+
+
+@evolve_app.command(
     "polish", help="have a model rewrite a draft as principles rather than steps — it still waits on you"
 )
 def evolve_polish(

@@ -167,6 +167,39 @@ def run_reject(cid: str, reason: str = "", json_out: bool = False) -> int:
     return 0
 
 
+def run_reset(yes: bool = False, json_out: bool = False) -> int:
+    """인박스를 비우고 같은 퀘스트 로그에서 지금 규칙으로 다시 채굴한다.
+
+    `--yes` 를 요구하는 이유는 되돌리기 어려워서가 아니다 — 초안은 `rejected/` 에 그대로 남는다.
+    사람이 인박스에서 손으로 다듬던 문장이 있으면 그것이 한 번에 대기열에서 빠지므로, 그 사실을
+    치기 전에 알리는 자리다.
+    """
+    root = _surface(json_out)
+    waiting = evo.pending_list(root)
+    if not yes:
+        if json_out:
+            _emit({"reset": False, "pending": len(waiting), "reason": "confirmation required"})
+        else:
+            ui.warn(f"대기 중인 초안 {len(waiting)}건을 rejected/ 로 치우고 latch 를 풉니다 (설치된 스킬은 그대로).")
+            ui.step(ui.dim("    되돌리기: 옮긴 초안은 .asgard/evolution/rejected/ 에 그대로 있습니다"))
+            ui.step(ui.dim("    실행하려면 `asgard evolve reset --yes`"))
+        return 0
+    moved, freed, names = evo.reset(root)
+    mined = evo.mine(root)
+    if json_out:
+        _emit({"reset": True, "moved": moved, "latch_freed": freed, "mined": [m["id"] for m in mined]})
+        return 0
+    ui.ok(f"초안 {moved}건을 rejected/ 로 치우고 latch {freed}건을 풀었어요.")
+    for name in names[:6]:
+        ui.step(ui.dim(f"    치움 — {name}"))
+    if mined:
+        ui.ok(f"같은 퀘스트 로그에서 지금 규칙으로 {len(mined)}건을 다시 떴어요 — `asgard evolve list`")
+    else:
+        ui.step(ui.dim("    다시 뜬 초안은 없어요 — 남은 신호가 없거나 스캔 상한에 걸렸어요"))
+    ui.done()
+    return 0
+
+
 def run_polish(cid: str, json_out: bool = False) -> int:
     root = _surface(json_out)
     _draft(root, cid)

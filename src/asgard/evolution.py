@@ -47,6 +47,25 @@ _STOPWORDS = frozenset(
     "the and for with that this from into over under test tests failed failure error while when"
     " 검증 실패 수정 추가 제거 변경 파일 명령 확인".split()
 )
+PLACEHOLDER_TRIGGER = "재발-트리거-직접-기입"
+# 산문에서 건질 이름의 모양 — **밑줄이 든 것만**. `verifier_gate`·`_has_marker`·`craft_note.py`
+# 는 이 저장소가 코드에 붙이는 이름이고, 옆에 있던 `verifier`·`gate` 는 낱말이다.
+#
+# **붙임표는 여기 없다.** 한때 있었고, 그래서 `read-only`·`fail-open` 같은 영어 산문 합성어와
+# 하네스 서식 조각(`uv run --no-project` 의 `no-project`)이 트리거로 나갔다. 붙임표 이름은
+# 실패 서명 하나에서만 온다 — 그건 정형 실패 카탈로그가 이 상황에 붙인 이름이고, 기준 산문에
+# 우연히 섞인 합성어와 달리 다음에 같은 자리가 무너질 때 그대로 다시 적힌다.
+#
+# 점만 든 이름도 여기 없다. `os.environ`·`self.assertEqual` 이 그 부류인데, 앞이 표준 라이브러리나
+# 시험 틀이라 다음 요청에서 이 자리를 안 가리킨다.
+_IDENT = re.compile(r"[A-Za-z_]*[A-Za-z0-9]+_[A-Za-z0-9_]*[A-Za-z0-9](?:\.[A-Za-z_][A-Za-z0-9_]*)*")
+# 기준 한 줄의 `| verify: …`·`| artifacts: …` 꼬리는 하네스 계약 서식이지 이 변경의 내용이 아니다.
+# 안 자르면 모든 초안이 같은 명령줄에서 같은 조각을 건져 온다 (`tutor_rationale._goal` 과 같은 자름).
+_CONTRACT_TAIL = "|"
+_SEPARATORS = ("-", "_", ".")
+_TRIGGER_MIN = 4  # 구분자가 든 이름의 하한 — 구분자 없는 낱말은 길이와 무관하게 안 받는다
+_TRIGGER_CAP = 6
+_SKIP_STEMS = frozenset({"__init__", "__main__", "conftest", "setup", "main", "utils", "index"})
 
 
 def _evo_dir(root: str, *parts: str) -> str:
@@ -124,20 +143,94 @@ def _quest_signal(events: list[dict]) -> dict | None:
 # 사용자가 방금 실제로 교정했다는 실측 증거. 탐지는 0-LLM 보수 패턴 — 애매하면 버린다
 # (false positive 1건이 승인 피로 10건보다 나쁘다). 처분은 기존 인박스 계약 그대로:
 # 후보 스테이징 → 사람 승인만이 활성화.
+#
+# 26-08-11 실측: 이 채굴원은 열린 이래 산출이 0건이었고, `corrections.jsonl` 이 만들어진 적도
+# 없다. 원인은 상한도 배선도 아니었다 — 실제 오딘 발화 12건에 3건만 걸렸다. 패턴이 **문형이
+# 아니라 어간**에 걸려 있어서다: `하지\s*마` 는 "하지"라는 낱말을 요구하므로 "쓰지 마"·"붙이지
+# 마"를 못 잡고, `아니(야|라니까)` 는 "아닌 것 같은데"를 못 잡으며, `(로|으로)\s*해\s*줘?$` 는
+# "써줘"를 못 잡는다. 한국어는 어간이 바뀌므로 어간을 적으면 그 동사를 골랐을 때만 걸린다.
+#
+# 그래서 축을 어미로 옮긴다 — `-지 마`, `-면 안 되`, `아니-`, `말고`. 어미는 동사와 무관하게
+# 같은 모양으로 남는 자리라 하나만 적어도 그 문형 전체를 덮는다.
+#
+# 넓힐 때 서술문 거부권을 하나 같이 뒀다가 지웠다. 이 저장소 산문이 온통 "…가 아니라 …다" 꼴이라
+# 먹힐 줄 알았는데, 재 보니 그 형태는 아래 어느 패턴에도 안 걸린다 — 거부권이 막은 것은 오탐이
+# 아니라 진짜 정정 둘이었다("그게 아니라 이렇게 해", "이건 캐시가 아니라 큐니까 지우지 마").
+# 실측 없이 넣은 안전장치가 정확히 지키려던 것을 깎고 있었다.
+# 세 번째 판이다. 앞의 둘은 다 **어미 목록을 고쳐 적는** 수리였고, 두 번 다 한쪽을 막자 반대쪽이
+# 열렸다 — 오탐을 닫으면 재현이 뚫리고 재현을 메우면 오탐이 났다. 목록이 뿌리가 아니라는 뜻이라
+# (Canon 9) 판정 **단위**를 바꾼다.
+#
+# 왜 목록으로는 안 되는가. 부분 문자열 정규식은 `이미지`의 끝 `지`와 `하지`의 어미 `지`를,
+# `이해`의 `해`와 종결형 `해`를, `혼자`의 `자`와 청유형 `자`를 구조적으로 못 가른다. 한국어는
+# 조사와 어미가 앞말에 붙어 쓰이므로 낱말 경계가 곧 형태소 경계가 아니고, 어느 음절을 더 넣고
+# 빼도 그 벽은 안 넘는다.
+#
+# 그래서 규칙 하나로 바꾼다: **닻은 절 끝에만 박는다.** 종결형은 문장이나 절이 끝나는 자리에
+# 서고, 낱말 속 동음 음절은 거기 못 온다 — `혼자 남는다`의 `자` 뒤에는 문장이 더 이어지고,
+# `빨라지는지`의 `라` 뒤에는 음절이 더 붙는다. 그 자리를 못 잡는 갈래는 넓히는 대신 **버린다**
+# (이 층의 계약: 애매하면 버린다, false positive 1건이 승인 피로 10건보다 나쁘다).
+#
+# 버린 것 셋과 그 값:
+#   · `-면 안 되` 의 연결형(`안 되니까`·`안 되면`) — 관형형 `안 되는 이유가 뭐야?`(질문)와 같은
+#     모양이라 문장 끝 형태(`안 되지`·`안 돼`)만 남겼다. "그거 하면 안 되니까 빼줘" 를 놓친다.
+#   · `-지 말고` — `이미지 말고`·`페이지 말고` 와 글자가 같다. 대조는 아래 `말고|대신` 이 지시
+#     어미를 닻으로 잡으므로 이 갈래를 지워도 진짜 정정은 그쪽에서 걸린다.
+#   · 종결 어미 `라`·`자` — `빨라`·`혼자`·`글자`와 안 갈린다. `해라`·`하자` 같은 온전한 형태만 남겼다.
+#
+# 절 경계는 **한 자리에만 적는다**. 처음에는 갈래마다 따로 적었고, 그래서 `-지 마` 만 진짜 절
+# 경계를 알고 나머지 셋은 `$`(메시지 끝)를 요구했다 — 정정 뒤에 이유 한 줄이 더 붙으면 그 셋이
+# 통째로 죽었다("opus 말고 sonnet 으로 돌려줘. 비용이 두 배라서…"는 미탐이었다). 오딘이 실제로
+# 쓰는 꼴이 그 모양이라 8건 중 4건을 놓쳤다. 같은 규칙을 네 번 적으면 네 번째가 반드시 갈라진다.
+#
+# 변형 셋은 **한 글자 집합에서 조합한다** — 각각 따로 적으면 그것이 다시 네 벌이 된다. 빼는
+# 무리마다 이유가 하나씩 붙는다:
+#   · 금지에는 물음표가 없다. `안 돼요?`·`안 됩니까?` 는 금지가 아니라 허가를 묻는 질문이고,
+#     물음표를 절 끝으로 세면 그 화행이 통째로 정정으로 읽힌다.
+#   · 홑글자 `마` 에는 인용 마감이 없다. 이 저장소는 사용자 표면 문자열이 한국어라
+#     `ui.warn("전체 트리를 stash 하지 마")` 를 붙여넣고 묻는 요청이 드물지 않다.
+_CLOSERS = ",.!;:·…~"
+_QUOTES = "\"'”’」』)\\]"
+_CLAUSE_END = f"(?=[\\s?{_CLOSERS}{_QUOTES}]|$)"
+_STATEMENT_END = f"(?=[\\s{_CLOSERS}{_QUOTES}]|$)"
+_BARE_END = f"(?=[\\s?{_CLOSERS}]|$)"
 
 _CORRECTION_PATTERNS = (
-    re.compile(r"(그게|그거|그건)\s*아니"),
-    re.compile(r"아니(야|라니까)\b"),
-    re.compile(r"하지\s*마"),
-    re.compile(r"(말고|대신)\s+\S.{0,60}?(해줘|해라|하세요|해야|할 것|로 해)"),
-    re.compile(r"(로|으로)\s*해\s*줘?\s*[.!]?\s*$"),
-    re.compile(r"\bstop doing\b|\bdon'?t do that\b|\bnot what i (asked|meant)\b", re.IGNORECASE),
+    re.compile(r"(그게|그거|그건|이게|저게)\s*아니"),
+    # `아니다` 는 여기 없다. 평서형 계사라 이 저장소 산문에 흔하고("그건 회귀가 아니다"), 정정으로
+    # 쓰인 "그건 아니다" 는 바로 위 지시대명사 패턴이 이미 잡는다.
+    re.compile(r"아니(야|라니까|네|었|야지)"),
+    re.compile(r"아닌\s*(것|거|듯)\s*같"),
+    # `-지 마/말` 금지. 앞 동사는 무엇이든 온다 — 하지·쓰지·붙이지·지우지·넣지. `마` 홑글자는
+    # 절 끝에서만 센다(`이모지 마스크` 는 정정이 아니다). `말고` 갈래는 여기 없다 — 위 주석 참조.
+    re.compile(r"[가-힣]지\s*(는\s*)?(마(세요|십시오|요)|마" + _BARE_END + r"|말(라고|아라|아\s*줘|자))"),
+    # `-면 안 되` 는 평서형 종결만. 관형형·연결형은 질문과 글자가 같다. 해요체·명사형까지 세는
+    # 이유는 이 저장소 터미널 정본이 해요체라서다. 긴 형태를 먼저 적는다 — `돼` 가 먼저 맞으면
+    # 뒤의 `요` 에서 절 경계가 안 서서 `안 돼요` 가 통째로 미탐이 된다.
+    re.compile(r"[가-힣]면\s*안\s*(되지|된다|됩니다|돼요|됨|돼)" + _STATEMENT_END),
+    # 대조에는 지시 어미가 붙어야 정정이다. "대신 저 함수를 쓰면 어떤 차이가 있어?" 는 질문이고,
+    # "머지 말고 리베이스로 해줘" 는 정정이다. 어미는 **절 끝**에서만 센다.
+    re.compile(r"(말고|대신)\s+\S.{0,40}?(주세요|해야지|해라|하자|야지|세요|줘)" + _CLAUSE_END),
+    # `…로 해` 는 앞 조사가 닻이다 — `로`/`으로` 바로 뒤의 종결 `해` 만 센다. 그것 없이 문장이
+    # `해` 로 끝나는 자리는 `이해`·`편해`·`급해` 라 정정이 아니다.
+    re.compile(r"(말고|대신)\s+\S.{0,40}?(로|으로)\s*해" + _CLAUSE_END),
+    # 종전에 `(로|으로)\s*해\s*줘?$` 가 대조 없이 홀로 있었고 지웠다. "해요체로 써줘"·"영어로
+    # 바꿔줘"는 맥락 없이는 정정과 첫 요청을 못 가른다 — 실측에서 "근거는 링크로 해줘"·"한 줄로
+    # 적어 줘" 같은 평범한 지시가 같이 걸렸다. 대조가 드러난 형태는 위 둘이 잡는다.
+    #
+    # 영어 `don't` 는 뒤따르는 동사가 닻이다. `dont know`·`dont pass` 는 서술이고 `don't add`·
+    # `don't use` 는 금지다 — 영어는 활용이 없어서 목록 하나가 그 자리를 다 덮는다.
+    re.compile(
+        r"\bstop doing\b|\bnot what i (asked|meant)\b|\bthat'?s wrong\b|\binstead of\b|"
+        r"\bdon'?t\s+(do|use|add|change|remove|delete|touch|put|make|write|commit|push|call|run)\b",
+        re.IGNORECASE,
+    ),
 )
 _CORRECTION_MAX_CHARS = 500  # 정정은 짧다 — 장문은 설명/새 요청일 확률이 높다
 
 
 def correction_signal(user_text: str) -> str | None:
-    """정정 발화 판정 (0-LLM) — 매치 구절을 반환, 아니면 None. 보수적: 장문·위협 패턴 배제."""
+    """정정 발화 판정 (0-LLM) — 매치 구절을 반환, 아니면 None. 보수적: 장문·서술문 배제."""
     text = (user_text or "").strip()
     if not text or len(text) > _CORRECTION_MAX_CHARS:
         return None
@@ -202,7 +295,9 @@ def _correction_draft(row: dict) -> tuple[str, str]:
     """정정 신호 → (스킬명, SKILL.md 초안). 증거 카드 — 사용자 원문이 정본이다."""
     quote = row.get("user_text", "")
     name = "learned-" + _slug(quote, "correction")
-    triggers = _tokens(quote + " " + row.get("assistant_head", ""))[:6] or ["재발-트리거-직접-기입"]
+    # 정정에는 실패 서명이 없다 — 사용자 원문에 코드 이름이 없으면 자리표시자가 나가고,
+    # `approve` 가 그것을 막아 사람이 재발 조건을 직접 적게 한다.
+    triggers = _triggers("", quote + " " + row.get("assistant_head", ""))
     body = [
         "---",
         f"name: {name}",
@@ -228,17 +323,87 @@ def _correction_draft(row: dict) -> tuple[str, str]:
     return name, "\n".join(body)
 
 
-def _tokens(text: str) -> list[str]:
-    """트리거 후보 토큰 — ascii 4자+ 또는 한글 2자+ 단어, 불용어 제외 (결정론)."""
-    words = re.findall(r"[A-Za-z][A-Za-z0-9_.-]{3,}|[가-힣]{2,}", text)
-    out: list[str] = []
-    taken: set[str] = set()  # 순서는 out이, 중복 판정은 이쪽이 진다 — 긴 글에서 제곱이 되지 않게
-    for w in words:
-        lw = w.lower().strip(".-_")
-        if lw and lw not in _STOPWORDS and lw not in taken:
-            out.append(lw)
-            taken.add(lw)
-    return out
+def _triggers(sig: str, text: str, files: object = ()) -> list[str]:
+    """재발을 알아볼 이름들 — 실패 서명, 코드가 부르는 이름, 파일 이름. 산문 낱말은 안 쓴다.
+
+    종전에는 기준·부제 산문을 토큰으로 잘라 앞 여섯 개를 실었다. 그 산문은 판정 서식이라 같은
+    낱말이 매번 들어간다 — 26-08-11 에 저장소에 남아 있던 후보 넷의 트리거가 `충족`·`기준`·
+    `이번`·`turn`·`pass`·`import` 였고, 매칭은 부분 문자열이라 `이번`은 한국어 요청 거의 전부에,
+    `import` 는 파이썬 리팩터링 요청 거의 전부에 걸린다. 승인되면 그 스킬은 배울 것을 가르치는
+    대신 매 디스패치에 실리는 소음이 된다.
+
+    한국어 어절은 조사를 달고 나오는 것(`캐시가`·`로케일을`)도 같은 문제였다 — 그 형태 그대로는
+    다음 요청의 `캐시를` 과 안 맞는다. 그래서 낱말 축을 통째로 버리고 이름 축만 남긴다: 실패
+    서명, 바뀐 파일 이름, 기준·부제에 적힌 식별자. 셋 다 다음에 같은 자리를 건드릴 때 요청문이나
+    파일 목록에 그대로 다시 나타나는 이름이다. 하나도 못 찾으면 자리표시자를 내고, `approve` 가
+    그 자리표시자를 막아 사람이 직접 적게 한다.
+
+    갈래는 둘이고 규칙은 하나다. **실패 서명은 통째로** 받는다 — 정형 카탈로그가 이 상황에 붙인
+    이름이라 붙임표가 들어 있어도 산문이 아니다. **나머지는 밑줄이 든 이름만** 받는다: 산문에서든
+    바뀐 파일 이름에서든 같다.
+
+    밑줄 하나가 축인 이유는 이 저장소가 코드에 이름을 붙이는 방식이다. 붙임표까지 받았더니
+    `read-only`·`fail-open` 같은 영어 합성어와 하네스 서식 조각(`uv run --no-project` 의
+    `no-project`)이 트리거가 됐고, 맨낱말 파일 이름을 다섯 자 문턱으로 받았더니 `state`·`paths`·
+    `tools`·`shell` 이 통과해 각각 "add a statement to the README"·"fix the import paths" 류에
+    걸렸다. 문턱을 글자 수로 잡는 한 흔한 낱말과 드문 이름은 안 갈린다.
+
+    값은 있다: 파일 이름이 전부 한 낱말인 변경은 실패 서명 하나만 트리거로 갖는다. 그건 재발을
+    좁게 잡는 것이지 못 잡는 것이 아니고, 넓게 잡아 매 배차에 실리는 쪽보다 낫다.
+    """
+    found: list[str] = []
+    taken: set[str] = set()  # 순서는 found 가, 중복 판정은 이쪽이 진다
+    rows = files if isinstance(files, (list, tuple, set, frozenset)) else ()
+    stems = [stem for rel in rows if "_" in (stem := os.path.splitext(os.path.basename(str(rel)))[0])]
+    prose = "\n".join(line.split(_CONTRACT_TAIL, 1)[0] for line in str(text).splitlines())
+    # 공백이 든 서명은 통째로 못 쓴다 — 부분 문자열 매칭이라 그 문장이 그대로 다시 적힐 때만
+    # 맞는다. 그런 서명의 알맹이는 아래 산문 훑기가 식별자로 건진다.
+    head = [name for name in (str(sig).strip(),) if name and not any(c.isspace() for c in name)]
+    for raw in [*head, *_IDENT.findall(prose), *stems]:
+        name = str(raw).lower().strip("".join(_SEPARATORS))
+        if not name or name in taken or name in _STOPWORDS or name in _SKIP_STEMS:
+            continue
+        if _too_loose(name):
+            continue
+        found.append(name)
+        taken.add(name)
+    return found[:_TRIGGER_CAP] or [PLACEHOLDER_TRIGGER]
+
+
+def _too_loose(name: str) -> bool:
+    """이 이름 하나로는 자리를 못 가리는가 — 구분자가 없거나 너무 짧으면 그렇다.
+
+    맨낱말을 글자 수로 받던 판이 먼저 있었고, 거기서 `state`·`paths`·`tools`·`shell`·`session`·
+    `boundary` 가 다 통과했다. 매칭이 부분 문자열이라 `state` 는 "add a statement to the README"
+    에 걸린다. 흔한 낱말과 드문 이름은 글자 수로 안 갈리므로 축을 구분자로 바꿨다.
+
+    `bragi` 처럼 쓸 만한 맨낱말도 같이 막힌다. 그래도 이 축을 고른 이유는 두 실패의 크기가
+    다르기 때문이다 — 막힌 이름은 `bragi.py` 나 `asgard-bragi` 로 한 걸음에 고치지만, 넓은
+    트리거 하나는 매 배차마다 스킬 본문을 프롬프트에 밀어 넣는다.
+    """
+    return not any(sep in name for sep in _SEPARATORS) or len(name) < _TRIGGER_MIN
+
+
+def weak_triggers(triggers: object) -> tuple[str, ...]:
+    """이 묶음에서 재발을 못 알아보는 트리거들. 전부 통과하면 빈 튜플.
+
+    `_triggers` 와 **같은 `_too_loose` 를 쓴다** — 생성기가 안 내는 것을 승인이 받아 주면 그
+    문턱은 문턱이 아니다. 검사가 여기 한 번 더 서는 이유는 pending 초안이 **승인 전에 사람이
+    손으로 고치는 파일**이라서다. 생성기만 지키면 손으로 적어 넣은 `pass` 한 줄이 그대로
+    설치되고, 이미 인박스에 쌓여 있던 옛 초안(옛 생성기 산물)도 그대로 들어간다.
+
+    같은 문턱을 쓰되 생성기 쪽이 더 좁다: 산문과 파일 이름에서는 밑줄이 든 것만 받고, 붙임표는
+    실패 서명 하나에서만 받는다. 좁은 쪽이 생성기인 것이 안전한 방향이다 — 사람이 고른 이름은
+    사람이 책임지고, 기계가 대량으로 뜨는 이름은 기계가 더 조심한다.
+
+    거르는 대신 **이름을 대고 거절**한다. 사람이 적은 트리거를 조용히 지우면 그 스킬은 자기가
+    무엇에 걸리는지와 다른 것이 설치된다. 한 걸음으로 고칠 수 있는 거절이 조용한 수정보다 낫다.
+    """
+    rows = triggers if isinstance(triggers, (list, tuple, set, frozenset)) else str(triggers or "").split(",")
+    names = [str(t).strip().lower() for t in rows if str(t).strip()]
+    if not names:
+        return (PLACEHOLDER_TRIGGER,)
+    return tuple(name for name in names if name == PLACEHOLDER_TRIGGER or _too_loose(name))
 
 
 def _slug(text: str, fallback: str) -> str:
@@ -251,13 +416,16 @@ def _draft(sig: dict) -> tuple[str, str]:
     cid_seed = sig["signal"]
     name = "learned-" + _slug(sig["failure_sig"] or (sig["subtasks"][0] if sig["subtasks"] else ""), "quest")
     trig_src = " ".join([sig["failure_sig"]] + sig["subtasks"] + sig["criteria"])
-    triggers = _tokens(trig_src)[:6] or ["재발-트리거-직접-기입"]
+    triggers = _triggers(sig["failure_sig"], trig_src, sig["changed_files"])
     desc_src = sig["subtasks"][0] if sig["subtasks"] else (sig["criteria"][0] if sig["criteria"] else sig["signal"])
     esc = " (ESCALATE 경유)" if sig["escalated"] else ""
+    # 설명 첫 자리에 실패 서명을 둔다 — 카탈로그에서 이 한 줄만 읽고 스킬을 부를지 정하므로,
+    # 잘려 나간 기준 문장보다 "무엇에 막혔던 자리인가"가 먼저 서야 한다.
+    where = sig["failure_sig"] or sig["signal"]
     body = [
         "---",
         f"name: {name}",
-        f"description: {desc_src[:150]} — FAIL {sig['fail_count']}회{esc} 후 PASS로 도달한 교훈",
+        f"description: {where}에서 막혔던 자리 — {desc_src[:120]} (FAIL {sig['fail_count']}회{esc} 뒤 PASS)",
         f"triggers: {', '.join(triggers)}",
         "agent: worker",
         "origin: retrospective",
@@ -265,8 +433,11 @@ def _draft(sig: dict) -> tuple[str, str]:
         f"evidence: {sig['quest_id']}",
         "---",
         "",
-        "## 함정 (먼저 실패한 지점)",
+        # 퀘스트 로그가 실패에 대해 남기는 것은 서명 한 줄뿐이다(구조화 실패 카탈로그). 무슨 일이
+        # 있었는지는 그 로그를 열어야 나오므로, 여기서 서사를 지어내는 대신 서명과 자리를 적는다.
+        "## 함정 (먼저 실패한 지점 — 퀘스트 로그의 실패 서명)",
         *(f"- {w}" for w in (sig["fail_whys"] or ["(failure_sig 미기록 — 퀘스트 로그 참조)"])),
+        f"- 무슨 일이었는지는 `.asgard/quest/{sig['quest_id']}.jsonl` 의 verify 이벤트에 있다.",
         "",
         "## 전략 (결국 통과한 접근)",
         *(f"- criteria: {c}" for c in sig["criteria"]),
@@ -466,7 +637,11 @@ def nudge_line(root: str) -> str | None:
 
     종전에는 "미채굴 신호가 있다"고 알리고 채굴은 사람이 치게 했다 — 그래서 놓친 넛지 하나가
     교훈 하나의 영구 소실이었다. 이제 채굴까지는 하니스가 하고(가역·비활성), 사람에게는
-    **승인할 것이 있다**고 말한다. 채굴을 끈 사람에게는 종전 문장 그대로다."""
+    **승인할 것이 있다**고 말한다. 채굴을 끈 사람에게는 종전 문장 그대로다.
+
+    한 줄이 말해야 하는 것 셋: 기다리는 것이 무엇인가(스킬 초안), 어디서 나왔는가(어느 퀘스트의
+    어떤 실패), 승인하면 무엇이 되는가(다음 워커 배차부터 자동으로 쓰인다). 셋 중 하나라도 빠지면
+    읽는 사람은 "학습 후보"가 무엇을 가리키는 말인지부터 되물어야 한다 (26-08-11 오딘 지적)."""
     mined = autoscan(root)
     items = pending_list(root)
     if items:
@@ -474,8 +649,7 @@ def nudge_line(root: str) -> str | None:
         digest = hashlib.sha1("\0".join(ids).encode()).hexdigest()
         if _latched(root, digest, len(items)):
             return None
-        fresh = f" (방금 {len(mined)}건 채굴)" if mined else ""
-        return f"학습 후보 {len(items)}건 대기{fresh} — asgard evolve list로 검토·승인 (미승인 = 미적용)"
+        return f"진화 인박스 — 스킬 초안 {len(items)}건이 승인을 기다린다{_fresh(mined)}. {_INBOX_TAIL}"
     qdir = os.path.join(root, ".asgard", "quest")
     seen = _load_seen(root)
     signals = sorted(
@@ -493,7 +667,26 @@ def nudge_line(root: str) -> str | None:
     digest = hashlib.sha1("\0".join(signals).encode()).hexdigest()
     if _latched(root, digest, len(signals)):
         return None
-    return f"진화 후보 신호 {len(signals)}건 — asgard evolve scan으로 채굴 후 검토·승인 (hard-won 교훈)"
+    return (
+        f"진화 인박스 — 실패를 딛고 통과한 퀘스트 {len(signals)}건이 아직 초안이 안 됐다. "
+        "`asgard evolve scan` 이 초안을 뜨고, 그 뒤는 승인해야 실린다."
+    )
+
+
+# 승인이 무엇을 하는지 한 번은 적는다 — 이 줄을 읽는 사람 대부분은 인박스를 처음 본다.
+_INBOX_TAIL = "승인하면 그 뒤 워커 배차부터 자동으로 쓰이고, 안 하면 아무 데도 안 쓰인다 — `asgard evolve list`"
+
+
+def _fresh(mined: list[dict]) -> str:
+    """방금 뜬 초안이 어느 퀘스트의 무엇에서 나왔는지. 없으면 빈 문자열."""
+    if not mined:
+        return ""
+    row = mined[0]
+    where = str(row.get("quest_id") or "") or str(row.get("origin") or "")
+    fails = row.get("fail_count")
+    detail = f"{where} — 실패 {fails}회 뒤 통과" if where and isinstance(fails, int) else where
+    head = f" (방금 {len(mined)}건: `{row.get('name')}`"
+    return head + (f" ← {detail})" if detail else ")")
 
 
 def pending_list(root: str) -> list[dict]:
@@ -525,8 +718,13 @@ def approve(root: str, cid: str) -> tuple[bool, str]:
         return False, "frontmatter 불량 — name/triggers 필수. pending SKILL.md를 고친 뒤 재시도."
     meta, _body = parsed
     name = str(meta["name"])
-    if "재발-트리거-직접-기입" in meta["triggers"]:
-        return False, "triggers가 placeholder 그대로다 — 실제 재발 키워드로 바꾼 뒤 재시도."
+    loose = weak_triggers(meta["triggers"])
+    if loose:
+        return False, (
+            f"이 트리거로는 재발을 못 알아본다: {', '.join(loose)} — 무엇에나 걸리거나 아무것에도 안 "
+            "걸린다. 코드가 부르는 이름으로 바꿔라 (파일 이름·함수 이름·실패 서명). 짧은 이름은 자리를 "
+            "붙여 늘린다 (`k6` → `asgard-k6`)."
+        )
     if name in learned_skills(root):
         return False, f"이름 충돌: learned 스킬 '{name}'이 이미 있다."
     if name in _bundled_names():
@@ -576,6 +774,49 @@ def reject(root: str, cid: str, reason: str = "") -> tuple[bool, str]:
     shutil.rmtree(dst, ignore_errors=True)
     shutil.move(src, dst)
     return True, f"거부됨 — 같은 신호는 다시 제안하지 않는다{' (' + reason[:80] + ')' if reason else ''}"
+
+
+def reset(root: str) -> tuple[int, int, list[str]]:
+    """인박스를 비우고 다시 채굴할 수 있게 연다. 반환 = (치운 초안 수, 푼 latch 수, 초안 이름들).
+
+    왜 필요한가. 초안의 모양은 생성기가 정하는데 생성기는 고쳐진다 — 26-08-11 에 트리거 규칙이
+    산문 낱말에서 이름 축으로 바뀌자, 그 전에 뜬 초안 다섯이 전부 승인 문턱에 걸린 채 인박스에
+    남았다. 그것들은 고칠 값이 있는 문서가 아니라 옛 규칙의 산물이고, 같은 퀘스트 로그에서 새
+    규칙으로 다시 뜨는 편이 낫다. 그런데 `seen` latch 가 "이 신호는 이미 제안했다"를 붙들고 있어
+    재채굴이 막힌다 — 그 latch 를 사람이 손으로 지우게 두면 `.asgard` 를 직접 여는 습관이 생긴다.
+
+    **아무것도 잃지 않는다.** 초안은 `rejected/` 로 옮겨 그대로 남고(감사 가능), latch 는 퀘스트
+    로그와 `corrections.jsonl` 에서 언제든 다시 만들어지는 파생물이다. 이미 설치된 learned 스킬은
+    이 함수가 아예 안 본다 — 그쪽을 내리는 것은 `archive_skill` 의 일이다.
+    """
+    stamp = time.strftime("%Y%m%d%H%M%S")
+    names = []
+    for meta in pending_list(root):
+        cid = str(meta.get("id") or "")
+        if not cid:
+            continue
+        src, dst = _evo_dir(root, PENDING, cid), _evo_dir(root, REJECTED, f"{cid}-{stamp}")
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        shutil.move(src, dst)
+        names.append(str(meta.get("name") or cid))
+    seen = _load_seen(root)
+    # 사람이 내린 판단은 초기화가 안 지운다. 승인은 이미 스킬이 서 있어서 다시 제안하면 이름이
+    # 충돌하고, 거절은 `reject` 가 "같은 신호는 다시 제안하지 않는다"고 약속한 자리다 — 그 약속과
+    # 거절 사유는 `seen.json` 에만 있어서 여기서 지우면 사람이 한 번 내친 초안이 다시 올라온다.
+    # 초기화가 푸는 것은 기계가 붙인 `proposed` 뿐이다.
+    kept = {sig: row for sig, row in seen.items() if str((row or {}).get("status")) in ("approved", "rejected")}
+    freed = len(seen) - len(kept)
+    _save_seen(root, kept)
+    _clear_nudge_latch(root)
+    return (len(names), freed, names)
+
+
+def _clear_nudge_latch(root: str) -> None:
+    """넛지 지문도 같이 지운다 — 안 지우면 초기화 뒤 첫 채굴이 "같은 집합" 으로 읽혀 조용하다."""
+    try:
+        os.remove(os.path.join(root, ".asgard", "state", "evolve-nudge.json"))
+    except OSError:
+        pass  # 없으면 지울 것도 없다 — 초기화가 이 한 줄로 실패하지 않는다
 
 
 def archive_skill(root: str, name: str) -> tuple[bool, str]:

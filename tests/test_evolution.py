@@ -68,7 +68,9 @@ def _write_quest(root: str, qid: str, lines: list[str]) -> None:
     open(os.path.join(d, f"{qid}.jsonl"), "w", encoding="utf-8").write("\n".join(lines) + "\n")
 
 
-def _hard_won(root: str, qid: str = "q-hard", sig: str = "pytest assertion test_gate 판정 누락") -> None:
+# 실패 서명은 정형 카탈로그의 붙임표 이름이다 (`unit-oversize`·`upward-layer-import`) — 산문이
+# 아니다. 트리거가 그 이름을 그대로 쓰므로 픽스처도 실제 모양이어야 판정이 실제를 잰다.
+def _hard_won(root: str, qid: str = "q-hard", sig: str = "verifier-gate-record-missing") -> None:
     _write_quest(
         root,
         qid,
@@ -267,14 +269,14 @@ class TestInbox(EvoBase):
         m = evolution.mine(self.root)[0]
         ok, msg = evolution.approve(self.root, m["id"])
         self.assertFalse(ok)
-        self.assertIn("placeholder", msg)
+        self.assertIn(evolution.PLACEHOLDER_TRIGGER, msg)  # 무엇이 막았는지 값으로 말한다
 
     def test_approve_installs_and_routes(self):
         m = self._mined()
         ok, msg = evolution.approve(self.root, m["id"])
         self.assertTrue(ok, msg)
         self.assertIn(m["name"], skill_bank.learned_skills(self.root))
-        hits = skill_bank.resolve_learned(self.root, "pytest 판정 누락 재발", "worker")
+        hits = skill_bank.resolve_learned(self.root, "verifier_gate 가 또 판정 레코드를 안 잡는다", "worker")
         self.assertEqual([n for n, _ in hits], [m["name"]])
         self.assertEqual(evolution.pending_list(self.root), [])  # 인박스에서 제거
         self.assertEqual(evolution.mine(self.root), [])  # approved latch 유지
@@ -309,7 +311,9 @@ class TestInbox(EvoBase):
         evolution.approve(self.root, m["id"])
         ok, _ = evolution.archive_skill(self.root, m["name"])
         self.assertTrue(ok)
-        self.assertEqual(skill_bank.resolve_learned(self.root, "pytest 판정 누락 재발", "worker"), [])
+        self.assertEqual(
+            skill_bank.resolve_learned(self.root, "verifier_gate 가 또 판정 레코드를 안 잡는다", "worker"), []
+        )
         archive = os.path.join(self.proj_skills(), ".archive")
         self.assertTrue(any(d.startswith(m["name"]) for d in os.listdir(archive)))  # 삭제 아님 — 복원 가능
 
@@ -319,7 +323,9 @@ class TestInbox(EvoBase):
         evolution.archive_skill(self.root, m["name"])
         ok, msg = evolution.restore_skill(self.root, m["name"])
         self.assertTrue(ok, msg)
-        self.assertTrue(skill_bank.resolve_learned(self.root, "pytest 판정 누락 재발", "worker"))  # 재라우팅
+        self.assertTrue(
+            skill_bank.resolve_learned(self.root, "verifier_gate 가 또 판정 레코드를 안 잡는다", "worker")
+        )  # 재라우팅
         # 활성 동명 스킬이 있으면 복원 거부 (Hermes restore 충돌 검증 상당)
         evolution.archive_skill(self.root, m["name"])
         _write_skill(self.proj_skills(), m["name"], "다른트리거")
@@ -475,7 +481,7 @@ class TestPolish(EvoBase):
         m = self._mined()
         text = evolution.show(self.root, m["id"])
         assert text is not None
-        rewritten = text.replace("## 함정 (먼저 실패한 지점)", "## 함정 (원칙 수준 서술)")
+        rewritten = text.replace("## 함정 (먼저 실패한 지점 — 퀘스트 로그의 실패 서명)", "## 함정 (원칙 수준 서술)")
         p1, p2 = self._fake_provider(rewritten)
         with p1, p2:
             ok, msg = evolution.polish(self.root, m["id"])
@@ -605,6 +611,346 @@ class TestNoInjectionInvariants(EvoBase):
         self.assertNotIn("학습 스킬", m.group(0))
 
 
+class TestTriggers(EvoBase):
+    """트리거는 재발을 알아보는 자다 — 이름만 쓰고 산문 낱말은 안 쓴다.
+
+    26-08-11 실측이 이 자를 만들었다. 저장소에 남아 있던 후보 넷의 트리거가 기준 산문에서 잘려
+    나온 낱말이었고(`충족`·`기준`·`이번`·`turn`·`pass`·`import`), 매칭이 부분 문자열이라 `이번` 은
+    한국어 요청 거의 전부에, `import` 는 파이썬 리팩터링 요청 거의 전부에 걸렸다. 승인되면 그
+    스킬은 배울 것을 가르치는 대신 매 배차에 실리는 소음이 된다.
+    """
+
+    # 이 후보들과 아무 상관 없는 요청들. 여기 하나라도 걸리면 그 트리거는 소음이다. 뒤 셋은
+    # 붙임표 영어 합성어를 노린다 — 붙임표를 산문에서도 받던 판에서 `read-only`·`fail-open` 이
+    # 그대로 트리거가 됐고, 그 둘은 이런 문장 전부에 걸린다.
+    _UNRELATED = (
+        "메모리 회수 지연을 재보고 이번 결과를 보고해",
+        "refactor the import graph so cli does not import commands",
+        "릴리스 노트를 쓰고 판 번호를 올려라",
+        "fix the flaky test and turn the retry back on",
+        "스튜디오 사이드바 접기 단추가 안 눌린다",
+        "make the cache read-only for the worker",
+        "fail-open 이던 로깅을 fail-closed 로 바꿔라",
+        "uv run --no-project 로 도는 스크립트를 하나 더 붙여라",
+    )
+
+    def _installed_triggers(self, sig: str) -> tuple[str, ...]:
+        _hard_won(self.root, sig=sig)
+        cand = evolution.mine(self.root)[0]
+        ok, msg = evolution.approve(self.root, cand["id"])
+        self.assertTrue(ok, msg)
+        return tuple(skill_bank.learned_skills(self.root)[cand["name"]]["triggers"])
+
+    def test_no_trigger_is_a_word_from_the_criteria_prose(self):
+        triggers = self._installed_triggers("upward-layer-import")
+
+        self.assertIn("upward-layer-import", triggers, "실패 서명은 이 상황의 이름이다")
+        self.assertIn("verifier_gate", triggers, "바뀐 파일 이름도 다음에 다시 나타난다")
+        for noise in ("import", "충족", "기준", "이번", "turn", "pass", "요구"):
+            self.assertNotIn(noise, triggers)
+
+    def test_prose_compounds_and_harness_boilerplate_never_become_triggers(self):
+        """붙임표는 실패 서명 하나에서만 온다.
+
+        산문에서도 받던 판에서는 `read-only`·`fail-open` 같은 영어 합성어가, 그리고 기준의
+        `| verify: uv run --no-project …` 꼬리에서 `no-project` 가 그대로 트리거로 나갔다.
+        꼬리는 하네스 계약 서식이라 **모든** 초안이 같은 조각을 건져 온다.
+        """
+        triggers = evolution._triggers(
+            "readonly-guard-false-positive",
+            "readonly-guard-false-positive 가드가 read-only 경로를 fail-open 으로 흘렸다 "
+            "| verify: uv run --no-project python -m pytest tests/test_readonly_roots.py -q",
+            ["src/asgard/hooks/readonly_guard.py"],
+        )
+
+        self.assertIn("readonly-guard-false-positive", triggers)
+        self.assertIn("readonly_guard", triggers)
+        for noise in ("read-only", "fail-open", "no-project"):
+            self.assertNotIn(noise, triggers)
+
+    def test_a_one_word_file_name_is_not_a_trigger(self):
+        """맨낱말 파일 이름을 글자 수로 받던 판에서 `state`·`paths`·`tools`·`shell` 이 통과했다.
+
+        매칭이 부분 문자열이라 `state` 는 "add a statement to the README" 에, `paths` 는 "fix the
+        import paths in the sidebar" 에 걸린다. 흔한 낱말과 드문 이름은 글자 수로 안 갈린다.
+        """
+        triggers = evolution._triggers(
+            "unit-oversize",
+            "self.assertEqual 과 os.environ 을 쓰는 시험이 커졌다",
+            ["src/asgard/state.py", "src/asgard/tools.py", "src/asgard/hooks/readonly_guard.py"],
+        )
+
+        self.assertEqual(triggers, ["unit-oversize", "readonly_guard"])
+        for noise in ("state", "tools", "self.assertequal", "os.environ"):
+            self.assertNotIn(noise, triggers)
+
+    def test_an_installed_skill_stays_silent_on_unrelated_requests(self):
+        name = None
+        for sig in ("upward-layer-import", "unit-oversize"):
+            _hard_won(self.root, qid=f"q-{sig}", sig=sig)
+        for cand in evolution.mine(self.root):
+            ok, msg = evolution.approve(self.root, cand["id"])
+            self.assertTrue(ok, msg)
+            name = cand["name"]
+        assert name is not None
+
+        for task in self._UNRELATED:
+            self.assertEqual(skill_bank.resolve_learned(self.root, task, "worker"), [], task)
+
+    def test_the_same_skill_still_fires_when_the_place_comes_back(self):
+        """소음을 죽이면서 재현을 못 잡으면 그건 스킬을 끈 것이다 — 반대쪽도 같이 못박는다."""
+        self._installed_triggers("upward-layer-import")
+
+        hits = skill_bank.resolve_learned(self.root, "verifier_gate 가 또 판정 레코드를 안 잡는다", "worker")
+        self.assertEqual(len(hits), 1, "같은 파일을 다시 건드리는 요청은 잡아야 한다")
+
+    def test_a_hand_edited_draft_gets_the_same_floor_as_a_generated_one(self):
+        """생성기만 지키면 손으로 적어 넣은 `pass` 한 줄이 그대로 설치된다.
+
+        옛 생성기가 쌓아 둔 인박스 초안도 같은 문턱을 지난다 — 강한 트리거 하나가 섞여 있다고
+        옆의 `이번`·`import` 를 같이 들여보내면 그 스킬은 매 배차에 들어간다.
+        """
+        self.assertEqual(evolution.weak_triggers(("pass",)), ("pass",))
+        self.assertEqual(evolution.weak_triggers(("unit-oversize", "turn", "이번")), ("turn", "이번"))
+        self.assertEqual(evolution.weak_triggers(()), (evolution.PLACEHOLDER_TRIGGER,))
+        for strong in (("unit-oversize",), ("verifier_gate", "readonly_guard"), ("craft_note.py",)):
+            self.assertEqual(evolution.weak_triggers(strong), (), strong)
+
+    def test_the_approver_refuses_what_the_generator_would_not_write(self):
+        """생성기가 안 내는 것을 승인이 받아 주면 그 문턱은 문턱이 아니다.
+
+        옛 생성기가 쌓아 둔 인박스 초안이 이 자를 필요하게 만든다 — 26-08-11 에 저장소에 남아
+        있던 `evo-0a104cc9` 의 트리거가 `session`·`boundary`·`local` 이었고, 부분 문자열 매칭이라
+        그 셋은 이 저장소 요청의 큰 몫에 걸린다.
+        """
+        loose = evolution.weak_triggers(("codex-resume-sandbox", "injectable", "local", "session", "boundary"))
+
+        self.assertEqual(loose, ("injectable", "local", "session", "boundary"))
+        for word in ("state", "paths", "tools", "shell"):
+            self.assertEqual(evolution.weak_triggers((word,)), (word,), word)
+
+    def test_the_refusal_names_the_trigger_that_has_to_change(self):
+        """무엇을 고쳐야 하는지 안 대면 사람은 초안을 열고 다시 추측해야 한다."""
+        _hard_won(self.root)
+        cand = evolution.mine(self.root)[0]
+        path = os.path.join(self.root, ".asgard", "evolution", "pending", cand["id"], "SKILL.md")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read().replace("triggers: ", "triggers: 이번, ")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(text)
+
+        ok, message = evolution.approve(self.root, cand["id"])
+
+        self.assertFalse(ok)
+        self.assertIn("이번", message)
+        self.assertNotIn("verifier-gate-record-missing", message, "통과한 트리거는 안 나무란다")
+
+
+class TestCorrectionDetector(EvoBase):
+    """정정 탐지 — 어간이 아니라 문형을 본다. 재현과 오탐을 **같이** 잰다.
+
+    26-08-11 실측이 이 자를 만들었다: 이 채굴원은 열린 이래 산출이 0건이었고 `corrections.jsonl`
+    이 만들어진 적도 없었는데, 원인은 상한도 배선도 아니라 패턴이 어간에 걸려 있던 것이었다.
+    `하지\\s*마` 는 "하지"라는 낱말을 요구하므로 "쓰지 마"·"붙이지 마"를 못 잡는다 — 한국어는
+    어간이 바뀌므로 어간을 적으면 그 동사를 골랐을 때만 걸린다. 실제 오딘 발화 12건에 3건이었다.
+
+    한쪽만 재면 안 된다. 넓히기만 하는 판정기는 이 저장소의 산문("…가 아니라 …다")을 자기가 먹고,
+    그러면 승인 피로가 정정 하나의 값보다 커진다.
+    """
+
+    _CORRECTIONS = (
+        "그게 아니야",
+        "그렇게 하지 마",
+        "opus 말고 sonnet 으로 해줘",
+        "이모지 쓰지 마",
+        "커밋에 Co-Authored-By 붙이지 마",
+        "아니 그거 말고 훅 쪽을 봐야지",
+        "테스트를 지우면 안 되지",
+        "그건 아닌 것 같은데 다시 봐줘",
+        "전체 트리를 stash 하면 안 돼",
+        "don't add a signature footer",
+        "that's wrong, use the map command instead of grep",
+        # 서술문 거부권을 뒀다가 지운 자리 — 그 거부권이 막은 것은 오탐이 아니라 이 둘이었다.
+        "그게 아니라 이렇게 해",
+        "이건 캐시가 아니라 큐니까 지우지 마",
+        # `말-` 갈래. 어미만 보고 `마` 로 끝나는 형태만 적었다가 이 넷을 다 놓쳤다.
+        "테스트를 지우지 말라고",
+        "그 파일은 건드리지 말아 줘",
+        "커밋에 서명을 붙이지 마십시오",
+        "이제 그만 하지 말자",
+        "머지 말고 리베이스로 해줘",
+        "설명 대신 예제를 보여줘",
+        # 절 경계는 문장 끝만이 아니다 — 쉼표도 절을 끊는다.
+        "그거 하지 마, 강제 푸시 금지야",
+        # 3차 판정 — 정정 한 줄 + 이유 한 줄. 오딘이 실제로 쓰는 꼴이고, 절 경계를 한 갈래에만
+        # 붙였을 때 이 부류가 8건 중 4건 미탐이었다.
+        "opus 말고 sonnet 으로 돌려줘. 비용이 두 배라서 지금 판단이 안 서",
+        "전체 트리를 stash 하면 안 돼. 병렬 세션이 같은 트리를 보고 있어서 위험해",
+        "이모지 쓰지 마. 커밋 메시지는 한국어로 적고 서명은 빼",
+        # 마감 기호도 절을 끊는다 — 인용 마감은 뺐다(_DROPPED 참조).
+        "하지 마…",
+        "하지 마; 로그만 봐",
+        # 해요체·명사형 — 이 저장소 터미널 정본이 해요체다.
+        "그렇게 하면 안 돼요",
+        "그거 하면 안 됨",
+    )
+    _ORDINARY = (
+        "튜터 카드에 설명을 더 넣어줘",
+        "메모리 회수 지연을 재보고 결과를 보고해",
+        "이건 캐시가 아니라 큐다",
+        "게이트가 아니라 규율이므로 막지 않는다",
+        "빌드가 안 되면 로그를 붙여 줘",
+        "릴리스 노트를 쓰고 판 번호를 올려라",
+        "이 값은 비어도 되니 그대로 둬라",
+        "refactor the import graph",
+        "설명은 짧게, 근거는 링크로 해줘",
+        "왜 이렇게 했는지 한 줄로 적어 줘",
+        "튜터는 관문이 아니라 규율이다",
+        "이건 계측이 아니라 판정이다",
+        "판정이 두 벌이면 반드시 어긋난다",
+        # 문형만 보고 닻을 뗐다가 걸린 것들 (26-08-11 1차 판정) — 질문·비교·버그 보고에는
+        # 정정이 한 조각도 안 들어 있다.
+        "이렇게 하면 안 되나요?",
+        "왜 여기서 캐시를 지우면 안 되는지 설명해줘",
+        "이 함수 대신 저 함수를 쓰면 어떤 차이가 있어?",
+        "the tests dont pass on windows, please look",
+        "I dont know why recall is slow, profile it",
+        "그건 회귀가 아니다 — 같은 조건 재실행으로 가른다",
+        "이미지 마스크를 하나 더 만들어",
+        # 2차 판정 — 낱말 속 동음 음절. 부분 문자열로는 `혼자`의 `자`와 청유형 `자`가 안 갈린다.
+        "grep 대신 map impact 를 쓰면 얼마나 빨라지는지 재봐",
+        "요약 대신 원문이 혼자 남는다",
+        "리베이스 말고 머지가 더 편해",
+        "이 값 말고 저 값이 왜 그런지 이해",
+        # 2차 판정 — `이미지`·`페이지`·`메시지` 는 이 저장소 요청에 늘 나오는 낱말이다.
+        "이미지 말고 아이콘이 더 나은지 비교해 볼까",
+        "페이지 말고 컴포넌트 단위로 얼마나 걸리는지 재봐",
+        "메시지 말고 로그가 어디에 쌓이는지 알려줄 수 있어?",
+        # 2차 판정 — 관형형 `-되는` 은 `-되나요` 와 같은 문형이다.
+        "지금 머지하면 안 되는 이유가 뭐야?",
+        "건드리면 안 되는 파일 목록을 뽑아줘",
+        "여기서 실패하면 안 되는 이유를 주석에 적어",
+        # 4차 판정 — 허가를 묻는 질문. 금지는 물음표로 끝나지 않으므로 이 갈래에서 `?` 는
+        # 절 끝이 아니라 화행이 바뀌는 표시다. 해요체를 목록에 넣자 같은 화행이 되돌아왔다.
+        "이렇게 하면 안 돼요?",
+        "여기서 지우면 안 돼?",
+        "이거 먼저 머지하면 안 됩니다?",
+        # 4차 판정 — 한국어 표면 문자열이 든 코드를 그대로 붙여넣고 묻는 요청.
+        'ui.warn("전체 트리를 stash 하지 마") 이 문구가 어디서 나오는지 찾아줘',
+        "docstring 에 [하지 마] 라고 적힌 자리를 지워도 되나?",
+        "페이지 마지막 줄을 확인해줘",
+        "메시지 마감일을 알려줘",
+        "이미지 마스크를 페이지 마지막에 넣어",
+    )
+    # 잡을 수 있으면 좋지만 **버린** 갈래. 이 목록이 있어야 절단이 조용하지 않다.
+    _DROPPED = (
+        "그거 하면 안 되니까 빼줘",
+        "캐시를 지우면 안 되니 그대로 둬",
+        "전체 stash 하면 안 되니까 부분만 해",
+        # 홑음절 명령형 `-어/-아` — `재봐`·`해봐` 와 안 갈린다. `대신 … 재봐` 는 재 달라는
+        # 요청이고 `말고 … 써` 는 정정인데, 끝 음절 하나로는 그 둘이 같은 모양이다.
+        "grep 말고 map impact 를 써. 그래야 양쪽 방향이 다 나와",
+        # `해라`·`하자` 는 온전한 형태라 동사 `하다` 에만 맞는다 — 홑 어미 `라`·`자` 를 버린
+        # 결정의 나머지 절반이다(`빨라`·`혼자` 와 안 갈려서 버렸다).
+        "거기 말고 여기를 고쳐라",
+        "롤백 대신 재시도로 가자",
+        # 인용 마감(`" ' ) ]`)을 홑글자 `마` 갈래의 절 끝에서 뺀 대가. 이 저장소는 사용자 표면
+        # 문자열이 한국어라 `ui.warn("… 하지 마")` 를 붙여넣고 묻는 요청을 지키는 쪽을 골랐다.
+        '"강제 푸시 하지 마"',
+        "(전체 stash 하지 마)",
+        # 연결형 `-되는데` 는 관형형 `안 되는 이유가 뭐야?`(질문)와 앞이 같다.
+        "그렇게 하면 안 되는데",
+    )
+
+    def test_it_catches_the_correction_whatever_verb_the_user_picked(self):
+        missed = [t for t in self._CORRECTIONS if not evolution.correction_signal(t)]
+        self.assertEqual(missed, [], "어간이 아니라 어미를 봐야 이 문형 전체가 덮인다")
+
+    def test_an_ordinary_request_is_not_a_correction(self):
+        """오탐 1건이 승인 피로 10건보다 나쁘다 — 이 층이 스스로 적어 둔 계약이다."""
+        fired = [(t, evolution.correction_signal(t)) for t in self._ORDINARY if evolution.correction_signal(t)]
+        self.assertEqual(fired, [], "부정 어미는 서술문에도 흔하다")
+
+    def test_the_dropped_lane_stays_dropped_and_is_written_down(self):
+        """`-면 안 되니까` 는 관형형 `안 되는 이유가 뭐야?`(질문)와 글자가 같아 버렸다.
+
+        판정 두 판이 같은 자리를 반대 방향으로 두 번 잡았다 — 오탐을 막으면 재현이 뚫리고 재현을
+        메우면 오탐이 났다. 목록을 세 번째로 고치는 대신 이 갈래를 버리고 문장 끝 평서형만 남겼다
+        (Canon 9). 여기 적어 두는 이유는 하나다: 조용한 절단은 "0건"을 "안 봤다"로 만든다.
+        """
+        for text in self._DROPPED:
+            self.assertIsNone(evolution.correction_signal(text), text)
+        for kept in ("테스트를 지우면 안 되지", "전체 트리를 stash 하면 안 돼"):
+            self.assertIsNotNone(evolution.correction_signal(kept), kept)
+
+    def test_a_bare_로_해줘_is_a_request_not_a_correction(self):
+        """맥락 없이는 정정과 첫 요청을 못 가르는 자리다 — 애매하면 버린다."""
+        self.assertIsNone(evolution.correction_signal("해요체로 써줘"))
+        self.assertIsNotNone(evolution.correction_signal("해라체 말고 해요체로 써줘"), "대조가 드러나면 잡는다")
+
+    def test_a_detected_correction_reaches_the_inbox_as_a_draft(self):
+        """탐지만 고치고 배선이 죽어 있으면 산출은 그대로 0건이다 — 왕복까지 태운다."""
+        self.assertTrue(evolution.record_correction(self.root, "이모지 쓰지 마", "⠶ 완료했습니다 ✨"))
+        drafts = evolution.mine(self.root)
+
+        self.assertEqual(len(drafts), 1)
+        self.assertEqual(drafts[0]["origin"], "correction")
+        self.assertIn("이모지 쓰지 마", evolution.show(self.root, drafts[0]["id"]) or "")
+
+
+class TestReset(EvoBase):
+    """초안의 모양은 생성기가 정하고 생성기는 고쳐진다 — 옛 규칙의 산물을 한 명령으로 다시 뜬다."""
+
+    def test_it_moves_the_drafts_aside_and_opens_the_signal_for_re_mining(self):
+        _hard_won(self.root)
+        first = evolution.mine(self.root)[0]
+        self.assertEqual(evolution.mine(self.root), [], "latch 가 재제안을 막는다")
+
+        moved, freed, names = evolution.reset(self.root)
+
+        self.assertEqual((moved, freed), (1, 1))
+        self.assertEqual(names, [first["name"]])
+        self.assertEqual(evolution.pending_list(self.root), [])
+        again = evolution.mine(self.root)
+        self.assertEqual([c["name"] for c in again], [first["name"]], "같은 로그에서 지금 규칙으로 다시 뜬다")
+
+    def test_nothing_is_lost(self):
+        """초안은 rejected/ 에 그대로 남는다 — 되돌릴 자리가 있어야 초기화를 칠 수 있다."""
+        _hard_won(self.root)
+        cid = evolution.mine(self.root)[0]["id"]
+        evolution.reset(self.root)
+
+        kept = os.path.join(self.root, ".asgard", "evolution", "rejected")
+        snapshots = [d for d in os.listdir(kept) if d.startswith(cid)]
+        self.assertEqual(len(snapshots), 1)
+        self.assertTrue(os.path.exists(os.path.join(kept, snapshots[0], "SKILL.md")))
+
+    def test_a_rejection_the_human_made_survives_the_reset(self):
+        """`reject` 는 "같은 신호는 다시 제안하지 않는다"고 약속한다 — 그 약속과 사유는
+        `seen.json` 에만 있어서, 초기화가 지우면 사람이 한 번 내친 초안이 다시 올라온다."""
+        _hard_won(self.root)
+        cand = evolution.mine(self.root)[0]
+        evolution.reject(self.root, cand["id"], "이 교훈은 이미 캐논에 있다")
+
+        moved, freed, _ = evolution.reset(self.root)
+
+        self.assertEqual((moved, freed), (0, 0))
+        self.assertEqual(evolution.mine(self.root), [], "거절한 신호는 다시 안 올라온다")
+
+    def test_an_installed_skill_is_not_touched_and_its_signal_stays_latched(self):
+        """설치된 스킬을 다시 제안하면 이름이 충돌한다 — 승인 latch 는 초기화가 안 푼다."""
+        _hard_won(self.root)
+        cand = evolution.mine(self.root)[0]
+        ok, msg = evolution.approve(self.root, cand["id"])
+        self.assertTrue(ok, msg)
+
+        moved, freed, _ = evolution.reset(self.root)
+
+        self.assertEqual((moved, freed), (0, 0))
+        self.assertIn(cand["name"], skill_bank.learned_skills(self.root))
+        self.assertEqual(evolution.mine(self.root), [])
+
+
 class TestNudge(EvoBase):
     """넛지 표면 — 집합 latch (같은 집합으론 두 번 말하지 않는다).
 
@@ -712,9 +1058,18 @@ class TestCorrections(EvoBase):
             "그게 아니야, seal 은 사건 단위로 해",
             "그거 하지 마",
             "머지 말고 리베이스로 해줘",
-            "테스트는 uv로 해",
         ):
             self.assertIsNotNone(evolution.correction_signal(text), text)
+
+    def test_a_bare_instruction_is_no_longer_read_as_a_correction(self):
+        """`테스트는 uv로 해` 는 26-08-11 까지 정정으로 잡혔다 — 그 패턴을 여기서 지웠다.
+
+        `(로|으로)\\s*해\\s*줘?$` 는 대조 없는 평범한 지시까지 다 잡는다. 실측에서 "근거는 링크로
+        해줘"·"한 줄로 적어 줘" 가 같이 걸렸고, 그 둘은 정정이 아니다. 대조가 드러난 형태는
+        `말고|대신` 이 이미 잡으므로 잃는 것이 없다.
+        """
+        self.assertIsNone(evolution.correction_signal("테스트는 uv로 해"))
+        self.assertIsNotNone(evolution.correction_signal("pytest 말고 uv로 해"))
 
     def test_correction_signal_ignores_normal_speech(self):
         for text in (
