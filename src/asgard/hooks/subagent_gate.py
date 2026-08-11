@@ -40,6 +40,7 @@ if _HOOK_DIR not in sys.path:
     sys.path.append(_HOOK_DIR)
 
 from asgard_hooklib.evidence import pass_evidence, trivial_evidence  # noqa: E402,F401
+from asgard_hooklib.firing import run  # noqa: E402
 from asgard_hooklib.ledger import fold_tickets, norm_path, verifiable_units  # noqa: E402
 from asgard_hooklib.paths import read_text  # noqa: E402
 from asgard_hooklib.siege import ledger_call  # noqa: E402
@@ -699,4 +700,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    run("subagent-gate", main)

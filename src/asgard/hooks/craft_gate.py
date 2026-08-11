@@ -37,6 +37,13 @@ import shutil
 import subprocess
 import sys
 
+# 발화 계측은 훅과 함께 깔리는 공용 라이브러리가 쥔다 — 이 훅은 자기 이름만 넘긴다.
+_HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
+if _HOOK_DIR not in sys.path:
+    sys.path.append(_HOOK_DIR)
+
+from asgard_hooklib.firing import event, run  # noqa: E402
+
 # Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 넣지 못한다 — 인코딩 오류가
 # fail-open에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
 for _stream in (sys.stdout, sys.stderr):
@@ -102,18 +109,10 @@ def _skipped(root: str, sid: str, code: str) -> None:
     자리는 verifier_gate 가 이미 쓰는 `.asgard/state/gate-events.jsonl` 이다. 두 게이트가 한
     파일을 쓰면 doctor 가 한 번만 읽는다. fail-open: 기록 실패가 통과를 막지 않는다.
     """
-    try:
-        state = os.path.join(str(root), ".asgard", "state")  # root 는 payload 에서 와서 str 이 아닐 수 있다
-        if not os.path.isdir(state):
-            return  # asgard 를 안 쓰는 트리다 — 게이트가 꺼진 게 아니라 애초에 없다
-        row = {"event": "gate_skipped", "gate": "craft", "code": code, "sid": str(sid)}
-        with open(os.path.join(state, "gate-events.jsonl"), "a", encoding="utf-8") as handle:
-            handle.write(json.dumps(row) + "\n")
-    except Exception:
-        # 타입을 좁혀 여러 개로 적을 수는 없다: 포매터가 py314 로 맞춰져 있어 괄호를 지우고
-        # PEP 758 문법으로 바꾸는데, 훅은 3.9 로도 파스돼야 한다(tests/test_architecture.py 의
-        # test_hooks_parse_on_old_python — 이 문법 3건이 실제로 매뉴얼 계층을 증발시킨 적이 있다).
-        pass  # 계측 실패는 계측만 잃는다 — 이 함수는 훅이 예외를 물고 나가는 길에서도 불린다
+    state = os.path.join(str(root), ".asgard", "state")  # root 는 payload 에서 와서 str 이 아닐 수 있다
+    if not os.path.isdir(state):
+        return  # asgard 를 안 쓰는 트리다 — 게이트가 꺼진 게 아니라 애초에 없다
+    event(root, "craft", "gate_skipped", code, sid=sid)
 
 
 def _bump(root: str, sid: str, agent: str) -> int:
@@ -332,4 +331,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    run("craft-gate", main)

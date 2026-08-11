@@ -187,14 +187,27 @@ class ShippedHookRuns(unittest.TestCase):
 
         다음 사람이 무심코 `from ..craft import judge`를 넣으면 이 저장소 안에서는 계속 초록이고,
         사용자 저장소에서만 죽는다 — 그 종류의 결함은 실행 시험만으로 못 막는다.
-        """
+
+        판정은 글자가 아니라 문법 트리로 한다. 부분 문자열로 찾으면 `asgard_hooklib` — 엔진이
+        아니라 훅 **옆에 함께 깔리는** 라이브러리 — 이 이름이 `asgard` 로 시작한다는 이유만으로
+        걸린다. 금지 대상은 이름의 생김새가 아니라 무엇을 임포트하는가다 (같은 규칙이
+        test_architecture 의 `test_hooks_are_self_contained` 에 있다)."""
+        import ast
+
         from asgard.hooks import craft_gate
 
         with open(craft_gate.__file__, encoding="utf-8") as handle:
             body = handle.read()
-        for forbidden in ("import asgard", "from asgard", "from .", "from .."):
-            with self.subTest(forbidden=forbidden):
-                self.assertNotIn(forbidden, body)
+        leaks = []
+        for node in ast.walk(ast.parse(body)):
+            if isinstance(node, ast.ImportFrom):
+                if node.level > 0:
+                    leaks.append(f"{node.lineno}: 상대 임포트 (복사본에서 즉사)")
+                elif (node.module or "").split(".")[0] == "asgard":
+                    leaks.append(f"{node.lineno}: from {node.module}")
+            elif isinstance(node, ast.Import):
+                leaks += [f"{node.lineno}: import {a.name}" for a in node.names if a.name.split(".")[0] == "asgard"]
+        self.assertFalse(leaks, "배포본이 엔진을 임포트한다 (사용자 저장소에서만 죽는다):\n" + "\n".join(leaks))
 
     def test_the_scaffolded_copy_is_the_engine_source_byte_for_byte(self):
         """복사 배포본이 원본과 어긋나면 판정이 두 벌이 되고, 두 벌은 곧 다르게 판정한다.

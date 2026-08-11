@@ -343,7 +343,7 @@ class TestGateEventMetrics(AdversarialBase):
             f.write(json.dumps(forged) + "\n")
         got, p = self.gate_decision("m2")
         self.assertEqual(got, "block", p.stdout + p.stderr)
-        self.assertEqual(self.read_events()[-1], {"event": "gate_block", "code": "ledger-invalid"})
+        self.assertEqual(self.read_events()[-1], {"event": "gate_block", "gate": "verifier", "code": "ledger-invalid"})
         payload = json.loads(p.stdout)
         self.assertEqual(payload.get("code"), "ledger-invalid")  # payload 코드 직독 — 문장 파싱 불필요
         self.assertIn("[gate:ledger-invalid]", payload["reason"])  # 프로토콜 공통 운반자 = 메시지 태그

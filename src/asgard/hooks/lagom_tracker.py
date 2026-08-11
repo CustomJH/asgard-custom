@@ -28,6 +28,7 @@ _HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
 if _HOOK_DIR not in sys.path:
     sys.path.append(_HOOK_DIR)
 
+from asgard_hooklib.firing import run  # noqa: E402
 from asgard_hooklib.inject import client, cursor_message, host_context  # noqa: E402
 
 MODES = ("off", "lite", "full")
@@ -270,4 +271,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    run("lagom-tracker", main)

@@ -38,6 +38,7 @@ _HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
 if _HOOK_DIR not in sys.path:
     sys.path.append(_HOOK_DIR)
 
+from asgard_hooklib.firing import run  # noqa: E402
 from asgard_hooklib.inject import emit_context  # noqa: E402
 
 NEVER_INJECT = ("asgard-verifier", "asgard-loki")  # 게이트·반례 탐색 오염 방지 — 매처가 바뀌어도 불변
@@ -298,4 +299,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    run("memory-activate", main)

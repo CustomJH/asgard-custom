@@ -17,6 +17,13 @@ import os
 import shlex
 import sys
 
+# 발화 계측은 훅과 함께 깔리는 공용 라이브러리가 쥔다 — 이 훅은 자기 이름만 넘긴다.
+_HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
+if _HOOK_DIR not in sys.path:
+    sys.path.append(_HOOK_DIR)
+
+from asgard_hooklib.firing import run  # noqa: E402
+
 # Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 넣지 못한다 — 인코딩 오류가
 # fail-open에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
 for _stream in (sys.stdout, sys.stderr):
@@ -200,4 +207,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    run("release-guard", main)

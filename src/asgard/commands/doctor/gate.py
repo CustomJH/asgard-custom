@@ -138,6 +138,56 @@ def _gate_event_check(root: str) -> list[dict]:
     ]
 
 
+_FIRING_FLOOR = 20  # 이보다 적게 불린 훅의 발화 0 은 "값을 그쳤다"가 아니라 "표본이 없다"다
+
+
+def _firing_check(root: str) -> list[dict]:
+    """훅별 발화율 — 사건 장부가 못 가진 분모다.
+
+    `gate-events.jsonl` 은 발화만 적으므로, 한 번도 발화하지 않은 훅과 아직 불린 적 없는 훅이
+    똑같은 빈칸으로 보인다. 여기서는 호출 수를 같이 읽어 그 둘을 가르고, 발화 없이 계속 불리는
+    훅을 이름으로 부른다 — 그 이름이 반감기 조항(AGENTS.md)이 지울 대상을 고를 때 보는 목록이다.
+
+    예외로 죽은 호출은 발화가 아니라 `errors` 로 세어져 있다. 둘을 합치면 매번 고장 나 있던 훅이
+    열심히 일하는 훅과 같은 숫자로 보인다."""
+    try:
+        with open(os.path.join(root, ".asgard", "state", "gate-firing.json"), encoding="utf-8") as handle:
+            gates = (_json.load(handle) or {}).get("gates") or {}
+    except OSError, ValueError:
+        return []
+    if not isinstance(gates, dict) or not gates:
+        return []
+    silent: list[str] = []
+    broken: list[str] = []
+    fired = 0
+    for name, row in sorted(gates.items()):
+        calls = int(row.get("calls") or 0)
+        fires = int(row.get("fires") or 0)
+        errors = int(row.get("errors") or 0)
+        if errors:
+            broken.append(f"{name} {errors}회")
+        if fires:
+            fired += 1
+        elif calls >= _FIRING_FLOOR:
+            silent.append(f"{name}({calls}회 호출)")
+    parts = [f"훅 {len(gates)}개 중 {fired}개 발화"]
+    if silent:
+        parts.append("발화 없음: " + ", ".join(silent))
+    if broken:
+        parts.append("예외로 끝난 호출: " + ", ".join(broken))
+    return [
+        {
+            "name": "hook firing rate",
+            "ok": not broken,
+            "detail": " · ".join(parts),
+            "fix": "예외로 끝나는 훅은 fail-open 이라 조용히 죽는다 — 그 훅을 손으로 한 번 돌려 원인을 봐라. "
+            f"발화 없음은 결함이 아니라 삭제 후보 목록이다 (호출 {_FIRING_FLOOR}회 이상만 이름을 부른다). "
+            "억제 효과는 이 장부에 안 찍히므로, 지우기 전에 그 훅이 막던 것이 무엇이었는지 확인해라 "
+            "(.asgard/state/gate-firing.json)",
+        }
+    ]
+
+
 def _auto_baseline_check(root: str, policy: dict, quest_log_mod) -> dict | None:
     """자동 감지 레인 — 무엇을 고를지, 그것이 상한 안에 드는지 말한다.
 
