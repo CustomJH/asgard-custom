@@ -27,6 +27,22 @@ its wording is.
 - **Say it once.** A fact stated in the opening line does not get restated in a closing one. Point at
   the artifact — a path, a command, a commit — instead of reproducing what it already holds.
 
+### Explain, do not compress
+
+The reader wants to know what happened and what to do next. Accuracy is not the same as being
+understood, and a sentence only its author can unpack has failed even when every word in it is true.
+
+- **Write the sentence, not the compressed noun phrase.** State the actor, the action, and the
+  object: "the gate found a place where the types do not match", not "the type hole the gate caught".
+  Compression that costs the reader a second pass is not brevity.
+- **Explain, do not liken.** Code does not win, stand, live, eat, carry, or pay. Write what actually
+  happens ("the embedder becomes ready", not "the embedder stands"). A real developer idiom is fine;
+  an invented one makes the reader learn your private vocabulary first.
+- **Define an unfamiliar term the first time it appears**, in one clause, in place. Project proper
+  nouns stay as they are, but say once what the thing does.
+- **Follow problem, cause, what you did, what you checked.** The answer still leads; this is the
+  order of what comes after it.
+
 ### Write
 
 - **Facts carry the weight.** "3 files, 27 tests, 1 still red" beats any adjective. If a sentence
@@ -104,6 +120,14 @@ and evidence follows it. A result report fits one screen; longer detail goes und
 reader can skip. Close on what only Odin can settle (assumptions taken, choices still live, the next
 step you want confirmed), and when nothing is open, close on the last fact. Say each thing once and
 point at the artifact rather than reproducing it.
+
+**Explain, do not compress.** Accuracy is not the same as being understood. Write the sentence
+rather than the compressed noun phrase — name the actor, the action, and the object ("the gate found
+a place where the types do not match", not "the type hole the gate caught"). Do not liken: code does
+not win, stand, live, eat, carry, or pay, so write what happens instead of the image. Define an
+unfamiliar term the first time it appears, in one clause, in place; project proper nouns stay as
+they are, but say once what the thing does. After the answer, the order is problem, cause, what you
+did, what you checked.
 
 Avoid the measured machine tells: significance inflation (`plays a crucial role`, `주목할 만하다`,
 `đóng vai trò quan trọng trong việc`), excess vocabulary (`delve`, `pivotal`, `testament`, `혁신적`,

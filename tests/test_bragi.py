@@ -94,6 +94,25 @@ class TestDetection(unittest.TestCase):
             found = bragi.tells(f"앞으로의 행보{particle} 기대된다. I hope this helps.")
             self.assertIn("KO-closing-formula", [f.id for f in found], particle)
 
+    def test_korean_metaphor_for_what_code_does_is_caught_in_prose(self):
+        """읽는 사람이 비유부터 풀어야 하는 문제는 주석에나 보고문에나 같다.
+
+        전에는 `asgard craft` 가 주석만 봐서 보고문의 비유를 아무도 안 잡았다. 사전은
+        `bragi.KO_METAPHOR` 하나이고 `craft_note` 가 그것을 읽어 주석을 판정한다."""
+        found = bragi.tells("문지기가 사슬을 든다. 설정은 그 자리에 산다.")
+        self.assertIn("KO-metaphor", [f.id for f in found])
+
+    def test_the_metaphor_dictionary_has_one_home(self):
+        """사본을 두면 한쪽만 자라고, 그 어긋남은 판정이 갈릴 때까지 안 보인다."""
+        from asgard import craft_note
+
+        self.assertIs(craft_note._METAPHOR, bragi.KO_METAPHOR)
+
+    def test_plain_korean_report_prose_is_not_flagged(self):
+        """표준 서술로 쓴 문장은 안 걸려야 한다 — 오탐이 나면 다음 순서는 게이트를 끄는 것이다."""
+        text = "가드가 타입이 안 맞는 자리를 잡아냈습니다. 설정은 그 자리에 저장됩니다. 값은 훅이 전달합니다."
+        self.assertNotIn("KO-metaphor", [f.id for f in bragi.tells(text)])
+
     def test_korean_possibility_overuse_is_stem_independent(self):
         """'ㄹ 수 있다'의 앞 음절은 동사마다 다르다 — 어간을 고정하면 대부분을 놓친다."""
         text = "속도를 높일 수 있다. 비용을 줄일 수 있다. 결과를 볼 수 있다."
