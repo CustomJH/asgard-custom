@@ -104,5 +104,8 @@
       "lease_seconds": 300,
       "max_attempts": 3
     }
+  },
+  "budget": {
+    "session_cost_units": 30000000
   }
 }

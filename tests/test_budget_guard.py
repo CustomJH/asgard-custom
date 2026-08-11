@@ -361,14 +361,21 @@ class TestLimitsConfig(unittest.TestCase):
     def test_defaults_sit_where_the_measurement_says(self):
         """기본 한도의 근거는 381세션 실측 분포다 — 임의의 숫자면 게이트가 오탐으로 죽는다.
 
-        경고는 p90 아래에서 먼저 울리고, 차단은 p95 이상 p99 이하 — 정상 작업의 95% 이상은
-        차단을 느끼지 못하고 걸리는 것은 꼬리뿐이다. 숫자를 흔들면 이 테스트가 먼저 깨진다."""
-        p90, p95, p99 = 6_271_519, 13_680_984, 24_504_250
+        경고는 p90 아래에서 먼저 울린다. 차단은 **p99 이상**이다 — 종전에는 p95~p99 사이였고,
+        그 상한이 잡은 것은 폭주가 아니라 긴 정상 세션이었다. 26-08-11 실측: 판정 왕복이 있는 한
+        세션이 15M 에서 막혔는데 그때 남은 일은 독립 판정 하나뿐이었고, 배차가 막혀 그 턴이 판정
+        없이 끝났다(같은 세션이 이어서 21.5M 을 썼다). 상한의 값은 폭주를 끊는 것인데 판정을
+        끊으면 게이트가 지키려던 것을 게이트가 깎는다.
+
+        위 문턱은 분포가 아니라 안전장치다: 오타 하나로 게이트가 사실상 꺼지는 것을 막을 뿐이라
+        p99 의 네 배로 넉넉히 잡는다. 그 사이에서 정확히 어디에 둘지는 저장소가 정한다
+        (`asgard budget --set session_cost_units=<n>`)."""
+        p90, p99 = 6_271_519, 24_504_250
         # DEFAULTS는 enforce("block") 때문에 str|int 표다 — 숫자로 좁혀야 비교가 성립한다.
         warn, ceiling = int(bg.DEFAULTS["warn_cost_units"]), int(bg.DEFAULTS["session_cost_units"])
         self.assertLessEqual(warn, p90)
-        self.assertGreaterEqual(ceiling, p95)
-        self.assertLessEqual(ceiling, p99)
+        self.assertGreaterEqual(ceiling, p99, "긴 정상 세션을 끊으면 판정이 먼저 죽는다")
+        self.assertLessEqual(ceiling, p99 * 4, "상한이 이만큼 높으면 게이트가 꺼진 것과 같다")
         self.assertLess(warn, ceiling)
 
 

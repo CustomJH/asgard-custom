@@ -73,6 +73,7 @@ _HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
 if _HOOK_DIR not in sys.path:
     sys.path.append(_HOOK_DIR)
 
+from asgard_hooklib.firing import run  # noqa: E402
 from asgard_hooklib.inject import client, cursor_context, host_context  # noqa: E402
 
 ACTIONS = {"prompt", "task"}
@@ -90,7 +91,11 @@ _USAGE_FIELDS = {
 
 DEFAULTS = {
     "enforce": "block",  # block | warn | off
-    "session_cost_units": 15_000_000,  # p95(13.7M)와 p99(24.5M) 사이 — 381세션 실측
+    # p99(24.5M) 위로 올렸다. 15M 은 p95(13.7M)와 p99 사이였는데, 그 값이 잡는 것은 폭주가
+    # 아니라 **긴 정상 세션**이었다 — 26-08-11 에 판정 왕복이 있는 한 세션이 상한에 닿아 남은
+    # 일이 독립 판정 하나뿐인 자리에서 배차가 막혔고, 그 턴이 판정 없이 끝났다. 상한의 값은
+    # 폭주를 끊는 것인데 판정을 끊으면 게이트가 지키려던 것을 게이트가 깎는다.
+    "session_cost_units": 30_000_000,
     "warn_cost_units": 6_000_000,  # p90(6.27M) 바로 아래 — 차단 전에 먼저 울린다
     "agent_cost_units": 3_000_000,  # 한 역할이 세션 내내 쓸 수 있는 누적 상한
     "agent_calls": 24,  # 한 역할의 세션 내 호출 횟수 상한
@@ -445,4 +450,4 @@ _EVENT = {"prompt": "UserPromptSubmit", "task": "PreToolUse"}
 
 
 if __name__ == "__main__":
-    main()
+    run("budget-guard", main)
