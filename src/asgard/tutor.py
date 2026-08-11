@@ -16,6 +16,12 @@
      했나"는 **빈칸으로 남긴다** — 그 칸은 코드를 쓴 쪽이 채우고 사용자가 검사한다.
   ④ 못 본 것은 못 봤다고 적는다. 조용한 절단은 "0건"을 "안 봤다"로 만든다.
 
+계약 ③ 에는 예외가 둘 있고 둘 다 같은 조건에서 열린다: **저자가 사람이 아닐 때**. 루프가 고른
+자리의 근거는 `loop.mandate_for` 가, 그 턴이 무엇을 맞추려 했고 무엇으로 닫혔는지는
+`tutor_rationale` 이 퀘스트 로그에서 읽어 온다. 둘 다 추측이 아니라 기계가 이미 적어 둔 기록이고,
+기록이 없으면 빈칸은 그대로 빈칸이다. 이 예외가 필요한 이유는 ① 과 같은 축이다 — 남이 쓴 코드에
+대해 "왜 그렇게 했나"를 사람에게 물으면 그것은 되짚기가 아니라 시험이다.
+
 래칫은 `craft`와 같다: base에 이미 있던 것은 다시 묻지 않는다. 물음도 부채라서, 매 턴 같은
 것을 물으면 세 번째부터 아무도 안 읽는다.
 
@@ -30,7 +36,6 @@ from __future__ import annotations
 import hashlib
 import importlib
 import os
-import re
 import subprocess
 import time
 from dataclasses import replace
@@ -39,7 +44,11 @@ from . import craft, craft_lex, loop, surface, tutor_growth, tutor_probes
 from .craft_rules import Unit
 from .health import _read
 from .io_files import read_json, write_json
-from .tutor_model import WEIGHT, Checkpoint, FileChange, Lesson
+
+# 재수출 — 스튜디오 패널과 시험, 그리고 사전 브리핑이 `tutor.WEIGHT`·`tutor.KIND_LABEL` 로 부른다.
+from .tutor_model import KIND_LABEL as KIND_LABEL
+from .tutor_model import WEIGHT as WEIGHT
+from .tutor_model import Checkpoint, FileChange, Lesson
 
 MAX_PATHS = 400  # 한 번에 읽을 파일 상한 — 초과분은 잘린 사실로 넣는다(조용한 절단 금지)
 REMOVAL_DETAIL_LIMIT = 2  # 같은 파일의 대량 삭제는 단위별 심문이 아니라 책임 묶음 하나로 묻는다
@@ -47,16 +56,6 @@ REMOVAL_DETAIL_LIMIT = 2  # 같은 파일의 대량 삭제는 단위별 심문�
 # surface는 심볼 이름만 알고 줄을 모르는데, `file:1`은 사람이 열어 볼 수 없는 좌표다.
 _Judged = tuple["FileChange", list["Checkpoint"], str | None, dict[str, int]]
 _Moves = dict[tuple[str, str], tuple[tuple[str, str], ...]]
-# 종류의 사람 이름 — 표면마다 다시 쓰면 같은 판정이 화면마다 다른 이름으로 불린다.
-KIND_LABEL = {
-    "contract-break": "공개 계약 바뀜",
-    "behavior-removed": "동작 사라짐",
-    "test-removed": "판정 사라짐",
-    "silent-failure": "조용히 삼킨 실패",
-    "new-dependency": "외부 의존 늘어남",
-    "untested-surface": "판정 없는 새 표면",
-    "todo-left": "안 끝난 표식",
-}
 # 다시 물을 때의 **각도**. 같은 문장을 네 번째로 놓는 것은 재방문이 아니라 반복이고, 반복은
 # 답을 못 받은 이유를 그대로 한 번 더 재현한다. 인출이 실패한 자리에서 바꿀 것은 목소리 크기가
 # 아니라 각도다 — 결과를 묻던 것을 신호로, 신호를 묻던 것을 복구로 옮긴다. 0번은 최초 문장이라
@@ -857,96 +856,51 @@ def _kind_summary(kinds: list[str]) -> str:
 
 
 # ── 앞서 말하는 층 (일을 시작하기 전) ──────────────────────────────
+#
+# 본문은 `tutor_brief` 가 갖는다 — 축이 다르다. 이 모듈은 **이번 변경의 사실**을 만들고, 그쪽은
+# 이미 쌓인 기록을 요청 문장에 맞춰 고르기만 한다. 이름을 여기 남기는 것은 부르는 쪽 때문이다:
+# `commands/tutor.py` 와 시험 여럿이 `tutor.brief` 로 부른다.
 
-_TOKEN = re.compile(r"[A-Za-z0-9_./\\-]{3,}")
-# 자기 힘으로는 자리를 못 가리키는 조각. `src` 한 글자에 나무 전체가 걸리면 이 줄은 배경 소음이
-# 되고, 배경 소음이 된 안내는 켜져 있어도 꺼진 것과 같다. 확장자·구조 디렉터리가 여기 온다.
-_WEAK = frozenset("src lib test tests spec py js ts tsx jsx go rs java kt md json toml yaml yml".split())
-
-
-def brief(root: str, text: str = "", paths: object = (), cap: int = 3) -> str:
-    """**들어가기 전에**이 자리에 남아 있는 답 없는 물음. 없으면 빈 문자열.
-
-    되짚기는 지금까지 전부 사후였다 — 다 쓰고 나서 물었다. 그런데 같은 자리를 다시 건드리는
-    순간이야말로 지난번 물음이 값을 갖는 유일한 때다: 그때는 "언젠가 볼 것"이었지만 지금은
-    **지금 여는 파일**이다. 사후 카드가 부채를 적는 층이면 이건 부채를 만나는 층이다.
-
-    새로 판정하지 않는다 — 이미 열려 있는 물음만 좌표로 거른다. 여기서 파일을 다시 읽기 시작하면
-    턴 시작이 느려지고, 느린 안내는 꺼지는 안내다.
-    """
-    named = set(_normalise(paths))
-    here = named or _here(root, _keys(text or ""))
-    if not here:
-        return ""
-    hit = [r for r in tutor_growth.open_points(root) if r.path in here]
-    back = tutor_growth.recall(root, here)
-    if not hit and not back:
-        return ""
-    hit.sort(key=lambda r: (-WEIGHT.get(r.kind, 0), r.opened))
-    lines = []
-    if hit:
-        lines.append(f"⠶ 들어가기 전 — 이 자리에 답 없는 물음이 {len(hit)}건 남아 있어요.")
-        for row in hit[:cap]:
-            lines.append(f"  {KIND_LABEL.get(row.kind, row.kind)} — {row.where}  [{row.cid}]")
-            lines.append(f"    ▸ {row.ask}")
-        if len(hit) > cap:
-            lines.append(f"  …외 {len(hit) - cap}건")
-    lines += _recall_lines(back, bool(hit))
-    return "\n".join(lines)
-
-
-def _here(root: str, keys: set[str]) -> set[str]:
-    """요청 문장이 가리키는 자리 — 열린 물음이 안 남은 자리도 포함한다(회상은 거기서 나온다)."""
-    if not keys:
-        return set()
-    return {path for path, units in tutor_growth.places(root).items() if _touches(path, units, keys)}
-
-
-def _recall_lines(back: list[tutor_growth.Said], after_questions: bool) -> list[str]:
-    """그때 당신이 한 답을 그대로 되돌려 준다 — 기계의 판정으로 다시 쓰지 않는다.
-
-    날짜를 반드시 붙인다. 그 사이 코드가 바뀌었을 수 있고, 바뀌었는지는 여기서 못 정한다 —
-    "당신이 그때 이렇게 말했다"는 사실만 참이고, 지금도 맞는지는 사람이 본다.
-    """
-    if not back:
-        return []
-    now = time.time()
-    head = "  " if after_questions else "⠶ 들어가기 전 — "
-    lines = [f"{head}이 자리를 두고 **예전에 하신 답**이 있어요."]
-    for row in back:
-        days = row.days(now)
-        when = f"{days}일 전" if days else "오늘"
-        tag = "오탐으로 닫음" if row.dismissed else "답"
-        lines.append(f"  ↺ {row.where} — {when} {tag}")
-        lines.append(f'    "{row.said}"')
-    return lines
-
-
-def _keys(text: str) -> set[str]:
-    """요청 문장에서 자리를 가리킬 수 있는 조각만. `app.py`는 통째로도, 쪼개서도 센다."""
-    out: set[str] = set()
-    for raw in _TOKEN.findall(text):
-        for piece in [raw, *re.split(r"[/\\.]", raw)]:
-            key = piece.lower().strip("-_")
-            if len(key) >= 3 and key not in _WEAK:
-                out.add(key)
-    return out
-
-
-def _touches(path: str, units: set[str], keys: set[str]) -> bool:
-    """요청 문장이 이 자리를 가리키는가 — 경로 조각과 단위 이름만 본다(0-LLM).
-
-    느슨하게 맞추면 아무 요청에나 남의 물음이 붙고, 그러면 이 줄은 배경 소음이 된다. 그래서
-    경로의 **조각 하나가 통째로** 일치할 때만 센다 (`heimdall` ○, `dall` ✕).
-    """
-    parts = {p.lower() for p in re.split(r"[/\\.]", path) if p}
-    parts.add(path.lower())
-    parts.add(os.path.basename(path).lower())
-    parts |= {u.rsplit(".", 1)[-1].lower() for u in units if u}
-    return bool(parts & keys)
-
+from .tutor_brief import brief as brief  # noqa: E402  (재수출 — 부르는 쪽은 `tutor.brief` 로 부른다)
 
 # ── 네이티브 루프 도달 경로 ────────────────────────────────────────
+
+
+MODES = ("explain", "quiz")
+DEFAULT_MODE = "explain"
+
+
+def mode(root: str = "", flag: str = "") -> str:
+    """되짚기가 사람에게 무엇을 요구하는가 — 플래그 > env > 프로젝트 설정 > 글로벌 설정 > explain.
+
+    두 모드뿐이다. `quiz` 는 지금까지의 동작 그대로 — 물음을 놓고 `--answer` 왕복을 기다린다.
+    `explain` 은 같은 판정을 **요구 없이** 놓는다: 무엇이 바뀌었나, 어떤 순서로 읽나, 무엇을
+    맞추려던 변경이었나, 무엇으로 확인했나. 짚을 자리는 그대로 실리되 물음이 아니라 사실로 실려서,
+    읽고 지나가면 그걸로 끝난다.
+
+    기본을 `explain` 으로 둔 것은 오딘의 결정이다 (26-08-07). 근거는 저자가 바뀌었다는 것이다 —
+    이 층의 물음은 **자기가 쓴 코드**를 되짚는 사람을 전제로 설계됐는데, 실제로 코드를 쓴 쪽은
+    에이전트다. 그 자리에서 물음은 되짚기가 아니라 남이 쓴 코드에 대한 시험이 되고, 매 턴 답을
+    따로 적어야 하는 숙제가 된다. 세 번째 모드는 안 만든다 — 지금 동작이 곧 `quiz` 다.
+    """
+    picked = _mode(flag) or _mode(os.environ.get("ASGARD_TUTOR_MODE"))
+    if picked:
+        return picked
+    try:
+        from .settings import load_global, load_project
+
+        for cfg in (load_project(root or os.getcwd()), load_global()):  # 프로젝트가 글로벌을 우선한다
+            picked = _mode((cfg.get("tutor") or {}).get("mode"))
+            if picked:
+                return picked
+    except Exception:
+        pass  # 없거나 깨진 설정 = 이 계층 침묵 (fail-open, lagom.default_mode 와 같은 규약)
+    return DEFAULT_MODE
+
+
+def _mode(value: object) -> str:
+    body = str(value or "").strip().lower()
+    return body if body in MODES else ""
 
 
 def turn_note(root: str, sid: object, limit: int = 1) -> str:
@@ -960,17 +914,33 @@ def turn_note(root: str, sid: object, limit: int = 1) -> str:
     paths = _session_writes(root, key)
     if not paths:
         return ""
+    quiz = mode(root) == "quiz"
     lesson = review(root, "HEAD", paths)
     points = lesson.ranked
-    rows, back = hand_back(root, points, limit)
+    rows, back = hand_back(root, points, limit, count=quiz)
     shown_rows = _shown_rows(rows, limit)
-    told = _explained(root, paths, limit, quiz=not bool(shown_rows or back))
-    if not points and not back and not told:
+    told = _explained(root, paths, limit, quiz=quiz and not bool(shown_rows or back))
+    why = _rationale_lines(root, paths, quiz)
+    if not points and not back and not told and not why:
         return ""  # 물을 것도 설명할 것도 없으면 침묵한다 — 빈 카드는 다음 카드의 신뢰를 깎는다
     shown_points = tuple(point for point, _ in shown_rows)
-    if _repeat(root, key, shown_points, back, told):
+    if _repeat(root, key, shown_points, back, "\n".join([told, *why])):
         return ""
-    return _card(lesson, shown_rows, back, limit, told)
+    return _card(lesson, shown_rows, back, limit, told, why, quiz)
+
+
+def _rationale_lines(root: str, paths: list[str], quiz: bool) -> list[str]:
+    """ "왜 이렇게 했는가" 절. `quiz` 모드에서는 안 그린다 — 그쪽 계약은 이 칸을 빈칸으로 둔다.
+
+    엔진이 없거나 기록을 못 읽으면 빈 목록이고, 그러면 카드는 종전대로 사실과 물음만 낸다.
+    """
+    if quiz:
+        return []
+    try:
+        module = importlib.import_module(f"{__package__}.tutor_rationale")
+        return module.lines(module.rationale(root, paths))
+    except Exception:
+        return []
 
 
 def _explained(root: str, paths: list[str], limit: int, quiz: bool = True) -> str:
@@ -1064,32 +1034,41 @@ def _card(
     back: list[tutor_growth.Revisit],
     limit: int,
     told: str = "",
+    why: list[str] | None = None,
+    quiz: bool = True,
 ) -> str:
     added, removed = lesson.touched
-    lines = [
-        f"⠶ 되짚기 — 이번 턴 {len(lesson.files)}개 파일 · +{added:,}/-{removed:,}행이에요."
-        " 아래는 **기계가 못 답하는** 것들이에요.",
-        "",
-    ]
+    head = f"⠶ 되짚기 — 이번 턴 {len(lesson.files)}개 파일 · +{added:,}/-{removed:,}행이에요."
+    lines = [head + (" 아래는 **기계가 못 답하는** 것들이에요." if quiz else ""), ""]
     # 설명이 물음보다 위에 온다. 전달된 적 없는 것을 인출부터 시키면 물음은 답이 아니라 침묵을
     # 받는다 — 설명 절은 물음에 답하지 않고 그 물음이 서 있는 자리만 준다.
     if told:
         lines.append(told)
         lines.append("")
+    if why:
+        lines += [*why, ""]
     if lesson.moved:
         lines.append(f"  구조 이동 — 같은 본문으로 확인된 {lesson.moved}개 단위는 삭제 질문에서 뺐어요.")
-    lines += _card_points(rows, limit)
-    lines += _card_back(back)
-    lines.append("")
-    lines.append(
-        '  답은 `asgard tutor --answer <표식> "..."` · 오탐이면 `asgard tutor --dismiss <표식>`'
-        " · 전체와 '왜 이렇게 했는가' 빈칸은 `asgard tutor --report`"
-    )
+    lines += _card_points(rows, limit, quiz)
+    if quiz:
+        lines += _card_back(back)
+        lines += [
+            "",
+            '  답은 `asgard tutor --answer <표식> "..."` · 오탐이면 `asgard tutor --dismiss <표식>`'
+            " · 전체와 '왜 이렇게 했는가' 빈칸은 `asgard tutor --report`",
+        ]
+    else:
+        # 안내는 남기되 요구는 없앤다 — 이 줄은 더 볼 곳을 가리키지, 답을 기다리지 않는다.
+        lines += ["", "  전체는 `asgard tutor --report` · 물음 형식으로 되돌리려면 `asgard tutor --quiz`"]
     return "\n".join(lines)
 
 
-def _card_points(rows: list[tuple[Checkpoint, str]], limit: int) -> list[str]:
-    """펼친 것 · 접은 것 · 넘친 것. 셋을 같은 화면에 두는 것이 이 카드의 정직성이다."""
+def _card_points(rows: list[tuple[Checkpoint, str]], limit: int, quiz: bool = True) -> list[str]:
+    """펼친 것 · 접은 것 · 넘친 것. 셋을 같은 화면에 두는 것이 이 카드의 정직성이다.
+
+    `explain` 모드에서는 물음(`ask`) 대신 사실(`what`)을 넣는다. 같은 판정을 같은 자리에 놓되
+    답을 요구하지 않는 것이 이 모드의 전부다 — 짚을 자리를 빼 버리면 되짚기가 아니라 요약이 된다.
+    """
     lines: list[str] = []
     folded: dict[str, int] = {}
     quiet: dict[str, int] = {}
@@ -1101,12 +1080,13 @@ def _card_points(rows: list[tuple[Checkpoint, str]], limit: int) -> list[str]:
             continue
         if shown >= limit:
             continue
-        lines.append(f"  {_point_label(point)} — {point.where}  [{point.cid}]")
-        lines.append(f"    ▸ {point.ask}")
+        mark = f"  [{point.cid}]" if quiz else ""
+        lines.append(f"  {_point_label(point)} — {point.where}{mark}")
+        lines.append(f"    {'▸ ' + point.ask if quiz else point.what}")
         shown += 1
     over = sum(1 for _, form in rows if form not in ("fold", "quiet")) - shown
     if over > 0:
-        lines.append("  나머지 후보는 이번 회차에 묻지 않아요.")
+        lines.append("  나머지 후보는 이번 회차에 묻지 않아요." if quiz else "  나머지 후보는 보고서에 있어요.")
     if folded:
         lines.append(f"  {_folded_line(folded)} — 이미 답해 오신 종류라 접었어요")
     if quiet:

@@ -264,6 +264,9 @@ class PurposeTest(_Repo):
                     self.assertNotIn(banned, step.what)
                     self.assertNotIn(banned, step.why_here)
 
+    # `Step.does` 도 같은 계약 아래 있다 — 인용이면 되고 지어내면 안 된다. 그 판정은 카드 표면과
+    # 함께 `tests/test_tutor_explain.py` 가 진다.
+
     def test_a_gloss_is_quoted_from_the_source_not_written_by_the_machine(self):
         """`gloss`에는 "위해"가 들어와도 된다 — 그게 원문이면. 그래서 낱말을 막는 대신 **인용인지**를
         판정한다. 낱말 목록으로 막으면 원문을 자르게 되고, 잘린 인용은 계약 ② 를 지키는 대신 계약 ①
@@ -720,6 +723,24 @@ class CardTest(unittest.TestCase):
         self.assertIn("python -m pytest tests/test_m.py", card)
         self.assertIn("▸", card)
         self.assertIn("회수 경로를 혼자 재구성하기", card)
+
+    def test_a_step_with_a_docstring_leads_with_it_and_keeps_the_change_below(self):
+        exp = replace(
+            self._exp("first"),
+            steps=(
+                tutor_teach.Step(
+                    1, "m.py", 8, "alpha", "새로 생긴 단위예요 (2행)", "여기가 먼저예요", "우유를 데워요."
+                ),
+                tutor_teach.Step(2, "m.py", 4, "zeta", "새로 생긴 단위예요 (2행)", "그 다음이에요"),
+            ),
+            primary_units=2,
+        )
+        lines = tutor_teach.card(exp).splitlines()
+
+        head = next(line for line in lines if "m.py:8 alpha" in line)
+        self.assertTrue(head.endswith("— 우유를 데워요."), head)
+        self.assertIn("     새로 생긴 단위예요 (2행) · 여기가 먼저예요", lines)
+        self.assertIn("  2. m.py:4 zeta — 새로 생긴 단위예요 (2행) · 그 다음이에요", lines, "없으면 한 줄 그대로다")
 
     def test_a_stop_card_can_leave_the_recall_quiz_to_the_ranked_checkpoint(self):
         card = tutor_teach.card(self._exp("first"), quiz=False)

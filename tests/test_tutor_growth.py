@@ -164,6 +164,35 @@ class AnsweringTest(unittest.TestCase):
         row = tutor_growth.load(self.root)["topics"]["silent-failure"]
         self.assertEqual((row["answered"], row["dismissed"]), (0, 1))
 
+    def test_a_whole_file_closes_in_one_command(self):
+        """출구가 표식 여덟 자 열두 번뿐이면 아무도 안 치우고, 안 치우는 목록은 안 읽힌다."""
+        for unit in ("alpha", "beta"):
+            tutor_growth.note_asked(self.root, [_point(path="other.py", unit=unit)], now=1000.0)
+
+        ok, message = tutor_growth.dismiss(self.root, "other.py", "이 파일은 의도된 형상")
+
+        self.assertTrue(ok)
+        self.assertIn("2건", message)
+        left = {row.path for row in tutor_growth.open_points(self.root)}
+        self.assertNotIn("other.py", left)
+        self.assertIn("app.py", left, "다른 파일은 안 건드린다")
+
+    def test_all_closes_every_open_question(self):
+        tutor_growth.note_asked(self.root, [_point(path="other.py", unit="beta")], now=1000.0)
+
+        ok, _ = tutor_growth.dismiss(self.root, "all")
+
+        self.assertTrue(ok)
+        self.assertEqual(tutor_growth.open_points(self.root), [])
+
+    def test_a_path_that_has_nothing_open_does_not_close_anything(self):
+        """오타 하나가 열두 건을 통째로 닫으면 그건 출구가 아니라 함정이다."""
+        ok, message = tutor_growth.dismiss(self.root, "app.p")
+
+        self.assertFalse(ok)
+        self.assertIn("app.p", message)
+        self.assertTrue(tutor_growth.open_points(self.root))
+
 
 class FadingTest(unittest.TestCase):
     """말은 줄어드는 쪽으로만 움직인다. 그리고 줄어든 사실은 화면에 남는다."""
@@ -290,6 +319,27 @@ class BriefTest(unittest.TestCase):
     def test_named_paths_beat_guessing(self):
         card = tutor.brief(self.root, "", ["heimdall.py"])
         self.assertIn("heimdall.py", card)
+
+    def test_the_same_question_at_the_same_file_is_asked_once(self):
+        """세 단위가 같은 종류로 열려 있으면 물음 문장도 셋이 똑같이 나갔다 (26-08-11 오딘 지적).
+
+        뒤의 둘은 앞의 하나에 아무것도 안 더한다. 같은 문장을 세 번 읽는 사람은 세 번째부터
+        안 읽고, 안 읽히는 안내는 켜져 있어도 꺼진 것과 같다.
+        """
+        for unit in ("alpha", "beta", "gamma", "delta"):
+            tutor_growth.note_asked(self.root, [_point(path="bifrost.py", unit=unit)], now=1000.0)
+        card = tutor.brief(self.root, "", ["bifrost.py"])
+
+        self.assertEqual(card.count("▸ 왜?"), 1, card)
+        self.assertIn("alpha · beta · gamma", card, "접힌 자리의 이름은 남긴다")
+        self.assertIn("1건 더", card, "이름조차 못 실은 나머지는 수로 적는다")
+
+    def test_the_card_says_how_to_clear_the_whole_file(self):
+        """열두 건이 쌓였을 때 출구가 표식 여덟 자 열두 번이면 아무도 안 치운다."""
+        card = tutor.brief(self.root, "", ["heimdall.py"])
+
+        self.assertIn("--dismiss <경로>", card)
+        self.assertIn("--dismiss all", card)
 
     def test_no_open_questions_means_no_card(self):
         self.assertEqual(tutor.brief(tempfile.mkdtemp(), "heimdall 고쳐줘"), "")

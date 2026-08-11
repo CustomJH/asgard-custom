@@ -13,8 +13,9 @@
 
   ① 좌표 없는 주장을 안 만든다. `Step`도 `Term`도 `path:line`을 가진다.
   ② `tutor` 계약 ①을 안 깬다. 설명하는 것은 **무엇이 바뀌었나 · 어떤 순서로 읽나 · 무엇이
-     무엇을 부르나** 셋뿐이다. 설계 의도는 여기서 안 적는다 — 추측해 적는 순간 이 층은
-     `tutor`가 막으려던 일을 대신 하게 된다.
+     무엇을 부르나 · 그 단위가 무엇을 한다고 스스로 적어 두었나** 넷이다. 마지막 것은 추측이
+     아니라 **인용**이다 — 그 단위의 docstring 첫 문장을 원문 그대로 옮기고, 없으면 아무것도 안
+     쓴다. 기계가 지어낸 의도는 여전히 금지고, 그 경계를 판정하는 자리가 `PurposeTest` 다.
   ③ 용어집에 이미 있는 말은 다시 설명하지 않는다. 회차마다 설명이 짧아지는 것이 목표다.
   ④ 깊이에 따라 화면이 줄어든다 — `owned`는 좌표 한 줄, `familiar`는 읽는 순서, `first`는 전부.
   ⑤ 못 본 것은 `gaps`에 적는다. 조용한 절단은 "0건"을 "안 봤다"로 만든다.
@@ -76,7 +77,7 @@ class Term:
 
 @dataclass(frozen=True)
 class Step:
-    """읽는 순서의 한 자리. `what`과 `why_here`에는 기계가 확인한 사실만 들어간다."""
+    """읽는 순서의 한 자리. `what`·`does`·`why_here`에는 기계가 확인한 사실만 들어간다."""
 
     order: int
     path: str
@@ -84,6 +85,9 @@ class Step:
     unit: str
     what: str
     why_here: str
+    # 이 단위가 무엇을 하는가 — 그 단위 자신의 docstring 첫 문장이다. 없으면 빈 문자열이고,
+    # 그러면 화면은 종전처럼 좌표와 변경 사실만 낸다. 지어내지 않는다(계약 ②).
+    does: str = ""
 
     @property
     def where(self) -> str:
@@ -116,6 +120,7 @@ class _Node:
     unit: str
     what: str
     python: bool
+    does: str = ""
 
 
 _Key = tuple[str, str]  # (경로, 단위 이름)
@@ -200,8 +205,9 @@ def _shape(unit: object) -> tuple[int, int, int]:
 def _nodes(seen: dict[str, tuple[str, dict, dict]]) -> dict[_Key, _Node]:
     """새로 생겼거나 본문이 바뀐 단위만. 자리가 밀리기만 한 단위는 이번 변경이 아니다."""
     out: dict[_Key, _Node] = {}
-    for rel, (_, now, old) in seen.items():
+    for rel, (text, now, old) in seen.items():
         python = rel.endswith(".py")
+        docs = _doclines(text) if python else {}
         for name, unit in now.items():
             prior = old.get(name)
             if prior is None:
@@ -210,7 +216,7 @@ def _nodes(seen: dict[str, tuple[str, dict, dict]]) -> dict[_Key, _Node]:
                 what = f"본문이 바뀐 단위예요 ({getattr(prior, 'lines', 0)}행 → {getattr(unit, 'lines', 0)}행)"
             else:
                 continue
-            out[(rel, name)] = _Node(rel, int(getattr(unit, "line", 1)), name, what, python)
+            out[(rel, name)] = _Node(rel, int(getattr(unit, "line", 1)), name, what, python, docs.get(name, ""))
     return out
 
 
@@ -420,23 +426,44 @@ def _own_names(root: str) -> frozenset[str]:
     return frozenset(names)
 
 
-def _docline(text: str, name: str) -> str:
-    """그 단위의 docstring 첫 문장. 없으면 빈 문자열 — 지어내지 않는다."""
-    tail = name.rsplit(".", 1)[-1]
+def _doclines(text: str) -> dict[str, str]:
+    """단위 이름 → 그 단위의 docstring 첫 문장. 없는 단위는 표에서 빠진다 — 지어내지 않는다.
+
+    이름은 `tutor_probes.units_of`가 쓰는 것과 같은 점 이어붙인 이름(`Class.method`)이다. 한
+    파일을 한 번만 훑는 이유는 값이다: 이 층은 턴마다 돌고 한 변경이 단위 백 개를 넘길 수 있어서,
+    단위마다 파일을 다시 파싱하면 그 비용이 설명 하나의 값을 넘는다.
+    """
     try:
         tree = ast.parse(text)
     except SyntaxError, ValueError, RecursionError:
-        return ""
-    for node in ast.walk(tree):
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) or node.name != tail:
-            continue
-        body = (ast.get_docstring(node) or "").strip()
-        if not body:
-            return ""
-        head = body.splitlines()[0].strip()
-        cut = head.find(". ")
-        return (head[: cut + 1] if cut > 0 else head)[:120]
-    return ""
+        return {}
+    out: dict[str, str] = {}
+
+    def visit(node: ast.AST, prefix: tuple[str, ...] = ()) -> None:
+        for child in ast.iter_child_nodes(node):
+            if not isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                visit(child, prefix)
+                continue
+            name = prefix + (child.name,)
+            head = _first_sentence(ast.get_docstring(child) or "")
+            if head:
+                out[".".join(name)] = head
+            visit(child, name)
+
+    visit(tree)
+    return out
+
+
+def _first_sentence(body: str) -> str:
+    """docstring 의 첫 문장. 여러 줄 요약은 첫 줄에서 끊는다 — 카드 한 줄에 들어가야 한다."""
+    head = (body.strip().splitlines() or [""])[0].strip()
+    cut = head.find(". ")
+    return (head[: cut + 1] if cut > 0 else head)[:120]
+
+
+def _docline(text: str, name: str) -> str:
+    """한 단위의 docstring 첫 문장. `_doclines`가 정본이고 여기는 한 이름만 꺼내는 창구다."""
+    return _doclines(text).get(name, "")
 
 
 def _signature(sig: object) -> str:
@@ -458,6 +485,7 @@ def _symbol_terms(
     gaps.extend(_unstaged_gaps(root, base, scope, seen))
     terms: list[Term] = []
     names: list[str] = []
+    docs: dict[str, dict[str, str]] = {}  # 경로마다 한 번만 파싱한다 (`_doclines` 와 같은 이유)
     for change in diff.changes:
         if change.kind != "added" or change.path not in scope:
             continue
@@ -468,7 +496,9 @@ def _symbol_terms(
             gaps.append((f"{change.path} {change.qualname}", "심볼의 줄 번호를 못 찾아서 용어로 안 만들었어요"))
             continue
         text = row[0]
-        gloss, source = _docline(text, change.qualname), "docstring"
+        if change.path not in docs:
+            docs[change.path] = _doclines(text)
+        gloss, source = docs[change.path].get(change.qualname, ""), "docstring"
         if not gloss:
             sigs = surface.extract(text) or {}
             gloss = _signature(sigs[change.qualname]) if change.qualname in sigs else ""
@@ -699,6 +729,7 @@ def explain(root: str, base: str = "HEAD", paths: object = (), depth: str = "") 
             nodes[key].unit,
             nodes[key].what,
             _why_here(key, nodes[key], nodes, edges),
+            nodes[key].does,
         )
         for index, key in enumerate(keys, 1)
     )
@@ -825,7 +856,21 @@ def _fallback_overview(exp: Explanation) -> str:
 
 
 def _card_steps(steps: tuple[Step, ...]) -> list[str]:
-    return [f"  {s.order}. {s.where} {s.unit} — {s.what} · {s.why_here}" for s in steps]
+    """한 자리는 최대 두 줄이다. 첫 줄은 **그 단위가 무엇을 하는가**, 둘째 줄이 이번에 무엇이 바뀌었나다.
+
+    순서가 이렇게 선 이유는 이 층이 무엇을 위한 것인가에 있다. 줄 수 증감(`57행 → 67행`)은 그
+    단위를 이미 아는 사람에게만 뜻이 있고, 처음 보는 사람에게는 좌표 하나가 더 늘어난 것뿐이다.
+    docstring 이 없으면 첫 줄도 종전 그대로 한 줄로 돌아간다 — 없는 설명을 지어내지 않는다.
+    """
+    lines: list[str] = []
+    for step in steps:
+        head = f"  {step.order}. {step.where} {step.unit}"
+        if step.does:
+            lines.append(f"{head} — {step.does}")
+            lines.append(f"     {step.what} · {step.why_here}")
+        else:
+            lines.append(f"{head} — {step.what} · {step.why_here}")
+    return lines
 
 
 def _card_terms(shown: tuple[Term, ...], total: int) -> list[str]:

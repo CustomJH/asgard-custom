@@ -201,10 +201,15 @@ def tutor(
     mission: bool = typer.Option(
         False, "--mission", help="what you are heading toward (write one, or call it bare to see it)"
     ),
+    quiz: bool = typer.Option(
+        False, "--quiz", help="ask instead of explain: put the questions back and wait for --answer"
+    ),
     sid: str = typer.Option("", "--sid", help="the session this belongs to (hooks pass it; scopes --tip and --recap)"),
     text: str = typer.Option("", "--text", help="the request text --brief matches against"),
     answer: str = typer.Option("", "--answer", help="close a question with your answer (checkpoint mark)"),
-    dismiss: str = typer.Option("", "--dismiss", help="close a question as a false alarm (checkpoint mark)"),
+    dismiss: str = typer.Option(
+        "", "--dismiss", help="close questions as false alarms: a checkpoint mark, a file path, or 'all'"
+    ),
     note: str = typer.Option("", "--note", help="the answer or the dismissal reason"),
     collect: bool = typer.Option(
         False, "--collect", help="harvest the answers you wrote into the review report (--out picks another file)"
@@ -245,6 +250,7 @@ def tutor(
             explain=explain,
             depth=depth,
             mission=mission,
+            quiz=quiz,
         )
     )
 

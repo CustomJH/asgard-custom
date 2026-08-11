@@ -58,7 +58,17 @@ _EXPLAIN: dict[str, Any] = {
             "unit": "load_config",
             "what": "예외를 잡아요",
             "why_here": "여기가 입구예요",
-        }
+            # 그 단위가 스스로 적어 둔 한 문장 (docstring 인용). 없는 자리는 아래 zeta 가 맡는다.
+            "does": "설정 파일을 읽어 사전으로 돌려줘요.",
+        },
+        {
+            "order": 2,
+            "path": "app.py",
+            "line": 61,
+            "unit": "zeta",
+            "what": "새로 생긴 단위예요 (3행)",
+            "why_here": "이 변경 안에서 이 자리를 부르는 곳 — `load_config`",
+        },
     ],
     "terms": [{"name": "sentinel", "where": "app.py:3", "gloss": "없음을 뜻하는 표식이에요", "source": "signature"}],
     "checks": ["python -m pytest tests/test_app.py"],
@@ -67,7 +77,9 @@ _EXPLAIN: dict[str, Any] = {
 }
 
 
-class TutorNoteHookTest(unittest.TestCase):
+class _HookCase(unittest.TestCase):
+    """훅 하나를 진짜 저장소가 아닌 임시 나무 위에서 돌리기 위한 자리 — 테스트는 없다."""
+
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.root = self.tmp.name
@@ -91,6 +103,8 @@ class TutorNoteHookTest(unittest.TestCase):
                 with open(path, "w", encoding="utf-8") as fh:
                     fh.write("")
 
+
+class TutorNoteHookTest(_HookCase):
     def test_a_scratch_file_created_and_removed_in_the_turn_is_not_reviewed(self) -> None:
         self._sentinel("scratch", ["app.py", "_scratch.py"])
         os.remove(os.path.join(self.root, "_scratch.py"))
@@ -125,7 +139,9 @@ class TutorNoteHookTest(unittest.TestCase):
         """지식이 먼저, 인출이 나중 — 전달된 적 없는 것을 인출부터 시키면 물음은 침묵을 받는다."""
         card = self._run(dict(_LESSON, explain=_EXPLAIN))
         self.assertIn("임무 — 설정 읽기를 실패해도 죽지 않게 바꿨어요", card)
-        self.assertIn("1. app.py:42 load_config — 예외를 잡아요 · 여기가 입구예요", card)
+        self.assertIn("1. app.py:42 load_config — 설정 파일을 읽어 사전으로 돌려줘요.", card)
+        self.assertIn("     예외를 잡아요 · 여기가 입구예요", card, "변경 사실은 그 아래 줄에 남는다")
+        self.assertIn("2. app.py:61 zeta — 새로 생긴 단위예요 (3행)", card, "docstring 이 없으면 한 줄 그대로다")
         self.assertIn("`sentinel` — app.py:3 — 없음을 뜻하는 표식이에요", card)
         self.assertIn("확인 — python -m pytest tests/test_app.py", card)
         self.assertNotIn("이 설정이 비면 무엇이 기본값이 되나요?", card, "한 카드에는 회상 질문도 하나만 둔다")
@@ -201,7 +217,7 @@ class TutorNoteHookTest(unittest.TestCase):
     def test_an_explanation_alone_still_reaches_the_user(self) -> None:
         """물음이 없어도 설명이 있으면 카드는 나간다 — 설명 자체가 이 층이 내야 할 것이다."""
         card = self._run({"files": ["app.py"], "added": 1, "removed": 0, "explain": _EXPLAIN})
-        self.assertIn("⠶ 설명 — 변경 단위 1곳을 호출 관계 기준 1개 흐름으로 나눴어요.", card)
+        self.assertIn("⠶ 설명 — 변경 단위 2곳을 호출 관계 기준 1개 흐름으로 나눴어요.", card)
         self.assertIn("이 설정이 비면 무엇이 기본값이 되나요?", card, "판정 질문이 없을 때는 회상 질문을 쓴다")
 
     def test_the_hook_prefers_the_one_checkpoint_the_engine_marked_as_shown(self) -> None:
@@ -235,6 +251,83 @@ class TutorNoteHookTest(unittest.TestCase):
         code, out = _hook_payload("tutor_note", {"session_id": {"not": "a string"}, "cwd": 12}, [])
         self.assertEqual(code, 0)
         self.assertEqual(out, "", "판정 못 한 턴에 빈 카드를 놓으면 다음 카드의 신뢰가 깎인다")
+
+
+class TutorNoteWireFormatTest(_HookCase):
+    """호스트마다, 이벤트마다, 그 자리가 실제로 읽는 필드 하나.
+
+    이 층은 조용히 고장 난다 — 안 읽는 이름으로 적은 카드는 화면에서 "되짚을 게 없던 턴"과
+    똑같이 생겼다. codex 는 실제로 그렇게 두 레인을 잃고 있었다: Stop 만 `systemMessage` 를
+    쓰고 brief·tip 은 평문 stdout 을 썼는데, codex 의 훅 출력 스키마는
+    `additionalProperties: false` 라 JSON 이 아닌 출력을 통째로 버린다.
+
+    표는 세 호스트가 각자 문서로 정한 것이다 — Claude Code·Codex 는 세 이벤트 모두
+    `systemMessage`, Cursor 만 `beforeSubmitPrompt` 는 `user_message`, `stop` 은
+    `followup_message` 로 갈린다.
+    """
+
+    _EXPECTED = {
+        ("claude", "note"): "systemMessage",
+        ("codex", "note"): "systemMessage",
+        ("cursor", "note"): "followup_message",
+        ("claude", "brief"): "systemMessage",
+        ("codex", "brief"): "systemMessage",
+        ("cursor", "brief"): "user_message",
+        ("claude", "tip"): "systemMessage",
+        ("codex", "tip"): "systemMessage",
+        ("cursor", "tip"): "user_message",
+    }
+
+    def _emit(self, protocol: str, mode: str, sid: str) -> dict:
+        """한 레인을 한 번 돌린 stdout — 판정과 셸 호출은 막고 프로토콜 층만 남긴다."""
+        argv = [protocol] if mode == "note" else [protocol, mode]
+        payload: dict[str, Any] = {"session_id": sid, "cwd": self.root}
+        # Cursor payload 에는 세션 좌표가 없어서 훅이 상수 `"cursor"` 로 접는다 (write-sentinel 과
+        # 같은 규약) — write sentinel 파일도 그 이름으로 놓아야 훅이 찾는다.
+        sid = "cursor" if protocol == "cursor" else sid
+        if mode == "brief":
+            payload["prompt"] = "app.py 를 봐 주세요"
+        if mode == "tip":
+            payload |= {"tool_name": "Edit", "tool_input": {"file_path": "app.py"}}
+        self._sentinel(sid, ["app.py"])
+        with (
+            mock.patch.object(tutor_note, "_lesson", return_value=_LESSON),
+            mock.patch.object(tutor_note, "_brief", return_value="⠶ 들어가기 전 — 한 건"),
+            mock.patch.object(tutor_note, "_every", return_value=True),
+            mock.patch.object(tutor_note.shutil, "which", return_value="/usr/bin/asgard"),
+            mock.patch.object(
+                tutor_note.subprocess, "run", return_value=mock.Mock(stdout="⠶ 도중 점검 — 한 건", returncode=0)
+            ),
+        ):
+            code, out = _hook_payload("tutor_note", payload, argv)
+        self.assertEqual(code, 0, "되짚기는 규율이지 관문이 아니다 — 어떤 경우에도 0으로 끝난다")
+        self.assertTrue(out.strip(), f"{protocol}/{mode} 레인이 아무것도 안 냈다")
+        return json.loads(out)
+
+    def test_every_lane_speaks_the_field_its_host_reads(self) -> None:
+        for (protocol, mode), field in self._EXPECTED.items():
+            with self.subTest(protocol=protocol, mode=mode):
+                sent = self._emit(protocol, mode, f"{protocol}-{mode}")
+                self.assertEqual(list(sent), [field], f"{protocol}/{mode} 는 {field} 하나만 낸다")
+                self.assertTrue(str(sent[field]).strip())
+
+    def test_no_lane_writes_bare_text(self) -> None:
+        """평문 stdout 은 어느 호스트에서도 사람에게 안 닿는다 — codex 는 그것을 오류로 버린다."""
+        for protocol, mode in self._EXPECTED:
+            with self.subTest(protocol=protocol, mode=mode):
+                self._emit(protocol, mode, f"raw-{protocol}-{mode}")  # json.loads 가 곧 판정이다
+
+    def test_a_delete_counts_as_a_write_for_the_tip(self) -> None:
+        """Cursor 의 postToolUse 매처가 `Delete` 를 여기로 보낸다 — 계수에서 빼면 팁이 가장
+        필요한 구간(삭제)을 못 본다. 삭제는 물음 종류 절반이 태어나는 자리다."""
+        for name in ("Write", "Edit", "MultiEdit", "NotebookEdit", "Delete", "apply_patch"):
+            with self.subTest(tool=name):
+                self.assertTrue(tutor_note._wrote_a_file({"tool_name": name, "tool_input": {"file_path": "a.py"}}))
+        self.assertFalse(tutor_note._wrote_a_file({"tool_name": "Read", "tool_input": {"file_path": "a.py"}}))
+        self.assertFalse(
+            tutor_note._wrote_a_file({"tool_name": "Delete", "tool_input": {"file_path": ".asgard/state/x.json"}}),
+            "자기 상태 파일을 세면 팁이 자기를 부른다",
+        )
 
 
 if __name__ == "__main__":

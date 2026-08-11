@@ -5,8 +5,13 @@
 번째부터 보지 않는다. ③ 못 본 것을 같은 화면에 넣는다 — "확인할 것 0건"이 "안 봤다"를 뜻할 수
 있으면 이 도구는 거짓말을 하는 것이다.
 
-보고서(`--report`)에는 화면에 없는 절이 하나 더 있다: **왜 이렇게 했는가**. 기계는 그 칸을
-채울 수 없고 채우려 들면 안 된다 — 빈칸으로 남겨 코드를 쓴 쪽이 채우고 사용자가 검사한다.
+보고서(`--report`)에는 화면에 없는 절이 하나 더 있다: **왜 이렇게 했는가**. 그 칸의 절반은
+기계가 채운다 — 이 변경을 만든 퀘스트가 무엇을 맞추려 했고 무엇으로 닫혔는지는 로그에 적혀
+있고, `tutor_rationale` 이 그것을 원문 그대로 가져온다. 나머지 절반(왜 이 방법이었나, 버린
+방법은 무엇인가)은 여전히 빈칸이고 코드를 쓴 쪽이 채운다.
+
+화면이 무엇을 요구하는가는 모드가 정한다 (`tutor.mode`, 기본 `explain`). `explain` 은 짚을
+자리를 사실로 놓고 끝내고, `quiz` 는 물음으로 놓고 `--answer` 왕복을 기다린다.
 
 여기 표면이 넷 더 있다. 물음만 놓고 끝나던 층을 **왕복**으로 만드는 것들이다:
 `--answer`/`--dismiss`는 답이 돌아오는 통로(답이 없으면 이 층은 아무것도 못 배운다),
@@ -88,19 +93,29 @@ def _emit_inventory(lesson: tutor.Lesson) -> None:
         ui.step(ui.dim(f"    …외 {len(lesson.files) - 20}개 (`--json`을 붙이면 전부 나와요)"))
 
 
-def _emit_points(rows: list[tuple[tutor.Checkpoint, str]], limit: int) -> None:
+def _emit_points(rows: list[tuple[tutor.Checkpoint, str]], limit: int, quiz: bool = True) -> None:
     """펼침·접힘·넘침을 한 화면에. 접은 것을 안 적으면 "0건"과 "접었다"가 같은 화면이 된다."""
     if not rows:
-        ui.ok("기계가 짚을 자리는 없어요 — 그래도 왜 이렇게 했는지는 직접 답하셔야 해요")
+        ui.ok(
+            "기계가 짚을 자리는 없어요 — 그래도 왜 이렇게 했는지는 직접 답하셔야 해요"
+            if quiz
+            else "기계가 짚을 자리는 없어요"
+        )
         return
     open_rows = [r for r in rows if r[1] not in ("fold", "quiet")]
-    ui.phase(f"당신이 직접 확인할 것 — {len(rows)}건 (막지 않아요)")
+    ui.phase(
+        f"당신이 직접 확인할 것 — {len(rows)}건 (막지 않아요)"
+        if quiz
+        else f"짚어 둘 자리 — {len(rows)}건 (막지 않아요)"
+    )
     for point, form in open_rows[:limit]:
-        ui.warn(f"{_point_label(point)} — {point.where}  [{point.cid}]")
+        mark = f"  [{point.cid}]" if quiz else ""
+        ui.warn(f"{_point_label(point)} — {point.where}{mark}")
         ui.step(ui.dim(f"    {point.what}"))
         if form == "full":  # 왜 당신 눈이 필요한가 — 이미 답해 본 종류에는 세 번째로 설명하지 않는다
             ui.step(ui.dim(f"    {point.why}"))
-        ui.step(f"    ▸ {point.ask}")
+        if quiz:
+            ui.step(f"    ▸ {point.ask}")
     if len(open_rows) > limit:
         ui.step(ui.dim(f"    …외 {len(open_rows) - limit}건 (`asgard tutor --report`를 붙이면 전부 나와요)"))
     _emit_folded(rows)
@@ -151,6 +166,8 @@ def _payload(
     exp: Any = None,
     report_rel: str = "",
     limit: int = 1,
+    why: Any = None,
+    quiz: bool = True,
 ) -> str:
     """훅과 화면이 같은 판정을 쓰도록 조절 결과까지 넣는다 — 판정기가 둘이면 반드시 어긋난다.
 
@@ -179,6 +196,11 @@ def _payload(
             "report": report_rel,
             # 설명 엔진(`tutor_teach`)이 아직 없거나 죽으면 null. 표면이 엔진보다 먼저 배송된다.
             "explain": _as_dict(exp),
+            # 되짚기가 사람에게 무엇을 요구하는가. 훅은 이 칸으로 카드 모양을 고른다 — 훅이 제
+            # 설정을 다시 읽으면 같은 저장소에서 화면 둘이 갈린다.
+            "mode": "quiz" if quiz else "explain",
+            # "왜 이렇게 했는가" — 퀘스트 기록에서 온 사실. quiz 모드거나 기록이 없으면 null.
+            "rationale": _rationale_dict(why),
         },
         ensure_ascii=False,
         indent=2,
@@ -330,7 +352,11 @@ def _report_explain(exp: Any, include_recall: bool = True) -> list[str]:
     step_limit = min(_REPORT_STEP_LIMIT, primary)
     for step in exp.steps[:step_limit]:
         where = f"`{step.path}:{step.line}`" + (f" `{step.unit}`" if step.unit else "")
-        lines += [f"{step.order}. {where} — {step.what}", f"   - {step.why_here}"]
+        does = str(getattr(step, "does", "") or "").strip()
+        lines.append(f"{step.order}. {where} — {does or step.what}")
+        if does:
+            lines.append(f"   - {step.what}")
+        lines.append(f"   - {step.why_here}")
     total = int(getattr(exp, "total_units", 0) or len(exp.steps))
     if total > step_limit:
         lines += [
@@ -357,11 +383,28 @@ def _report_explain(exp: Any, include_recall: bool = True) -> list[str]:
     return lines
 
 
+def _report_why(why: Any) -> list[str]:
+    """2 절의 본문 — 기록이 있으면 사실로, 없으면 빈칸으로.
+
+    빈칸이 계약이던 이유는 저자가 사람이라는 전제였다(모듈 계약 ③). 에이전트가 쓴 변경에는 그
+    저자가 없고, 대신 퀘스트 로그에 그 턴이 무엇을 맞추려 했고 무엇으로 닫혔는지가 남아 있다.
+    그래도 **왜 이 방법이었나**는 여전히 사람 칸이라, 기록을 실은 뒤에도 빈칸 안내는 남긴다.
+    """
+    rows = _rationale_lines(why)
+    if not rows:
+        return [_WHY_SLOT]
+    body = ["기록: 퀘스트 로그가 이 변경의 목표와 검증을 이렇게 적어 뒀다.", ""]
+    body += [f"- {line.strip()}" for line in rows[1:] if line.strip()]
+    body += ["", "아래 빈칸은 그 기록이 답하지 못하는 것이다 — **왜 이 방법이었고, 버린 방법은 무엇인가**.", ""]
+    return body + [_WHY_SLOT]
+
+
 def _report(
     lesson: tutor.Lesson,
     exp: Any = None,
     rows: list[tuple[tutor.Checkpoint, str]] | None = None,
     limit: int = 1,
+    why: Any = None,
 ) -> str:
     lines = [
         "# 변경 되짚기",
@@ -373,7 +416,7 @@ def _report(
     lines += _report_files(lesson)
     shown = _shown_rows(rows or [(point, "full") for point in lesson.ranked], limit)
     lines += _report_explain(exp, include_recall=not bool(shown))
-    lines += ["", "## 2. 왜 이렇게 했는가", "", _WHY_SLOT]
+    lines += ["", "## 2. 왜 이렇게 했는가", "", *_report_why(why)]
     lines += ["", *_report_points(lesson, rows, limit)]
     if lesson.undetermined:
         lines += [
@@ -394,11 +437,12 @@ def _write_report(
     exp: Any = None,
     rows: list[tuple[tutor.Checkpoint, str]] | None = None,
     limit: int = 1,
+    why: Any = None,
 ) -> str:
     from ..io_files import write_text
 
     path = out if os.path.isabs(out) else os.path.join(root, out)
-    write_text(path, _report(lesson, exp, rows, limit))
+    write_text(path, _report(lesson, exp, rows, limit, why))
     return path
 
 
@@ -715,6 +759,28 @@ def _as_dict(exp: Any) -> dict | None:
         return None
 
 
+def _rationale_dict(why: Any) -> dict | None:
+    """`Rationale` → dict. 변환은 엔진이 갖는다 — 칸 이름이 둘이면 훅 화면이 조용히 빈다."""
+    engine = _engine("tutor_rationale")
+    if why is None or engine is None:
+        return None
+    try:
+        return engine.as_dict(why)
+    except Exception:
+        return None
+
+
+def _rationale_lines(why: Any) -> list[str]:
+    """ "왜 이렇게 했는가" 절의 줄. 규칙은 엔진 하나가 갖는다(훅 `_why` 와 같은 자를 쓴다)."""
+    engine = _engine("tutor_rationale")
+    if why is None or engine is None:
+        return []
+    try:
+        return list(engine.lines(why))
+    except Exception:
+        return []
+
+
 def _emit_explain(exp: Any) -> None:
     """읽는 순서 · 말뜻 · 확인 명령 · 못 닿은 자리.
 
@@ -730,6 +796,9 @@ def _emit_explain(exp: Any) -> None:
         ui.step(f"{step.order}. {step.path}:{step.line}" + (f"  {step.unit}" if step.unit else ""))
         if short:
             continue
+        does = str(getattr(step, "does", "") or "").strip()
+        if does:
+            ui.step(ui.dim(f"    하는 일 — {does}"))
         ui.step(ui.dim(f"    {step.what}"))
         if exp.depth != "familiar":  # 두 번째부터는 "왜 여기부터인가"가 이미 아는 말이 된다
             ui.step(ui.dim(f"    {step.why_here}"))
@@ -838,6 +907,7 @@ def run_tutor(
     explain: bool = False,
     depth: str = "",
     mission: bool = False,
+    quiz: bool = False,
 ) -> int:
     """종료 코드는 언제나 0 — 튜터는 규율이지 관문이 아니다(`health`와 같은 등급)."""
     root = _project_root(os.getcwd())
@@ -866,7 +936,17 @@ def run_tutor(
     if brief:
         return _run_brief(root, text, paths, quiet or json_out)
     return _run_review(
-        root, base, paths, json_out=json_out, report=report, out=out, limit=limit, record=record, depth=depth
+        root,
+        base,
+        paths,
+        json_out=json_out,
+        report=report,
+        out=out,
+        limit=limit,
+        record=record,
+        depth=depth,
+        quiz=tutor.mode(root, "quiz" if quiz else "") == "quiz",
+        session=sid,
     )
 
 
@@ -881,13 +961,17 @@ def _run_review(
     limit: int,
     record: bool,
     depth: str,
+    quiz: bool = True,
+    session: str = "",
 ) -> int:
     """기본 갈래 — 이번 변경을 화면이나 JSON, 그리고 보고서로 돌려준다."""
     lesson = tutor.review(root, base, paths)
     # 화면에 들어갔으면 물은 것이다 — 사람이 보는 호출은 그대로 센다. `--json`만 예외로 두는 이유:
     # 기계가 훑어보는 호출까지 세면 "몇 번 물었나"가 사람이 몇 번 봤나와 무관해진다(`--record`로 켠다).
     # 세는 범위는 `limit` 까지다 — 판정이 100건을 찾아도 화면에 여섯이면 물은 것은 여섯이다.
-    rows, back = tutor.hand_back(root, lesson.ranked, limit, count=record or not json_out)
+    # `explain` 모드는 물음을 놓지 않으므로 세지도 않는다 — 안 물은 것을 물었다고 세면 조절
+    # (fading)·재방문이 사람이 본 적 없는 회차 위에서 돈다.
+    rows, back = tutor.hand_back(root, lesson.ranked, limit, count=quiz and (record or not json_out))
     # 설명은 실을 자리가 있을 때만 만든다 — 기본 화면(`--explain` 없이)은 물음 축만 놓는다.
     exp = _explanation(root, base, paths, depth) if (json_out or report or out) else None
 
@@ -895,19 +979,44 @@ def _run_review(
     # 갈래에서 먼저 돌아서면 카드가 가리키는 `.asgard/tutor/last-review.md`가 영영 안 갱신된다
     # (26-07-27 이후 8일간 그렇게 멈춰 있었다). 되짚을 게 없을 때 안 쓰는 것은 그대로다 —
     # 빈 보고서로 덮으면 직전에 쓴 진짜 보고서가 사라진다.
+    why = _rationale(root, paths or tuple(f.path for f in lesson.files), quiz, session)
     written = ""
     if (report or out) and (lesson.files or lesson.checkpoints):
-        written = os.path.relpath(_write_report(root, lesson, out or _REPORT_REL, exp, rows, limit), root)
+        written = os.path.relpath(_write_report(root, lesson, out or _REPORT_REL, exp, rows, limit, why), root)
 
     # 세는 조건은 물음 쪽(`hand_back`)과 같다 — 화면이나 보고서로 사람 앞에 나간 회차만 병합한다.
     if record or not json_out:
         _learned(root, exp)
 
     if json_out:
-        print(_payload(lesson, rows, back, exp, written, limit))
+        print(_payload(lesson, rows, back, exp, written, limit, why, quiz))
         return 0
-    _emit_review(lesson, rows, back, limit, written)
+    _emit_review(lesson, rows, back, limit, written, why, quiz)
     return 0
+
+
+def _rationale(root: str, paths: object, quiz: bool, session: str = "") -> Any:
+    """이 변경을 만든 퀘스트의 기록. `quiz` 모드에서는 안 읽는다 — 그쪽은 이 칸을 빈칸으로 둔다.
+
+    `session` 은 활성 포인터를 이 세션의 것으로 좁히는 자다. 포인터는 저장소마다 하나라 옆 세션이
+    연 퀘스트를 가리킬 수 있고, 그 기장의 목표가 이 변경의 이유 자리에 그대로 나온다. 훅은
+    `--sid` 로 호스트 세션을 이미 알고 있어서 여기까지 넘기기만 하면 된다.
+
+    엔진이 없거나 기록을 못 읽으면 None 이고, 그러면 화면과 보고서는 종전처럼 빈칸을 남긴다
+    (`_explanation` 과 같은 계약 — 표면이 엔진보다 먼저 배송될 수 있다).
+    """
+    if quiz:
+        return None
+    engine = _engine("tutor_rationale")
+    if engine is None:
+        return None
+    try:
+        row = engine.rationale(root, paths, session)
+    except TypeError:
+        row = engine.rationale(root, paths)  # 세션 인자 이전의 엔진 — 표면이 먼저 배송될 수 있다
+    except Exception:
+        return None
+    return row if row else None
 
 
 def _emit_review(
@@ -916,6 +1025,8 @@ def _emit_review(
     back: list,
     limit: int,
     written: str,
+    why: Any = None,
+    quiz: bool = True,
 ) -> None:
     ui.head(f"tutor · 이번 변경 되짚기 ({lesson.base})")
     if not lesson.files and not lesson.checkpoints:
@@ -924,18 +1035,30 @@ def _emit_review(
         return
     _emit_mandate(lesson)
     _emit_inventory(lesson)
-    _emit_points(rows, limit)
-    _emit_back(back)
+    _emit_why(why)
+    _emit_points(rows, limit, quiz)
+    if quiz:
+        _emit_back(back)
     if lesson.undetermined:
         ui.phase(f"기계가 못 본 것 — {len(lesson.undetermined)}건")
-        for path, why in lesson.undetermined[:5]:
-            ui.step(ui.dim(f"    {path} — {why}"))
+        for path, reason in lesson.undetermined[:5]:
+            ui.step(ui.dim(f"    {path} — {reason}"))
     if written:
         ui.step("")
         ui.ok(f"보고서: {written}")
-    if rows:
+    if rows and quiz:
         ui.step(ui.dim('    답: `asgard tutor --answer <표식> "..."` · 오탐: `asgard tutor --dismiss <표식>`'))
     ui.done()
+
+
+def _emit_why(why: Any) -> None:
+    """왜 이렇게 했는가 — 퀘스트 기록에서. 기록이 없으면 아무것도 안 그린다(빈칸은 빈칸으로)."""
+    rows = _rationale_lines(why)
+    if not rows:
+        return
+    ui.phase(rows[0].removeprefix("⠶ ").strip())
+    for line in rows[1:]:
+        ui.step(ui.dim("  " + line.strip()))
 
 
 def _run_close(root: str, answer: str, dismiss: str, note: str) -> int:

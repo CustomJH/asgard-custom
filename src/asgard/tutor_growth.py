@@ -269,9 +269,18 @@ def answer(root: str, key: str, text: str, now: float | None = None) -> tuple[bo
 
 def dismiss(root: str, key: str, reason: str = "", now: float | None = None) -> tuple[bool, str]:
     """오탐으로 물음을 닫는다. 이건 사용자가 튜터를 고치는 통로다 — 같은 종류가 계속 오탐으로
-    닫히면 그 탐침은 스스로 낮아진다(계약 ④). 오탐을 답으로 세면 조절이 거꾸로 간다."""
+    닫히면 그 탐침은 스스로 낮아진다(계약 ④). 오탐을 답으로 세면 조절이 거꾸로 간다.
+
+    `key` 는 셋 중 하나다: 표식(cid) 앞자리, `all`, 또는 경로. 뒤의 둘이 뒤에 생긴 이유가 이
+    층의 실측이다 — 한 자리에 물음 열두 건이 쌓이면 출구가 표식 여덟 자짜리 명령 열두 번뿐이고,
+    그러면 아무도 안 치운다. 안 치우는 목록은 다음 턴부터 읽히지도 않는다 (26-08-11 오딘 지적).
+    치우는 값이 쌓이는 값보다 싸야 이 층이 산다.
+    """
     stamp = time.time() if now is None else now
     data = load(root)
+    bulk = _bulk(data, key)
+    if bulk is not None:
+        return _dismiss_all(root, data, bulk, key, reason, stamp)
     found = _resolve(data, key)
     if found is None:
         return (False, f"열린 물음 중에 `{key}`로 시작하는 게 없어요")
@@ -280,6 +289,36 @@ def dismiss(root: str, key: str, reason: str = "", now: float | None = None) -> 
     _close(data, full, entry, "dismissed", stamp, "", reason)
     save(root, data)
     return (True, "오탐으로 닫았어요. 같은 종류가 반복되면 이 탐침을 스스로 낮춰요")
+
+
+def _bulk(data: dict, key: str) -> list[str] | None:
+    """묶음 닫기 대상 — `all` 이면 전부, 경로면 그 파일. 표식 갈래면 None (한 건 닫기로 넘긴다).
+
+    표식과 경로를 가르는 것은 글자 모양이 아니라 **무엇에 맞았는가**다. 표식은 16진 여덟 자라
+    경로와 겹칠 수 없고, 경로는 열려 있는 물음의 `path` 와 통째로 같을 때만 경로로 읽는다 —
+    오타 하나가 열두 건을 통째로 닫으면 그건 출구가 아니라 함정이다.
+    """
+    raw = str(key or "").strip()
+    rows = [(k, e) for k, e in data["open"].items() if isinstance(e, dict)]
+    if raw.lower() == "all":
+        return [k for k, _ in rows]
+    wanted = raw.replace(os.sep, "/")
+    hits = [k for k, e in rows if str(e.get("path") or "").replace(os.sep, "/") == wanted]
+    return hits or None
+
+
+def _dismiss_all(root: str, data: dict, keys: list[str], key: str, reason: str, stamp: float) -> tuple[bool, str]:
+    if not keys:
+        return (False, f"`{key}` 에 열린 물음이 없어요")
+    for full in keys:
+        entry = data["open"].get(full)
+        if not isinstance(entry, dict):
+            continue
+        _topic(data, entry.get("kind", ""))["dismissed"] += 1
+        _close(data, full, entry, "dismissed", stamp, "", reason)
+    save(root, data)
+    where = "이 저장소" if str(key).strip().lower() == "all" else f"`{key}`"
+    return (True, f"{where}의 열린 물음 {len(keys)}건을 오탐으로 닫았어요. 반복되는 종류는 탐침이 스스로 낮아져요")
 
 
 def _resolve(data: dict, key: str) -> tuple[str, dict] | None:

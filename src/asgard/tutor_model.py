@@ -20,6 +20,18 @@ WEIGHT = {
     "untested-surface": 2,
     "todo-left": 1,
 }
+# 종류의 사람 이름 — 표면마다 다시 쓰면 같은 판정이 화면마다 다른 이름으로 불린다. `WEIGHT` 와
+# 같은 자리에 있는 이유도 같다: 사후 카드와 사전 브리핑이 둘 다 읽으므로 어느 한쪽이 가지면
+# 다른 쪽이 위층을 거꾸로 부르게 된다.
+KIND_LABEL = {
+    "contract-break": "공개 계약 바뀜",
+    "behavior-removed": "동작 사라짐",
+    "test-removed": "판정 사라짐",
+    "silent-failure": "조용히 삼킨 실패",
+    "new-dependency": "외부 의존 늘어남",
+    "untested-surface": "판정 없는 새 표면",
+    "todo-left": "안 끝난 표식",
+}
 
 
 @dataclass(frozen=True)

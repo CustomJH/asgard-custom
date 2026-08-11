@@ -34,6 +34,13 @@ import subprocess
 import sys
 from collections.abc import Sequence
 
+# 발화 계측은 훅과 함께 깔리는 공용 라이브러리가 쥔다 — 이 훅은 자기 이름만 넘긴다.
+_HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
+if _HOOK_DIR not in sys.path:
+    sys.path.append(_HOOK_DIR)
+
+from asgard_hooklib.firing import run  # noqa: E402
+
 # Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 넣지 못한다 — 인코딩 오류가
 # fail-open에 삼켜지면 훅 산출이 통째로 증발한다. UTF-8 강제.
 for _stream in (sys.stdout, sys.stderr):
@@ -44,6 +51,10 @@ for _stream in (sys.stdout, sys.stderr):
 
 MAX_SHOWN = 1  # Stop은 하루치 리뷰가 아니라 한 턴의 속도 조절기다 — 한 번에 한 판단만 둔다
 MAX_BACK = 1  # 이번 질문이 없을 때만 옛 물음 하나가 들어온다
+# 설명 절은 물음과 다른 축이라 상한도 따로다. 물음은 사람에게 **일을 시키므로** 한 번에 하나가
+# 맞지만, 설명은 시키는 것이 없어서 자리가 하나면 스물일곱 곳이 바뀐 턴에서도 한 곳만 보인다 —
+# 그게 요약처럼 읽히던 이유다. 셋은 엔진 `tutor_teach.card` 의 기본값이고, 두 화면은 같아야 한다.
+EXPLAIN_SHOWN = 3
 # 파일을 바꾼 호출 몇 번마다 팁을 한 번 물어볼 것인가. 작게 잡으면 도구 호출마다 프로세스가
 # 뜨고, 크게 잡으면 짧은 작업에서는 한 번도 안 닿는다. 여덟은 한 번의 작업 단위(파일 서넛을
 # 오가며 고치는 구간)가 끝날 무렵 한 번 닿는 값이다.
@@ -106,15 +117,20 @@ def _reviewable(root: str, rel: str) -> bool:
         return False
 
 
-def _lesson(exe: str, root: str, paths: list[str]) -> dict:
+def _lesson(exe: str, root: str, paths: list[str], sid: str = "") -> dict:
     """`asgard tutor --json`이 유일한 판정 경로 — 훅은 규칙을 자기가 알지 않는다.
 
     훅은 사용자 저장소 안에서 도는 stdlib 전용 스크립트다(hooks 패키지 계약). 규칙을 복사해
     넣으면 판정이 두 벌이 되고, 두 벌은 반드시 어긋난다.
+
+    `--sid` 는 "왜 이렇게 했는가" 칸이 이 세션의 퀘스트를 고르게 하는 자다. 퀘스트 포인터는
+    저장소마다 하나라 옆 세션이 연 기장을 가리킬 수 있고, 훅만이 호스트 세션 이름을 안다.
     """
     # `--record`가 이 호출을 성장 기록에 센다 — 훅이 놓은 물음도 사람 앞에 놓인 물음이다.
     # 안 세면 조절(fading)·재방문이 외부 클라이언트에서만 영원히 1회차에 머문다.
     cmd = [exe, "tutor", "--json", "--record", "--report", "--limit", str(MAX_SHOWN)]
+    if sid:
+        cmd += ["--sid", sid]
     for path in paths[:200]:
         cmd += ["--path", path]
     try:
@@ -159,21 +175,20 @@ def _latched(root: str, sid: str, sig: str, slot: str = "") -> bool:
     return False
 
 
-def _card(lesson: dict, points: list[dict], back: list[dict], told: Sequence[str] = ()) -> str:
+def _card(lesson: dict, points: list[dict], back: list[dict], told: Sequence[str] = (), why: Sequence[str] = ()) -> str:
     """네이티브 루프의 `tutor._card`와 같은 화면을 낸다 — 형식이 갈리면 같은 판정이 클라이언트마다
     다르게 보이고, 그러면 사용자는 어느 쪽이 진짜인지부터 물어야 한다."""
+    quiz = str(lesson.get("mode") or "quiz") == "quiz"
     added, removed = int(lesson.get("added") or 0), int(lesson.get("removed") or 0)
     files = len(lesson.get("files") or [])
-    head = "⠶ 되짚기 — 이번 턴 %d개 파일 · +%d/-%d행이에요. 아래는 **기계가 못 답하는** 것들이에요." % (
-        files,
-        added,
-        removed,
-    )
-    lines = [head, ""]
+    head = "⠶ 되짚기 — 이번 턴 %d개 파일 · +%d/-%d행이에요." % (files, added, removed)
+    lines = [head + (" 아래는 **기계가 못 답하는** 것들이에요." if quiz else ""), ""]
     if told:
         # 설명이 물음보다 위에 온다 — 전달된 적 없는 것을 인출부터 시키면 물음은 답이 아니라
         # 침묵을 받는다. 네이티브 `tutor._card`가 같은 자리에 같은 절을 놓는다.
         lines += [*told, ""]
+    if why:
+        lines += [*why, ""]
     moved = sum(len(row.get("units_moved") or ()) for row in (lesson.get("files") or []) if isinstance(row, dict))
     if moved:
         lines.append("  구조 이동 — 같은 본문으로 확인된 %d개 단위는 삭제 질문에서 뺐어요." % moved)
@@ -188,29 +203,71 @@ def _card(lesson: dict, points: list[dict], back: list[dict], told: Sequence[str
             continue
         if shown >= MAX_SHOWN:
             continue
-        lines.append("  %s — %s  [%s]" % (_label(point), _where(point), point.get("cid") or "?"))
-        lines.append("    ▸ %s" % point.get("ask"))
+        mark = "  [%s]" % (point.get("cid") or "?") if quiz else ""
+        lines.append("  %s — %s%s" % (_label(point), _where(point), mark))
+        lines.append("    " + ("▸ %s" % point.get("ask") if quiz else str(point.get("what") or "")))
         shown += 1
     over = sum(1 for p in points if (p.get("form") or "full") not in ("fold", "quiet")) - shown
     if over > 0:
-        lines.append("  나머지 후보는 이번 회차에 묻지 않아요.")
+        lines.append("  나머지 후보는 이번 회차에 묻지 않아요." if quiz else "  나머지 후보는 보고서에 있어요.")
     if folded:
         lines.append("  %s — 이미 답해 오신 종류라 접었어요" % _folded(folded))
     if quiet:
         lines.append("  %s — 계속 못 닿아서 접었어요 (`asgard tutor --progress`)" % _folded(quiet))
+    # 보고서 경로는 판정이 실제로 쓴 자리를 적는다 — 상수를 적으면 저장소 설정이 자리를 옮겼을 때
+    # 사용자가 여는 경로가 빈 자리가 된다. 안 실려 오면 기본 자리로 돌아간다.
+    report = str(lesson.get("report") or "").strip() or REPORT_REL
+    if not quiz:
+        lines += ["", "  전체: %s  · 물음 형식으로 되돌리려면 `asgard tutor --quiz`" % report]
+        return "\n".join(lines)
     for row in back[:MAX_BACK]:
         lines.append("  ↩ 다시 — %s  [%s]  (아직 답이 없어요)" % (_where(row, False), row.get("cid") or "?"))
         lines.append("    ▸ %s" % row.get("ask"))
     lines.append("")
     lines.append('  답은 `asgard tutor --answer <표식> "..."` · 오탐이면 `asgard tutor --dismiss <표식>`')
-    # 보고서 경로는 판정이 실제로 쓴 자리를 적는다 — 상수를 적으면 저장소 설정이 자리를 옮겼을 때
-    # 사용자가 여는 경로가 빈 자리가 된다. 안 실려 오면 기본 자리로 돌아간다.
-    report = str(lesson.get("report") or "").strip() or REPORT_REL
     lines.append("  전체와 '왜 이렇게 했는가' 빈칸: %s  (다시 보기: `asgard tutor --report`)" % report)
     return "\n".join(lines)
 
 
-def _explain(exp: object, limit: int = MAX_SHOWN, quiz: bool = True) -> list[str]:
+def _why(row: object, limit: int = 4) -> list:
+    """`asgard tutor --json` 의 `rationale` 칸을 줄로 옮긴다 — 규칙은 `asgard.tutor_rationale`이
+    혼자 갖는다. `_explain` 과 같은 계약이고, `tests/test_tutor_rationale.py` 가 두 산출을
+    문자열로 맞대 본다.
+
+    이 절이 들어가는 자리가 이 층의 뒤집힌 전제다: "왜 그렇게 했나"는 코드를 쓴 쪽만 답할 수
+    있는데, 에이전트가 쓴 변경에서는 그 쪽이 사람이 아니다. 그래서 사람에게 묻는 대신 그 턴의
+    퀘스트 기록(목표·가정·검증 명령)을 사실로 넣어 준다. 기록이 없으면 아무 줄도 안 낸다.
+    """
+    if not isinstance(row, dict):
+        return []
+    goals = [str(g) for g in (row.get("goals") or []) if str(g).strip()][: max(0, limit)]
+    assumptions = [str(a) for a in (row.get("assumptions") or []) if str(a).strip()]
+    evidence = [(str(e[0]), e[1]) for e in (row.get("evidence") or []) if isinstance(e, (list, tuple)) and len(e) >= 2]
+    request = " ".join(str(row.get("request") or "").split())
+    if not (goals or assumptions or evidence or request):
+        return []
+    qid = str(row.get("quest_id") or "")
+    out = ["⠶ 왜 이렇게 했는가" + (" — 퀘스트 `%s`" % qid if qid else "")]
+    if request:
+        out.append("  받은 요청 — " + _clip(request, 160))
+    for index, goal in enumerate(goals):
+        out.append(("  맞추려던 것 — " if index == 0 else "                ") + _clip(goal, 160))
+    total = int(row.get("goals_total") or len(goals))
+    if total > len(goals):
+        out.append("                …외 %d건은 퀘스트 로그에 있어요" % (total - len(goals)))
+    for index, assume in enumerate(assumptions):
+        out.append(("  가정 — " if index == 0 else "         ") + _clip(assume, 160))
+    for index, (cmd, code) in enumerate(evidence):
+        out.append(("  확인 — " if index == 0 else "         ") + "%s (exit %s)" % (_clip(cmd, 120), code))
+    return out
+
+
+def _clip(text: str, cap: int) -> str:
+    body = " ".join(str(text).split())
+    return body if len(body) <= cap else body[: cap - 1] + "…"
+
+
+def _explain(exp: object, limit: int = EXPLAIN_SHOWN, quiz: bool = True) -> list[str]:
     """`asgard tutor --json`의 `explain` 칸을 그린다 — 훅은 설명을 만들지 않는다.
 
     칸이 없거나 `null`이면 빈 목록이고, 그러면 카드는 지금까지처럼 물음만 낸다. 훅은 stdlib
@@ -256,16 +313,14 @@ def _explain(exp: object, limit: int = MAX_SHOWN, quiz: bool = True) -> list[str
     if shown:
         lines.append("  먼저 읽을 흐름 — %d곳" % len(shown))
         for step in shown:
-            lines.append(
-                "  %s. %s %s — %s · %s"
-                % (
-                    step.get("order"),
-                    _at(step),
-                    step.get("unit") or "",
-                    step.get("what") or "",
-                    step.get("why_here") or "",
-                )
-            )
+            head = "  %s. %s %s" % (step.get("order"), _at(step), step.get("unit") or "")
+            tail = "%s · %s" % (step.get("what") or "", step.get("why_here") or "")
+            does = str(step.get("does") or "").strip()
+            if does:
+                lines.append("%s — %s" % (head, does))
+                lines.append("     " + tail)
+            else:
+                lines.append("%s — %s" % (head, tail))
         if total > len(shown):
             lines.append("  나머지 흐름은 보고서에 접어 뒀어요.")
     if depth != "first":
@@ -282,6 +337,29 @@ def _explain(exp: object, limit: int = MAX_SHOWN, quiz: bool = True) -> list[str
         lines += ["    ▸ %s" % ask for ask in recall]
     lines += ["  못 본 것 — %s: %s" % (gap[0], gap[1]) for gap in gaps[:limit]]
     return lines
+
+
+def _say(protocol: str, mode: str, text: str) -> None:
+    """사람에게 보이는 한 줄기 — 필드는 호스트와 이벤트가 함께 정한다. 그 자리에서 안 읽는
+    이름으로 적으면 카드는 조용히 사라진다.
+
+    세 레인이 각자 이 리터럴을 적고 있어서 codex 는 한 파일 안에 규약이 둘이었다: Stop 은
+    `systemMessage`, brief·tip 은 평문 stdout. 평문 쪽이 틀렸다 — codex 의
+    `user-prompt-submit.command.output`·`post-tool-use.command.output` 스키마가
+    `additionalProperties: false` 라 JSON 이 아닌 출력은 "hook returned invalid ... JSON
+    output" 으로 버려진다 (codex-cli 0.146.0 번들 스키마 확인). 두 레인은 켜져 있었을 뿐
+    사용자에게 닿은 적이 없다.
+
+    Cursor 만 이벤트별로 갈린다 — `beforeSubmitPrompt` 는 `user_message`, `stop` 은
+    `followup_message`. `postToolUse`(팁)에는 사람에게 보이는 필드가 없어 여기서 낸
+    `user_message` 는 유효하지만 그려지지 않는다. 남은 `additional_context` 는 모델 통로라
+    쓸 수 없다 — 물음을 읽은 모델이 대신 답해 버린다.
+    """
+    if protocol == "cursor":
+        key = "followup_message" if mode == "note" else "user_message"
+    else:
+        key = "systemMessage"  # Claude Code·Codex 공통 — 세 이벤트 전부 이 필드를 사람에게 보인다
+    sys.stdout.write(json.dumps({key: text}, ensure_ascii=False) + "\n")
 
 
 def _at(step: dict) -> str:
@@ -383,12 +461,14 @@ def _run_tip(protocol: str, root: str, sid: str, data: dict) -> None:
         return  # 팁 불능이 도구 호출을 막지 않는다 — 되짚기는 규율이지 관문이 아니다
     if not card:
         return
-    if protocol == "cursor":
-        sys.stdout.write(json.dumps({"user_message": card}, ensure_ascii=False) + "\n")
-    elif protocol == "codex":
-        sys.stdout.write(card + "\n")
-    else:
-        sys.stdout.write(json.dumps({"systemMessage": card}, ensure_ascii=False) + "\n")
+    _say(protocol, "tip", card)
+
+
+# 이 표는 세 클라이언트의 PostToolUse 매처가 실제로 보내는 이름의 합집합이다 — 매처가 보내는데
+# 여기 없는 이름은 계수에서 조용히 빠진다. `Delete` 가 그렇게 빠져 있었다 (Cursor 의
+# postToolUse 매처는 `Write|Edit|Delete`). 삭제는 되짚기의 물음 종류 절반(동작 사라짐·판정
+# 사라짐)을 만드는 입력이라, 세는 쪽에서 빼면 팁이 가장 필요한 구간을 못 본다.
+_WRITE_TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit", "Delete", "apply_patch")
 
 
 def _wrote_a_file(data: dict) -> bool:
@@ -397,7 +477,7 @@ def _wrote_a_file(data: dict) -> bool:
     if isinstance(resp, dict) and (resp.get("is_error") or resp.get("error")):
         return False
     name = str(data.get("tool_name") or "")
-    if name and name not in ("Write", "Edit", "MultiEdit", "NotebookEdit", "apply_patch"):
+    if name and name not in _WRITE_TOOLS:
         return False
     raw = data.get("tool_input")
     tool_input = raw if isinstance(raw, dict) else {}
@@ -452,12 +532,7 @@ def _run_brief(protocol: str, root: str, sid: str, data: dict) -> None:
         return
     if _latched(root, sid, hashlib.sha256(card.encode("utf-8")).hexdigest()[:16], "brief-"):
         return
-    if protocol == "cursor":
-        sys.stdout.write(json.dumps({"user_message": card}, ensure_ascii=False) + "\n")
-    elif protocol == "codex":
-        sys.stdout.write(card + "\n")
-    else:
-        sys.stdout.write(json.dumps({"systemMessage": card}, ensure_ascii=False) + "\n")
+    _say(protocol, "brief", card)
 
 
 def main() -> None:
@@ -483,22 +558,23 @@ def main() -> None:
         exe = shutil.which("asgard")
         if not exe:
             sys.exit(0)
-        lesson = _lesson(exe, root, paths)
+        lesson = _lesson(exe, root, paths, sid)
         selected = lesson.get("shown_checkpoints")
         source = selected if isinstance(selected, list) else (lesson.get("checkpoints") or [])
         points = [p for p in source if isinstance(p, dict)]
         back = [r for r in (lesson.get("revisits") or []) if isinstance(r, dict)]
-        told = _explain(lesson.get("explain"), quiz=not bool(points or back))
-        if not points and not back and not told:
+        quiz = str(lesson.get("mode") or "quiz") == "quiz"
+        told = _explain(lesson.get("explain"), quiz=quiz and not bool(points or back))
+        why = _why(lesson.get("rationale")) if not quiz else []
+        if not points and not back and not told and not why:
             sys.exit(0)  # 물을 것도 설명할 것도 없으면 침묵한다 — 빈 카드는 다음 카드의 신뢰를 깎는다
-        if _latched(root, sid, _signature(points, back, told)):
+        if _latched(root, sid, _signature(points, back, [*told, *why])):
             sys.exit(0)
-        key = "followup_message" if protocol == "cursor" else "systemMessage"
-        sys.stdout.write(json.dumps({key: _card(lesson, points, back, told)}, ensure_ascii=False) + "\n")
+        _say(protocol, "note", _card(lesson, points, back, told, why))
     except Exception:
         pass  # 되짚기 불능이 턴을 막지 않는다 — 튜터는 규율이지 관문이 아니다
     sys.exit(0)
 
 
 if __name__ == "__main__":
-    main()
+    run("tutor-note", main)
