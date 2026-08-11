@@ -40,23 +40,25 @@ _ENV = {
 
 
 def _exp(**over) -> tutor_teach.Explanation:
-    base = {
-        "base": "HEAD",
-        "depth": "first",
-        "mission": "",
-        "steps": (
+    # 기본값을 사전으로 두고 `**` 로 펼치면 칸마다 다른 타입이 하나의 합집합으로 뭉개져
+    # 생성자 인자가 전부 그 합집합으로 읽힌다. 완성된 값을 만들고 `replace` 로 덮는다.
+    base = tutor_teach.Explanation(
+        base="HEAD",
+        depth="first",
+        mission="",
+        steps=(
             tutor_teach.Step(1, "m.py", 8, "alpha", "새로 생긴 단위예요 (2행)", "여기가 먼저예요", "우유를 데워요."),
             tutor_teach.Step(2, "m.py", 4, "zeta", "새로 생긴 단위예요 (2행)", "그 다음이에요"),
         ),
-        "terms": (),
-        "checks": (),
-        "recall": (),
-        "gaps": (),
-        "primary_units": 2,
-        "total_units": 2,
-        "flow_count": 1,
-    }
-    return tutor_teach.Explanation(**{**base, **over})
+        terms=(),
+        checks=(),
+        recall=(),
+        gaps=(),
+        primary_units=2,
+        total_units=2,
+        flow_count=1,
+    )
+    return replace(base, **over)
 
 
 class QuotedPurposeTest(unittest.TestCase):

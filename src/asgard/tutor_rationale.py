@@ -68,7 +68,9 @@ def rationale(root: str, paths: object = (), session: str = "") -> Rationale:
     rows = [(path, events) for path in _quest_files(root) if (events := _read(path))]
     session = _known(rows, session)
     live = _live(rows, _active(root), session)
-    best: tuple[tuple[int, int, int, float], list[dict]] | None = None
+    # 점수는 여섯 축이다 — 포인터·세션 주인·경로 겹침·열려 있음·겹친 개수·수정 시각. 앞의 셋을
+    # 아래에서 문턱으로 다시 읽으므로 길이가 어긋나면 그 자리가 조용히 다른 축을 읽는다.
+    best: tuple[tuple[int, int, int, int, int, float], list[dict]] | None = None
     for path, events in rows:
         qid = str(events[0].get("quest_id") or "")
         overlap = len(wanted & _touched(events)) if wanted else 0
@@ -279,9 +281,11 @@ def lines(row: object, limit: int = _GOAL_CAP) -> list[str]:
     갈리면 같은 판정이 클라이언트마다 다르게 보인다(`tutor_teach.card` 와 같은 계약).
     """
     data = row if isinstance(row, dict) else as_dict(row) if isinstance(row, Rationale) else {}
-    goals = [str(g) for g in (data.get("goals") or []) if str(g).strip()][: max(0, limit)]
-    assumptions = [str(a) for a in (data.get("assumptions") or []) if str(a).strip()]
-    evidence = [(str(e[0]), e[1]) for e in (data.get("evidence") or []) if isinstance(e, (list, tuple)) and len(e) >= 2]
+    goals = [str(g) for g in _listed(data.get("goals")) if str(g).strip()][: max(0, limit)]
+    assumptions = [str(a) for a in _listed(data.get("assumptions")) if str(a).strip()]
+    evidence = [
+        (str(e[0]), e[1]) for e in _listed(data.get("evidence")) if isinstance(e, (list, tuple)) and len(e) >= 2
+    ]
     request = " ".join(str(data.get("request") or "").split())
     if not (goals or assumptions or evidence or request):
         return []
@@ -291,7 +295,8 @@ def lines(row: object, limit: int = _GOAL_CAP) -> list[str]:
         out.append(f"  받은 요청 — {_clip(request, 160)}")
     for index, goal in enumerate(goals):
         out.append(("  맞추려던 것 — " if index == 0 else "                ") + _clip(goal, 160))
-    total = int(data.get("goals_total") or len(goals))
+    counted = data.get("goals_total")
+    total = counted if isinstance(counted, int) else len(goals)
     if total > len(goals):
         out.append(f"                …외 {total - len(goals)}건은 퀘스트 로그에 있어요")
     for index, assume in enumerate(assumptions):
@@ -299,6 +304,11 @@ def lines(row: object, limit: int = _GOAL_CAP) -> list[str]:
     for index, (cmd, code) in enumerate(evidence):
         out.append(("  확인 — " if index == 0 else "         ") + f"{_clip(cmd, 120)} (exit {code})")
     return out
+
+
+def _listed(value: object) -> list:
+    """사전에서 꺼낸 값 중 목록인 것만. 훅이 넘기는 사전은 JSON 에서 와서 타입 보장이 없다."""
+    return value if isinstance(value, list) else []
 
 
 def _clip(text: str, cap: int) -> str:

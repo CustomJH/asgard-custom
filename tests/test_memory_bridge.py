@@ -475,7 +475,9 @@ class TestConfigInheritance(BridgeBase):
         child = os.path.join(self.root, "packages", "web")
         os.makedirs(child)
         mb.write_config(child, f"http://127.0.0.1:{self.port}", "child-bank")
-        save_project(child, "project_memory", {**dict(mb.find_config(child)[1]), "enabled": False})
+        written = mb.find_config(child)
+        assert written is not None  # 바로 위에서 적었다 — 없으면 이 시험의 전제가 깨진 것이다
+        save_project(child, "project_memory", {**dict(written[1]), "enabled": False})
         save_project(child, "paths", {"additional_roots": [os.path.realpath(self.root)]})
         self.assertIsNone(mb.find_config(child))
         self.assertIsNone(mb.find_config(child, strict=True))

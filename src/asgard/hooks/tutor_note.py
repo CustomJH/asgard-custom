@@ -240,9 +240,9 @@ def _why(row: object, limit: int = 4) -> list:
     """
     if not isinstance(row, dict):
         return []
-    goals = [str(g) for g in (row.get("goals") or []) if str(g).strip()][: max(0, limit)]
-    assumptions = [str(a) for a in (row.get("assumptions") or []) if str(a).strip()]
-    evidence = [(str(e[0]), e[1]) for e in (row.get("evidence") or []) if isinstance(e, (list, tuple)) and len(e) >= 2]
+    goals = [str(g) for g in _listed(row.get("goals")) if str(g).strip()][: max(0, limit)]
+    assumptions = [str(a) for a in _listed(row.get("assumptions")) if str(a).strip()]
+    evidence = [(str(e[0]), e[1]) for e in _listed(row.get("evidence")) if isinstance(e, (list, tuple)) and len(e) >= 2]
     request = " ".join(str(row.get("request") or "").split())
     if not (goals or assumptions or evidence or request):
         return []
@@ -252,7 +252,8 @@ def _why(row: object, limit: int = 4) -> list:
         out.append("  받은 요청 — " + _clip(request, 160))
     for index, goal in enumerate(goals):
         out.append(("  맞추려던 것 — " if index == 0 else "                ") + _clip(goal, 160))
-    total = int(row.get("goals_total") or len(goals))
+    counted = row.get("goals_total")
+    total = counted if isinstance(counted, int) else len(goals)
     if total > len(goals):
         out.append("                …외 %d건은 퀘스트 로그에 있어요" % (total - len(goals)))
     for index, assume in enumerate(assumptions):
@@ -260,6 +261,12 @@ def _why(row: object, limit: int = 4) -> list:
     for index, (cmd, code) in enumerate(evidence):
         out.append(("  확인 — " if index == 0 else "         ") + "%s (exit %s)" % (_clip(cmd, 120), code))
     return out
+
+
+def _listed(value: object) -> list:
+    """사전에서 꺼낸 값 중 목록인 것만. 엔진의 `tutor_rationale._listed` 와 같은 규칙인데, 훅은
+    엔진을 임포트할 수 없어 사본으로 산다 (배포본은 이 파일 하나로 돌아야 한다)."""
+    return value if isinstance(value, list) else []
 
 
 def _clip(text: str, cap: int) -> str:
