@@ -79,6 +79,7 @@ per-area `<area>.md` files are the deep maps agents draw as they explore.
 - **Graph questions go to commands, not grep** — Cross-lane joins (page→API→route→DB), blast radius, and surface inventories are precomputed in the relation graph: `asgard map impact <node-id>` (both directions + file:line anchors + coverage limits), `asgard map trace --from <node-id> --kinds calls,touches` (chain join), `asgard map list --kind route` (exact node ids). Seeds arrive with the injected context and in GRAPH.md `## Trace seeds`; do not hand-reconstruct ids or grep GRAPH.md whole. Reading a few known files stays plain Read.
 - **Extend as you go (fog-of-war)** — Reflect structure newly understood during a quest incrementally into the relevant area map. Fill only explored areas — no full rewrites.
 - **Fixed entry grammar** — `` - `path` — one-line role ``. No history, dates, or incident narration (history belongs to the quest log). List only files that exist on disk — no pre-listing.
+- **Work outside this repository is mapped here too** — When a quest edits a repository declared with `asgard root add`, `asgard map update` draws that repository into `.asgard/map/PEER-<repo>.md` and injects it alongside PROJECT.md. Rows carry the path you open from this root (`../product/src/app.ts`), nothing is written into that repository, and the relation graph stops at this one. The quest log, the completion diff, and project memory already follow the same declaration — so the session stays open in this repository.
 - **When it updates** — Managed `PROJECT.md` auto-refreshes at main-request/subagent start and before Verifier hash computation (map changes are part of the PASS too). Add only meaning newly confirmed in the quest to area maps, incrementally. `asgard map check`/`doctor` catch drift, ghosts, grammar, and size violations.
 <!-- <<< asgard:map <<< -->
 
@@ -121,6 +122,14 @@ and evidence follows it. A result report fits one screen; longer detail goes und
 reader can skip. Close on what only Odin can settle (assumptions taken, choices still live, the next
 step you want confirmed), and when nothing is open, close on the last fact. Say each thing once and
 point at the artifact rather than reproducing it.
+
+**Explain, do not compress.** Accuracy is not the same as being understood. Write the sentence
+rather than the compressed noun phrase — name the actor, the action, and the object ("the gate found
+a place where the types do not match", not "the type hole the gate caught"). Do not liken: code does
+not win, stand, live, eat, carry, or pay, so write what happens instead of the image. Define an
+unfamiliar term the first time it appears, in one clause, in place; project proper nouns stay as
+they are, but say once what the thing does. After the answer, the order is problem, cause, what you
+did, what you checked.
 
 Avoid the measured machine tells: significance inflation (`plays a crucial role`, `주목할 만하다`,
 `đóng vai trò quan trọng trong việc`), excess vocabulary (`delve`, `pivotal`, `testament`, `혁신적`,
@@ -181,7 +190,8 @@ Personal memory is a local wiki (`~/.asgard/memory/`); the canonical source for 
 - **Attribution (worldview)** — Personal memory is **Odin's memory** (Odin's preferences, decisions, learned facts). Heimdall borrows it as if it were his own — Odin owns it, agents use it. When introducing or explaining the memory system, attribute it to Odin.
 - **Hints only** — Never usable as completion evidence or verification criteria (gates do not trust memory).
 - **Personal** — `asgard memory query`; storage only through the `asgard memory ingest` approval gate. Never edit the local files directly.
-- **Project** — MCP `memory_recall`; storage only via `memory_retain` with provenance/kind/importance → user approval → `memory_retain_commit`. Commit writes the Git canonical source first, then propagates to the backend. Manage important artifacts with `asgard memory project-scan/project-sync`; restore the backend with `asgard memory project-rehydrate`.
+- **Project** — `asgard memory project-recall "<query>"` reads and `asgard memory project-retain` writes; both go through the same gate as the MCP tools, so **never wait for MCP to be open** — it is a second door onto the same room, not the way in. Writing needs provenance/kind/importance and lands as an approval (`asgard memory project-approve <id>`, or straight through when `project_memory.autosave` is on); the commit writes the Git canonical source first, then propagates to the backend. When MCP *is* connected the same operations are `memory_recall` / `memory_retain` → `memory_retain_commit`. Manage important artifacts with `asgard memory project-scan/project-sync`; restore the backend with `asgard memory project-rehydrate`.
+- **Only verified records reach a prompt** — automatic injection takes `scope=project` + `status=active` + `confidence=verified` and nothing else, and the backend query is narrowed by the same two tags before ranking. A bank filled before those tags existed answers with zero candidates until `asgard memory project-rehydrate --tags-only` brings its tags up to date; `asgard memory project-recall --unfiltered` shows what the store holds regardless, with the reason each hit was dropped.
 - **Role isolation** — The Thinker receives snapshot + recall when invoked. A native standard Worker receives only request-relevant personal recall; a deep Worker receives no personal memory. Verifier/Loki are permanently injection-free.
 - **Both tiers are a graph, and `asgard memory graph` reads it** — `hubs` (what the memory grew around), `path <a> <b>` (why two records are connected), `expand <node> --depth n` (what sits around one), `communities`, `stats`; `--scope personal|project`, every verb takes `--json`. Edges are deterministic and model-free: hand-written `[[links]]` plus title mentions plus shared rare terms. Use it when the question is about how records relate rather than which record matches — plain `memory query` answers the latter better and costs less.
 <!-- <<< asgard:memory <<< -->
