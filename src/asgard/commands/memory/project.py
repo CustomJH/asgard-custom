@@ -597,6 +597,27 @@ def _show_failed_document(row: dict, level: Callable[[str], None] = ui.warn) -> 
         ui.step(f"  … 외 {len(findings) - _MAX_SHOWN_FINDINGS}건")
 
 
+def _unconnected_root() -> str:
+    """연결 선언이 없을 때 로컬 레인 정본(`.asgard/memory/documents/`)이 앉는 자리.
+
+    판정은 가드가 쓰는 것과 같은 것을 그대로 부른다(`asgard_hooklib.workspace.enclosing_project`).
+    거기에는 이 자리에 필요한 규칙이 이미 적혀 있다 — **홈은 프로젝트가 아니다**. `~/.asgard` 는
+    전역 에이전트 홈이라 아스가르드를 깐 기계에는 반드시 있고, 그것을 표식으로 세면 표식 없는
+    폴더에서 부른 담기가 홈 위로 걸어 올라가 팀 문서를 전역 에이전트 홈에 적는다
+    (`cd ~/notes && asgard memory project-ingest x.md --lane local`). 표식을 가진 조상이
+    없으면 선 자리가 답이다 — 로컬 레인은 아직 `.asgard` 가 없는 폴더에서도 첫 문서를 받는다.
+
+    임포트가 함수 안에 있고 모듈을 이름으로 집는 이유는 `commands.workroots._work_roots` 와
+    같다: `asgard.hooks` 를 임포트해야 훅 폴더가 `sys.path` 에 올라 배포 이름이 서고, 그 이름으로
+    불러야 라이브러리 정체가 하나로 남는다."""
+    from importlib import import_module
+
+    import asgard.hooks  # noqa: F401 — 임포트 부작용이 목적이다
+
+    here = os.path.realpath(os.getcwd())
+    return import_module("asgard_hooklib.workspace").enclosing_project(here) or here
+
+
 def run_project_ingest(
     paths: list[str],
     strategy: str = "",
@@ -607,7 +628,6 @@ def run_project_ingest(
     """던진 문서를 파싱·판정해 프로젝트 메모리 승인 대기로 올린다 (기본 미리보기)."""
 
     def _do() -> int:
-        from ...k6 import project_root
         from ...project_memory import ingest
 
         ready, failed = ingest.plan(list(paths), strategy=strategy or None, lane=lane or None)
@@ -621,7 +641,7 @@ def run_project_ingest(
                 "project memory is not connected — run `asgard memory connect <endpoint>` "
                 "(백엔드 없이 넣으려면 --lane local)"
             )
-        root, cfg = found if found else (str(project_root()), {})
+        root, cfg = found if found else (_unconnected_root(), {})
         if yes and graph_bound and not is_backend_trusted(cfg):
             raise errors.Unavailable("project memory backend is not trusted on this machine; run asgard memory connect")
         rows: list[dict] = [

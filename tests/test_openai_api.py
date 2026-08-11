@@ -1,10 +1,23 @@
 import os
+import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest import mock
 
 from asgard.agent.session import AgentSession, make_client
 from asgard.providers import PROVIDERS, ResolvedProvider, resolve
+
+# 세션 뿌리로 `/tmp` 를 쓰면 안 된다 — `AgentSession` 은 뿌리에 `.asgard/state/io-journal.jsonl`
+# 을 적고, 그렇게 생긴 `.asgard` 는 그 자리를 **프로젝트 표식**으로 만든다. 리눅스에서 `/tmp` 는
+# 모든 `mkdtemp()` 의 부모라, 그 뒤에 도는 시험이 자기 임시 프로젝트 대신 `/tmp` 를 프로젝트로
+# 집는다 (26-08-12 CI 실측: 이 오염으로 시험 3건이 리눅스 러너에서만 깨졌다. macOS 는 임시 뿌리가
+# `/var/folders/…` 라 같은 쓰기가 아무 시험의 조상도 안 건드려 초록이었다).
+_ROOT = tempfile.TemporaryDirectory(prefix="asgard-session-root-")
+ROOT = _ROOT.name
+
+
+def tearDownModule():
+    _ROOT.cleanup()
 
 
 class _Responses:
@@ -33,7 +46,7 @@ class TestOpenAIAPIProvider(unittest.TestCase):
             mock.patch("asgard.settings.load_project", return_value={}),
             mock.patch("asgard.providers.load_credentials", return_value={}),
         ):
-            rp = resolve("/tmp", provider="openai")
+            rp = resolve(ROOT, provider="openai")
         self.assertEqual(rp.api_key, "test-key")
         self.assertEqual(rp.base_url, "https://api.openai.com/v1")
         self.assertEqual(rp.missing, [])
@@ -97,7 +110,7 @@ class TestOpenAIAPIProvider(unittest.TestCase):
             },
         }
         session = AgentSession(
-            client, rp, "/tmp", "system", extra_tools=[tool], tool_handlers={"probe": lambda i: i["value"]}
+            client, rp, ROOT, "system", extra_tools=[tool], tool_handlers={"probe": lambda i: i["value"]}
         )
         result = session.run("hello")
 
@@ -138,7 +151,7 @@ class TestOpenAIAPIProvider(unittest.TestCase):
         fake = SimpleNamespace(
             role_rp={},
             rp=rp,
-            root="/tmp",
+            root=ROOT,
             _client_for=lambda _rp: SimpleNamespace(responses=responses),
             _count_usage=counted.append,
         )
@@ -160,7 +173,7 @@ class TestOpenAIAPIProvider(unittest.TestCase):
             usage=None,
         )
         rp = ResolvedProvider(profile=PROVIDERS["openai"], model="gpt-5.6-sol")
-        session = AgentSession(SimpleNamespace(responses=_Responses([response])), rp, "/tmp", "system")
+        session = AgentSession(SimpleNamespace(responses=_Responses([response])), rp, ROOT, "system")
         result = session.run("hello")
         self.assertEqual(result.stop_reason, "max_tokens")
         self.assertIsNone(session._openai_response_id)
@@ -175,7 +188,7 @@ class TestOpenAIAPIProvider(unittest.TestCase):
             usage=None,
         )
         rp = ResolvedProvider(profile=PROVIDERS["openai"], model="gpt-5.6-sol")
-        session = AgentSession(SimpleNamespace(responses=_Responses([response])), rp, "/tmp", "system")
+        session = AgentSession(SimpleNamespace(responses=_Responses([response])), rp, ROOT, "system")
         result = session.run("hello")
         self.assertEqual(result.stop_reason, "content_filter")
 
@@ -192,7 +205,7 @@ class TestOpenAIAPIProvider(unittest.TestCase):
         session = AgentSession(
             SimpleNamespace(responses=_Responses([response])),
             rp,
-            "/tmp",
+            ROOT,
             "system",
             extra_tools=[{"name": "probe", "input_schema": {"type": "object", "properties": {}}}],
             tool_handlers={"probe": lambda _value: "ok"},

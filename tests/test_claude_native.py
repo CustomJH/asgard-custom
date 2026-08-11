@@ -9,6 +9,7 @@ Agent SDK의 query만 페이크로 갈고 메시지 타입은 실물 dataclass �
 
 import asyncio
 import os
+import tempfile
 import unittest
 from unittest import mock
 
@@ -25,6 +26,18 @@ from claude_agent_sdk import (
 from asgard.agent import claude_native
 from asgard.agent.session import AgentSession
 from asgard.providers import PROVIDERS, resolve
+
+# 세션 뿌리로 `/tmp` 를 쓰면 안 된다 — `AgentSession` 은 뿌리에 `.asgard/state/io-journal.jsonl`
+# 을 적고, 그렇게 생긴 `.asgard` 는 그 자리를 **프로젝트 표식**으로 만든다. 리눅스에서 `/tmp` 는
+# 모든 `mkdtemp()` 의 부모라, 그 뒤에 도는 시험이 자기 임시 프로젝트 대신 `/tmp` 를 프로젝트로
+# 집는다 (26-08-12 CI 실측: 이 오염으로 시험 3건이 리눅스 러너에서만 깨졌다. macOS 는 임시 뿌리가
+# `/var/folders/…` 라 같은 쓰기가 아무 시험의 조상도 안 건드려 초록이었다).
+_ROOT = tempfile.TemporaryDirectory(prefix="asgard-session-root-")
+ROOT = _ROOT.name
+
+
+def tearDownModule():
+    _ROOT.cleanup()
 
 
 def _result_msg(subtype="success", session_id="sid-1", usage=None, result=None):
@@ -64,7 +77,7 @@ class TestProfile(unittest.TestCase):
 
         env = {k: v for k, v in os.environ.items() if k not in PROVIDERS["claude-native"].env_vars}
         with mock.patch.dict("os.environ", env, clear=True):
-            rp = resolve("/tmp", provider="claude-native")
+            rp = resolve(ROOT, provider="claude-native")
         self.assertEqual(rp.key_source, "claude login (keychain)")
         self.assertEqual(rp.api_key, "")  # 더미 키 없음 — 인증은 CLI 몫
         self.assertFalse([m for m in rp.missing if "API 키" in m])
@@ -87,12 +100,12 @@ class _Sess(unittest.TestCase):
     """AgentSession을 claude-native rp로 구성 — client는 마커라 None로 충분."""
 
     def _session(self, extra_tools=None, handlers=None, *, readonly=False, role=None):
-        rp = resolve("/tmp", provider="claude-native")
+        rp = resolve(ROOT, provider="claude-native")
         self.texts = []
         return AgentSession(
             client=None,
             rp=rp,
-            root="/tmp",
+            root=ROOT,
             system="you are a test",
             extra_tools=extra_tools,
             tool_handlers=handlers,
@@ -210,7 +223,7 @@ class TestTransport(_Sess):
             )
         )
         self.assertEqual(denied["hookSpecificOutput"]["permissionDecision"], "deny")
-        # /tmp is non-Git in this fixture. Without a disposable clone, even a nominally
+        # The session root is a non-Git temporary directory in this fixture. Without a disposable clone, even a nominally
         # read-only command is denied because invoked code could mutate the canonical root.
         self.assertEqual(allowed["hookSpecificOutput"]["permissionDecision"], "deny")
         self.assertIn("isolated Git workspace", allowed["hookSpecificOutput"]["permissionDecisionReason"])

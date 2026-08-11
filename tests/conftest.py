@@ -83,6 +83,49 @@ def _hermetic_studio_home(tmp_path_factory):
             os.environ[_STUDIO_HOME] = previous
 
 
+_TEMP_ROOT_MARKERS = (".asgard", ".git")
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _the_temp_root_never_becomes_a_project():
+    """임시 뿌리에 프로젝트 표식을 남긴 채 끝나지 않는다.
+
+    `mkdtemp()` 가 만드는 자리는 전부 이 뿌리 아래에 있고, 아스가르드의 뿌리 판정은 표식
+    (`.asgard`·`.git`)을 만날 때까지 위로 걷는다. 그래서 어느 시험이 임시 뿌리 자체를 뿌리로
+    삼아 한 번만 쓰면, 그 뒤에 도는 모든 시험이 자기 임시 프로젝트 대신 임시 뿌리를 프로젝트로
+    집는다 — 앞 시험의 쓰기가 뒤 시험의 판정을 바꾸는 오염이다.
+
+    26-08-12 실측: 세션 뿌리를 `/tmp` 로 준 provider 시험 셋이 `/tmp/.asgard/state/` 에 I/O
+    저널을 적었고, 그 뒤 시험 3건이 리눅스 러너에서만 깨졌다(릴리스 0.10.11 중단). macOS 는
+    임시 뿌리가 `/var/folders/…` 라 같은 쓰기가 아무 시험의 조상도 안 건드려 초록이었다.
+
+    임시 뿌리를 둘로 세는 것은 `asgard_hooklib.workspace._within_unit_workspace` 와 같은 이유다:
+    `TMPDIR` 이 다른 곳을 가리켜도 `/tmp` 를 글자 그대로 적은 코드는 여전히 `/tmp` 에 쓴다.
+    macOS 에서 이 결함을 잡아낸 것도 그쪽이다.
+
+    이 문은 **이 실행이 새로 만든** 표식만 센다 — 이미 오염된 기계에서는 침묵한다. 그 자리는
+    사람이 지워야 하고, 판정 대상은 지금 도는 스위트다."""
+    roots = {os.path.realpath(tempfile.gettempdir()), os.path.realpath("/tmp")}
+    before = {
+        os.path.join(root, name)
+        for root in roots
+        for name in _TEMP_ROOT_MARKERS
+        if os.path.exists(os.path.join(root, name))
+    }
+    yield
+    planted = sorted(
+        path
+        for root in roots
+        for name in _TEMP_ROOT_MARKERS
+        if (path := os.path.join(root, name)) not in before and os.path.exists(path)
+    )
+    if planted:
+        raise AssertionError(
+            f"이 스위트가 임시 뿌리에 프로젝트 표식을 만들었어요 — {', '.join(planted)}. "
+            "뿌리를 받는 코드에 `/tmp` 대신 그 시험만의 임시 디렉터리를 주세요."
+        )
+
+
 @pytest.fixture(autouse=True, scope="session")
 def _hermetic_studio_state():
     """Studio 등록부를 스위트 밖으로 뺀다.

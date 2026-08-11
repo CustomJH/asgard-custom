@@ -174,6 +174,46 @@ class TestLocalLaneIngestWorksOffline(SurfaceBase):
         # 넣은 것이 실제로 주입까지 가는지 — 파일이 생긴 것만으로는 레인이 산 것이 아니다.
         self.assertIn("배포 절차", project_document_note("배포 절차", start=self.root))
 
+    def test_a_marked_ancestor_that_is_the_agent_home_is_not_the_project(self):
+        """`cd ~/notes && asgard memory project-ingest x.md --lane local` — 홈은 프로젝트가 아니다.
+
+        `~/.asgard` 는 전역 에이전트 홈이라 아스가르드를 깐 기계에는 반드시 있다. 그것을 표식으로
+        세면 표식 없는 폴더에서 부른 담기가 위로 걸어 올라가 팀 문서를 전역 에이전트 홈에 적고,
+        정본이 저장소 밖에 앉아 커밋도 공유도 안 된다. 형상을 손으로 세우므로 임시 뿌리가
+        얕은(리눅스 `/tmp`) 기계든 깊은(macOS `/var/folders/…`) 기계든 같은 판정을 받는다."""
+        from asgard.commands.memory import run_project_ingest
+
+        home = os.path.realpath(os.environ["HOME"])
+        os.makedirs(os.path.join(home, ".asgard"))
+        notes = os.path.join(home, "notes")
+        os.makedirs(notes)
+        os.chdir(notes)
+        with open(os.path.join(notes, "runbook.md"), "w", encoding="utf-8") as sink:
+            sink.write("# 배포 런북\n\n" + "배포 절차는 빌드·검사·배포 세 단계다. " * 8)
+
+        self.screen(lambda: run_project_ingest(["runbook.md"], lane="local", yes=True))
+
+        self.assertEqual(self.rc, 0)
+        self.assertTrue(os.listdir(os.path.join(notes, ".asgard", "memory", "documents")))
+        self.assertFalse(os.path.exists(os.path.join(home, ".asgard", "memory")))
+
+    def test_a_subfolder_writes_into_the_project_that_holds_it(self):
+        """표식을 가진 조상은 그대로 프로젝트다 — 안 그러면 한 프로젝트의 정본이 폴더마다 갈린다."""
+        from asgard.commands.memory import run_project_ingest
+
+        os.makedirs(os.path.join(self.root, ".asgard"))
+        inner = os.path.join(self.root, "docs")
+        os.makedirs(inner)
+        os.chdir(inner)
+        with open(os.path.join(inner, "runbook.md"), "w", encoding="utf-8") as sink:
+            sink.write("# 배포 런북\n\n" + "배포 절차는 빌드·검사·배포 세 단계다. " * 8)
+
+        self.screen(lambda: run_project_ingest(["runbook.md"], lane="local", yes=True))
+
+        self.assertEqual(self.rc, 0)
+        self.assertTrue(os.listdir(os.path.join(self.root, ".asgard", "memory", "documents")))
+        self.assertFalse(os.path.exists(os.path.join(inner, ".asgard")))
+
     def test_graph_lane_still_names_the_missing_connection(self):
         """연결이 필요한 레인은 그대로 막되, 오프라인으로 넣는 길을 같이 말한다."""
         from asgard.commands.memory import run_project_ingest

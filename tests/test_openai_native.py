@@ -11,6 +11,18 @@ from unittest import mock
 from asgard.agent.session import AgentSession, make_client
 from asgard.providers import PROVIDERS, ResolvedProvider, resolve
 
+# 세션 뿌리로 `/tmp` 를 쓰면 안 된다 — `AgentSession` 은 뿌리에 `.asgard/state/io-journal.jsonl`
+# 을 적고, 그렇게 생긴 `.asgard` 는 그 자리를 **프로젝트 표식**으로 만든다. 리눅스에서 `/tmp` 는
+# 모든 `mkdtemp()` 의 부모라, 그 뒤에 도는 시험이 자기 임시 프로젝트 대신 `/tmp` 를 프로젝트로
+# 집는다 (26-08-12 CI 실측: 이 오염으로 시험 3건이 리눅스 러너에서만 깨졌다. macOS 는 임시 뿌리가
+# `/var/folders/…` 라 같은 쓰기가 아무 시험의 조상도 안 건드려 초록이었다).
+_ROOT = tempfile.TemporaryDirectory(prefix="asgard-session-root-")
+ROOT = _ROOT.name
+
+
+def tearDownModule():
+    _ROOT.cleanup()
+
 
 def _jwt(payload: dict) -> str:
     encoded = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
@@ -39,7 +51,7 @@ class _Stream:
 
 
 def _codex_stream(response) -> _Stream:
-    """Codex SSE 흉내 — 종료 이벤트가 최종 Response 를 싣는다."""
+    """Codex SSE 흉내 — 종료 이벤트가 최종 Response 를 넣는다."""
     terminal = {"completed": "response.completed", "incomplete": "response.incomplete"}
     kind = terminal.get(str(getattr(response, "status", "completed") or ""), "response.failed")
     return _Stream([SimpleNamespace(type=kind, response=response)])
@@ -103,7 +115,7 @@ class TestOpenAINativeOAuth(unittest.TestCase):
                 },
             ),
         ):
-            rp = resolve("/tmp", provider="openai-native")
+            rp = resolve(ROOT, provider="openai-native")
         self.assertEqual(rp.api_key, "")
         self.assertEqual(rp.base_url, "https://chatgpt.com/backend-api/codex")
         self.assertNotEqual(rp.model, "stale-model")
@@ -117,7 +129,7 @@ class TestOpenAINativeOAuth(unittest.TestCase):
             "load_tokens",
             side_effect=openai_codex.OAuthError("missing", code="auth_missing", relogin_required=True),
         ):
-            rp = resolve("/tmp", provider="openai-native")
+            rp = resolve(ROOT, provider="openai-native")
         self.assertTrue(rp.missing)
         self.assertTrue(any("auth login openai-native" in item for item in rp.missing))
 
@@ -442,7 +454,7 @@ class TestOpenAINativeOAuth(unittest.TestCase):
                     "asgard.agent.session.make_client",
                     return_value=SimpleNamespace(responses=responses),
                 ):
-                    text = complete_with(rp, "/tmp", "system", "user")
+                    text = complete_with(rp, ROOT, "system", "user")
                 self.assertEqual(text, "ok")
                 self.assertEqual(responses.calls[0].get("stream", False), streamed)
 
@@ -476,7 +488,7 @@ class TestOpenAINativeOAuth(unittest.TestCase):
         session = AgentSession(
             SimpleNamespace(responses=responses),
             rp,
-            "/tmp",
+            ROOT,
             "system",
             extra_tools=[tool],
             tool_handlers={"probe": lambda value: value["value"]},
@@ -515,7 +527,7 @@ class TestOpenAINativeOAuth(unittest.TestCase):
             base_url="https://chatgpt.com/backend-api/codex",
         )
         creds = openai_codex.RuntimeCredentials("fresh-oauth-token", "acct")
-        session = AgentSession(SimpleNamespace(responses=UnauthorizedResponses()), rp, "/tmp", "system")
+        session = AgentSession(SimpleNamespace(responses=UnauthorizedResponses()), rp, ROOT, "system")
         with (
             mock.patch("asgard.openai_codex.runtime_credentials", return_value=creds) as resolve_creds,
             mock.patch(
@@ -544,7 +556,7 @@ class TestOpenAINativeOAuth(unittest.TestCase):
                     model="gpt-5.6-sol",
                     base_url="https://chatgpt.com/backend-api/codex",
                 )
-                session = AgentSession(SimpleNamespace(responses=_Responses([response])), rp, "/tmp", "system")
+                session = AgentSession(SimpleNamespace(responses=_Responses([response])), rp, ROOT, "system")
                 with self.assertRaisesRegex(RuntimeError, status):
                     session.run("hello")
 
@@ -559,7 +571,7 @@ class TestOpenAINativeOAuth(unittest.TestCase):
         session = AgentSession(
             SimpleNamespace(responses=_Responses([response])),
             rp,
-            "/tmp",
+            ROOT,
             "system",
             extra_tools=[{"name": "probe", "input_schema": {"type": "object", "properties": {}}}],
             tool_handlers={"probe": lambda _value: "executed"},
@@ -605,7 +617,7 @@ class TestOpenAINativeOAuth(unittest.TestCase):
             model="gpt-5.6-sol",
             base_url="https://chatgpt.com/backend-api/codex",
         )
-        session = AgentSession(SimpleNamespace(responses=responses), rp, "/tmp", "system")
+        session = AgentSession(SimpleNamespace(responses=responses), rp, ROOT, "system")
         session._codex_history_items = [
             {"type": "reasoning", "encrypted_content": "poisoned", "summary": []},
             {"role": "assistant", "content": [{"type": "output_text", "text": "prior"}]},
@@ -679,7 +691,7 @@ class TestOpenAINativeOAuth(unittest.TestCase):
                 model="gpt-5.6-sol",
                 base_url="https://chatgpt.com/backend-api/codex",
             )
-            checks, _ = preflight("/tmp", provider="openai-native")
+            checks, _ = preflight(ROOT, provider="openai-native")
         oauth = next(check for check in checks if check["name"] == "ChatGPT OAuth")
         self.assertTrue(oauth["ok"])
 
