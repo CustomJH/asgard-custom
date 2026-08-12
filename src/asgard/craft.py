@@ -13,7 +13,8 @@
 base를 구하는 일에는 조건이 하나 더 붙는다: **개명은 기준선을 지우는 사건이 아니다.** 기준선을
 경로로만 찾으면 파일을 옮긴 것만으로 그 파일의 물려받은 위반이 전부 신규로 뒤집힌다(`_Origin`
 참조). 래칫의 두 반쪽 — 물려받은 것은 통과, 나빠진 것은 차단 — 중 앞쪽이 경로에 매여 있으면
-안 된다.
+안 된다. 같은 이유가 파일 안에도 걸린다: 판정 단위는 qualname 으로 조회하므로, 옮기면서 소유
+클래스가 바뀐 메서드는 이름부터 안 맞는다(`_requalified` 참조).
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from __future__ import annotations
 import os
 import subprocess
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from . import craft_c, craft_lex, craft_note, craft_rules
 from .craft_rules import Finding, Unit, shape_findings
@@ -103,6 +104,20 @@ def _similarity(before: str, after: str) -> float:
     return 2 * sum((left & right).values()) / total if total else 0.0
 
 
+def _carved(before: str, after: str) -> float:
+    """`after`의 줄 중 `before`에 글자 그대로 있는 비율(0.0~1.0) — 한쪽 방향으로만 잰다.
+
+    분해는 위의 대칭 비율로 안 잡힌다. 4,386행짜리 파일 하나를 9개로 가르면 조각 하나의 겹침
+    비율이 2×500/4,886 로 문턱 아래에 떨어져서, 조각이 통째로 신규 파일이 된다 — 실측(26-08-12)
+    으로 옮겨온 4,437행이 전부 이번 변경의 책임이 되고 차단 34건이 났다. 조각 쪽만 분모로 두면
+    "이 파일의 줄은 base 어딘가에 이미 있었다"를 그대로 잰다.
+    """
+    left = Counter(line for line in before.splitlines() if line.strip())
+    right = Counter(line for line in after.splitlines() if line.strip())
+    size = sum(right.values())
+    return sum((left & right).values()) / size if size else 0.0
+
+
 class _Origin:
     """base 쪽 원본을 찾아 준다 — 경로가 바뀌어도 같은 파일이면 같은 원본을 준다.
 
@@ -113,6 +128,11 @@ class _Origin:
     조회는 세 단이다. ① 같은 경로 ② git 이 개명으로 읽은 짝 (`git mv` 로 색인에 오른 이동)
     ③ 색인에 없는 이동 — 추적되지 않은 새 파일은 diff 에 안 나오므로, base 에서 사라진 같은
     확장자 파일 중 내용이 가장 닮은 것을 원본으로 본다.
+
+    ③단은 파일 하나를 여러 파일로 가른 것도 맡는다. 조각은 원본과 대칭으로 안 닮으니 조각 쪽
+    줄이 base 에 얼마나 있었나로 따로 잰다(`_carved`). lagom: 후보는 base 에서 사라진 경로뿐이라,
+    원본을 남긴 채 일부만 새 파일로 빼낸 추출은 여전히 신규로 읽힌다 — 그 경우까지 이으려면
+    후보에 이번 변경이 손댄 경로를 더하고 원본 쪽 잔여분을 빼야 한다.
 
     셋 다 빗나가면 신규 파일로 본다. 못 찾은 자리를 통과로 뭉개면 진짜 신규 파일의 결함이 전부
     빠져나가고, 래칫이 막아야 할 절반을 잃는다.
@@ -155,7 +175,7 @@ class _Origin:
             before = self._at(gone) if gone.endswith(suffix) else None
             if before is None:
                 continue
-            ratio = _similarity(before, current)
+            ratio = max(_similarity(before, current), _carved(before, current))
             if ratio > score:
                 best, score = gone, ratio
         return best
@@ -164,6 +184,41 @@ class _Origin:
         if self._dropped is None:
             self._dropped = _deletions(self._root, self._base)
         return self._dropped
+
+
+def _by_tail(units: dict[str, Unit]) -> dict[str, str]:
+    """한정자를 벗긴 뒷마디 → qualname. 한 파일 안에서 뒷마디가 겹치는 이름은 아예 뺀다."""
+    tails = [name.rsplit(".", 1)[-1] for name in units]
+    seen = Counter(tails)
+    return {tail: name for tail, name in zip(tails, units) if seen[tail] == 1}
+
+
+def _requalified(prior: dict[str, Unit], current: dict[str, Unit]) -> dict[str, str]:
+    """옛 qualname → 지금 qualname. 이동한 파일 안에서 한정자만 달라진 단위를 잇는다.
+
+    파일 짝을 지어도 그 안의 단위는 이름으로 조회한다(`shape_findings` 의 `base.get(name)`).
+    파일 하나를 패키지로 가르면 메서드의 소유 클래스가 바뀌므로 `AgentSession._run_openai` 가
+    `_ChatMixin._run_openai` 이 되고, 본문을 한 글자도 안 고친 함수가 신설로 잡힌다 —
+    실측(26-08-13)으로 차단 5건(길이 3 + 중첩 2).
+
+    축은 뒷마디다. 본문 유사도로 맺으면 이름이 통째로 바뀐 경우까지 닿지만, 단위 수의 곱만큼
+    비교가 늘고 실제로 겪은 경우는 전부 한정자만 달라진 쪽이었다. 뒷마디가 양쪽에서 하나뿐일
+    때만 맺는다 — 서로 다른 클래스에 같은 이름의 메서드가 있으면 어느 쪽이 옛 단위의 후신인지
+    정할 근거가 없고, 잘못 이으면 새로 넣은 위반이 남의 기준선 뒤에 숨는다. 그래서 못 정하는
+    자리는 안 맺고 신규로 세어 막는다. 이름이 그대로 남은 단위는 여기 들어오지 않는다.
+    """
+    old, new = _by_tail(prior), _by_tail(current)
+    return {
+        name: new[tail] for tail, name in old.items() if tail in new and name not in current and new[tail] not in prior
+    }
+
+
+def _rekeyed(prior: dict[str, Unit] | None, renames: dict[str, str]) -> dict[str, Unit] | None:
+    """옛 단위 표를 지금 이름으로 다시 붙인다. 맺을 것이 없으면 받은 표를 그대로 돌려준다 —
+    None(base 의 구문을 못 읽었다)은 None 으로 남아야 `shape_findings` 가 기준선 없음으로 읽는다."""
+    if not prior or not renames:
+        return prior
+    return {renames.get(name, name): replace(unit, qualname=renames.get(name, name)) for name, unit in prior.items()}
 
 
 def _base_text(root: str, rel: str, base: str) -> str | None:
@@ -244,21 +299,27 @@ def _judge_file(root: str, rel: str, origin: _Origin) -> tuple[list[Finding], in
         return ([], 0, "구문을 읽지 못해서 판정에서 빠졌어요")
     before = origin.text(rel, text)
     prior_units = _units(before, lang) if before is not None else None
+    # 자리를 옮긴 파일만 이름을 다시 맺는다. 제자리 파일에서 함수 이름이 바뀐 것은 이번 변경이
+    # 한 일이므로 기준선을 물려줄 근거가 없다.
+    renames = _requalified(prior_units, current) if rel in origin.moved and prior_units else {}
     spans = list(current.values())
-    found = shape_findings(rel, current, prior_units)
+    found = shape_findings(rel, current, _rekeyed(prior_units, renames))
     leaks = _ratcheted(text, rel, spans, lang)
-    inherited_keys = _inherited(before, lang)
+    inherited_keys = _inherited(before, lang, renames)
     fresh = [f for f in leaks if (f.rule, f.unit, f.detail) not in inherited_keys]
     found.extend(fresh)
     found.extend(_file_note(rel, text, before, lang))
     return (found, len(leaks) - len(fresh), None)
 
 
-def _inherited(before: str | None, lang: str) -> set[tuple[str, str, str]]:
+def _inherited(before: str | None, lang: str, renames: dict[str, str]) -> set[tuple[str, str, str]]:
     """base에 이미 있던 형상 — 물려받은 부채는 이번 변경의 책임이 아니다.
 
     base의 구문을 못 읽어도 주석 판정은 낸다. 못 읽었다고 빈 집합을 돌려주면 그 파일의 옛 주석이
-    전부 이번 변경이 새로 넣은 것으로 잡힌다."""
+    전부 이번 변경이 새로 넣은 것으로 잡힌다.
+
+    키의 가운데 칸은 그 판정을 품은 함수의 qualname이다. 옮기면서 한정자가 달라진 단위는 지금
+    이름으로 바꿔 둔다(`renames`) — 안 바꾸면 같은 자리의 같은 위반이 키가 달라 신규로 잡힌다."""
     if before is None:
         return set()
     prior = _units(before, lang)
@@ -266,7 +327,7 @@ def _inherited(before: str | None, lang: str) -> set[tuple[str, str, str]]:
     findings = craft_note.note_findings(before, "", spans, lang)
     if prior is not None:
         findings += _patterns(before, "", spans, lang)
-    return {(f.rule, f.unit, f.detail) for f in findings}
+    return {(f.rule, renames.get(f.unit, f.unit), f.detail) for f in findings}
 
 
 def judge(root: str, paths: object, base: str = "HEAD") -> Report:

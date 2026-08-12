@@ -216,6 +216,23 @@ def _oversize(branches: int) -> str:
     return "def wide(a):\n" + "".join(f"    if a == {i}:\n        a = {i}\n" for i in range(branches))
 
 
+_INNERMOST = "                            a = c\n"
+
+
+def _deep_method(owner: str, name: str = "wide") -> str:
+    """길이·중첩 예산을 함께 넘는 메서드 하나. 소유 클래스를 인자로 받는다 — 파일을 옮기면서
+    메서드가 다른 클래스로 넘어가면 qualname 의 앞마디만 달라지고 본문은 글자 그대로 남는다."""
+    block = "".join(
+        f"        if a == {i}:\n"
+        "            for b in range(a):\n"
+        "                if b:\n"
+        "                    for c in range(b):\n"
+        "                        if c:\n" + _INNERMOST
+        for i in range(15)
+    )
+    return f"class {owner}:\n    def {name}(self, a):\n{block}"
+
+
 LEAK = "import json\n\n\ndef load(path):\n    return json.load(open(path))\n\n\n"
 INHERITED = LEAK + _oversize(40)  # 물려받은 부채 2건 — unclosed-acquire + unit-oversize
 # 위와 겹치는 줄이 없는 파일. 삭제와 신설이 한 변경에 있어도 이건 그 삭제의 도착지가 아니다.
@@ -283,6 +300,9 @@ class MoveTest(_GitTree, unittest.TestCase):
     이 시험이 없으면 다음에 일어나는 일이 정해져 있다: 가족 단위로 파일 수십 개를 패키지로 묶는
     변경 한 번이 거짓 차단 수십 건으로 돌아오고, 사람은 판정을 고치는 대신 게이트를 끈다.
 
+    한 파일을 여러 파일로 가른 것도 같은 사건이다 — 조각 하나하나는 원본과 안 닮았지만, 그 줄은
+    base 에 글자 그대로 있다.
+
     반대쪽도 같은 무게로 못박는다 — 옮기면서 나빠진 것과, 이동을 가장한 신규 파일은 여전히 막힌다.
     개명을 따라가느라 진짜 악화를 놓치면 래칫이 막아야 할 절반을 잃는다.
     """
@@ -335,6 +355,79 @@ class MoveTest(_GitTree, unittest.TestCase):
             self._plain_mv(root, "pkg/rules.py", "pkg/craft/rules.py", extra)
             report = craft.judge(root, ["pkg/craft/rules.py"])
             self.assertEqual([f.rule for f in report.blocking], ["unclosed-acquire"])
+
+    def test_a_file_split_into_parts_keeps_its_baseline(self):
+        """조각은 원본의 일부라서 원본만큼 안 닮았다 — 닮은 정도로만 짝을 지으면 짝이 안 지어진다.
+
+        실측(26-08-12): tests/test_trinity.py 4,386행을 9파일로 가르자 옮겨온 4,437행이 전부
+        신규로 잡히고 차단 34건이 났다. 그 34건은 전부 `git show HEAD:tests/test_trinity.py` 에
+        글자 그대로 있던 줄이었다.
+        """
+        with contextlib.ExitStack() as stack:
+            root = self._base(stack)
+            self._write(root, "pkg/craft/load.py", LEAK)
+            self._write(root, "pkg/craft/wide.py", _oversize(40))
+            os.unlink(os.path.join(root, "pkg/rules.py"))
+            report = craft.judge(root, ["pkg/craft/load.py", "pkg/craft/wide.py"])
+            self.assertEqual(report.blocking, (), "옮겨 온 줄을 신규로 세면 분해 한 번이 차단 수십 건이 된다")
+            self.assertEqual(
+                report.moved,
+                (("pkg/craft/load.py", "pkg/rules.py"), ("pkg/craft/wide.py", "pkg/rules.py")),
+            )
+            self.assertEqual(report.inherited, 1, "조각이 물려받은 부채는 래칫이 넘긴 것으로 세야 보고에 남는다")
+
+    def test_a_defect_added_while_splitting_still_blocks(self):
+        """분해를 알아보느라 진짜 신규를 놓치면 래칫이 막아야 할 절반을 잃는다."""
+        with contextlib.ExitStack() as stack:
+            root = self._base(stack)
+            self._write(root, "pkg/craft/load.py", LEAK + "\ndef load2(path):\n    return json.load(open(path))\n")
+            self._write(root, "pkg/craft/wide.py", _oversize(40))
+            os.unlink(os.path.join(root, "pkg/rules.py"))
+            report = craft.judge(root, ["pkg/craft/load.py", "pkg/craft/wide.py"])
+            self.assertEqual(
+                [f"{f.rule} {f.path}:{f.unit}" for f in report.blocking],
+                ["unclosed-acquire pkg/craft/load.py:load2"],
+            )
+
+    def _moved_method(self, stack, owner: str, current: str) -> craft.Report:
+        """`pkg/session.py` 의 `AgentSession.wide` 를 `pkg/parts/chat.py` 로 옮긴 저장소를 판정한다."""
+        root = self._repo(stack)
+        self._write(root, "pkg/session.py", _deep_method("AgentSession"))
+        self._commit(root)
+        self._plain_mv(root, "pkg/session.py", "pkg/parts/chat.py", current)
+        assert owner in current
+        return craft.judge(root, ["pkg/parts/chat.py"])
+
+    def test_a_unit_that_only_changed_its_qualifier_keeps_its_baseline(self):
+        """파일을 이었어도 그 안의 함수를 못 이으면 물려받은 부채가 그대로 차단으로 돌아온다.
+
+        실측(26-08-13): src/asgard/agent/session.py 를 패키지로 가르며 메서드 셋의 소유 클래스가
+        AgentSession 에서 믹스인으로 바뀌자, 본문을 한 글자도 안 고친 그 셋에서 차단 5건이 났다
+        (길이 3 + 중첩 2). 파일 짝은 제대로 지어진 상태였고 끊긴 자리는 qualname 조회 하나였다.
+        """
+        with contextlib.ExitStack() as stack:
+            report = self._moved_method(stack, "_ChatMixin", _deep_method("_ChatMixin"))
+            self.assertEqual(report.blocking, (), "한정자만 달라진 메서드를 신규로 세면 분해가 차단으로 돌아온다")
+
+    def test_a_defect_added_to_a_requalified_unit_still_blocks(self):
+        """줄 수와 중첩을 그대로 둔 채 자원 하나만 새로 흘린다 — 이동 추적이 그것까지 덮으면 안 된다."""
+        with contextlib.ExitStack() as stack:
+            leaked = _deep_method("_ChatMixin").replace(_INNERMOST, "                            f = open(self.p)\n", 1)
+            report = self._moved_method(stack, "_ChatMixin", leaked)
+            self.assertEqual(
+                [f"{f.rule} {f.unit}" for f in report.blocking],
+                ["unclosed-acquire _ChatMixin.wide"],
+            )
+
+    def test_a_name_that_two_classes_share_is_not_matched(self):
+        """같은 뒷마디가 둘이면 어느 쪽이 옛 단위의 후신인지 못 정한다 — 안 맺고 신규로 세어 막는다."""
+        with contextlib.ExitStack() as stack:
+            twin = _deep_method("_ChatMixin") + "\n\nclass _Other:\n    def wide(self, a):\n        return a\n"
+            report = self._moved_method(stack, "_Other", twin)
+            self.assertEqual(
+                sorted(f"{f.rule} {f.unit}" for f in report.blocking),
+                ["unit-deep _ChatMixin.wide", "unit-oversize _ChatMixin.wide"],
+            )
 
     def test_a_copy_beside_the_original_inherits_nothing(self):
         """옛 파일이 그대로 있으면 그건 이동이 아니라 신설이다 — 베껴 온 부채는 이번 변경 책임이다."""
