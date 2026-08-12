@@ -74,7 +74,9 @@ class RecallPerfCase(unittest.TestCase):
             calls[0] += 1
             return real(meta, body)
 
-        patch = mock.patch.object(recall, "poisoned", counted)
+        # 꽂는 자리는 파사드가 아니라 부르는 모듈이다. `recall.clean` 이 `poisoned` 를 자기
+        # 이름으로 들여왔으므로, 파사드 쪽 이름을 갈아도 그쪽은 원본을 계속 부른다.
+        patch = mock.patch.object(recall.clean, "poisoned", counted)
         patch.start()
         self.addCleanup(patch.stop)
         return calls

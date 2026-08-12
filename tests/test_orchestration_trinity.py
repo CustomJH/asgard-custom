@@ -27,11 +27,13 @@ import threading
 import unittest
 from unittest import mock
 
-from test_heimdall import CLS_WRITE, Base, FakeHeimdall, FakeSession, verifier, worker
+from heimdall.harness import CLS_WRITE, Base, FakeHeimdall, FakeSession, verifier, worker
 
 from asgard import orchestration as orc
-from asgard.agent.heimdall import bifrost as bifrost_module
 from asgard.agent.heimdall.bifrost import BifrostLedger, CoordinatorLoop, open_ledger
+
+# 장부 함수는 `bifrost.ledger` 가 자기 이름으로 들고 있다 — 파사드에 꽂으면 안 닿는다.
+from asgard.agent.heimdall.bifrost import ledger as ledger_module
 from asgard.agent.heimdall.planning import _plan_waves
 from asgard.agent.session import SessionResult
 
@@ -196,7 +198,7 @@ class TestWorkerCanAsk(Base):
         교착이 되므로, 두 스레드가 다르다는 사실 자체를 여기서 고정한다.
         """
         idents: dict[str, int] = {}
-        original_ask = bifrost_module.ask
+        original_ask = ledger_module.ask
 
         def spy_ask(*args, **kwargs):
             idents["asked"] = threading.get_ident()
@@ -208,7 +210,7 @@ class TestWorkerCanAsk(Base):
 
         asking = self._asking_worker("포트 기본값을 8080 으로 둘까 3000 으로 둘까?")
         h = FakeHeimdall(self.root, [asking, verifier("PASS")], cls=CLS_WRITE)
-        with mock.patch.object(bifrost_module, "ask", spy_ask):
+        with mock.patch.object(ledger_module, "ask", spy_ask):
             with mock.patch.object(FakeHeimdall, "_complete_text", answer):
                 h.handle("w1.txt 만들어")
         self.assertEqual(asking.tool_results[0][1], "8080 으로 둬라.")
@@ -333,7 +335,7 @@ class TestFailOpen(Base):
     """장부가 죽어도 순환은 돈다 — 배차 기록을 얻으려고 작업을 잃지 않는다."""
 
     def test_quest_completes_when_the_ledger_cannot_open(self):
-        with mock.patch("asgard.agent.heimdall.bifrost.run_bind", side_effect=RuntimeError("db gone")):
+        with mock.patch("asgard.agent.heimdall.bifrost.ledger.run_bind", side_effect=RuntimeError("db gone")):
             h = FakeHeimdall(self.root, [worker({"w1.txt": "x\n"}, self.root), verifier("PASS")], cls=CLS_WRITE)
             out = h.handle("w1.txt 만들어")
         from asgard.i18n import t
@@ -342,7 +344,7 @@ class TestFailOpen(Base):
         self.assertTrue(os.path.exists(os.path.join(self.root, "w1.txt")))
 
     def test_quest_completes_when_task_creation_fails_midway(self):
-        with mock.patch("asgard.agent.heimdall.bifrost.task_create", side_effect=RuntimeError("db locked")):
+        with mock.patch("asgard.agent.heimdall.bifrost.ledger.task_create", side_effect=RuntimeError("db locked")):
             h = FakeHeimdall(self.root, [worker({"w1.txt": "x\n"}, self.root), verifier("PASS")], cls=CLS_WRITE)
             out = h.handle("w1.txt 만들어")
         from asgard.i18n import t
@@ -869,7 +871,7 @@ class TestTheHaltBecomesADecisionGate(Base):
         h = FakeHeimdall(self.root, plan_script(self.root), cls=plan_cls())
         stderr = io.StringIO()
         with mock.patch.object(BifrostLedger, "ready_tasks", escalating_ready):
-            with mock.patch.object(bifrost_module, "gate_create", side_effect=RuntimeError("db locked")):
+            with mock.patch.object(ledger_module, "gate_create", side_effect=RuntimeError("db locked")):
                 with contextlib.redirect_stderr(stderr):
                     h.handle("a.txt·b.txt 를 병렬로 만들고 c.txt 로 합쳐")
         for name in ("a.txt", "b.txt", "c.txt"):
@@ -900,7 +902,7 @@ class TestSupervisionIsFailOpen(Base):
     def test_an_unreadable_ready_view_still_runs_the_wave(self):
         h = FakeHeimdall(self.root, plan_script(self.root), cls=plan_cls())
         stderr = io.StringIO()
-        with mock.patch.object(bifrost_module, "task_list", side_effect=RuntimeError("db gone")):
+        with mock.patch.object(ledger_module, "task_list", side_effect=RuntimeError("db gone")):
             with contextlib.redirect_stderr(stderr):
                 h.handle("a.txt·b.txt 를 병렬로 만들고 c.txt 로 합쳐")
         for name in ("a.txt", "b.txt", "c.txt"):
@@ -918,7 +920,7 @@ class TestSupervisionIsFailOpen(Base):
 
     def test_a_note_is_left_when_the_ready_view_fails(self):
         ledger = BifrostLedger(FakeHeimdall(self.root, []), "q-note", "준비도 조회 실패")
-        with mock.patch.object(bifrost_module, "task_list", side_effect=RuntimeError("db locked")):
+        with mock.patch.object(ledger_module, "task_list", side_effect=RuntimeError("db locked")):
             self.assertIsNone(ledger.ready_tasks())
         self.assertTrue(any("ready_tasks" in note for note in ledger.notes), f"기록이 없다: {ledger.notes}")
 

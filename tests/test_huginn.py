@@ -394,7 +394,9 @@ class TestSessionWiring(unittest.TestCase):
 
     def test_all_client_side_transports_call_compaction(self):
         """anthropic·openai_compat·codex 세 경로 전부 배선돼야 한다 (구 코드의 누락 지점)."""
-        src = open(os.path.join(os.path.dirname(__file__), "..", "src", "asgard", "agent", "session.py")).read()
+        pkg = os.path.join(os.path.dirname(__file__), "..", "src", "asgard", "agent", "session")
+        # 세션은 패키지라 트랜스포트마다 파일이 다르다 — 배선을 세려면 전부 합쳐서 봐야 한다.
+        src = "".join(open(os.path.join(pkg, name)).read() for name in sorted(os.listdir(pkg)) if name.endswith(".py"))
         self.assertEqual(src.count("self._maybe_compress(result)"), 2)
         self.assertIn("self._maybe_compress_codex(pending_input, result)", src)
 

@@ -26,7 +26,9 @@ from pathlib import Path
 
 from asgard import skill_registry
 
-_PLUGIN = Path(skill_registry.__file__).parent / "assets" / "skill_plugins" / "freyja-3d"
+# 번들 뿌리는 skill_registry 가 이미 계산해 둔 것을 쓴다. `skill_registry.__file__` 의 부모로
+# 재면 그 모듈이 패키지가 되는 순간 한 단 깊어져 없는 경로를 가리킨다.
+_PLUGIN = skill_registry._BUNDLED_PLUGINS_DIR / "freyja-3d"
 _SKILL = _PLUGIN / "skills" / "asgard-freyja-3d"
 _SCRIPTS = _SKILL / "engine" / "scripts"
 _REFERENCE = _SKILL / "engine" / "reference"
@@ -223,7 +225,7 @@ class PartCollection(unittest.TestCase):
 
 
 class NoUpstreamResidue(unittest.TestCase):
-    """상류 벤더링을 걷어낸 상태가 유지되는가.
+    """상류 벤더링을 제거한 상태가 유지되는가.
 
     이 스킬은 상류 스킬 라이브러리를 9.7MB 벤더링해서 쓰다가 네이티브로 다시 구현했다.
     되살아나기 쉬운 것은 코드가 아니라 **문자열** 이다 — 문서에 남은 경로 하나가 다음 사람에게
@@ -345,7 +347,7 @@ class KernelFreeStepReader(unittest.TestCase):
         self.assertEqual(0, facts.solids)
 
     def test_part_names_with_parentheses_do_not_break_the_parser(self):
-        """STEP 문자열 안에는 괄호·쉼표가 얼마든지 들어온다. 걷어내지 않으면 이름이 구조로 읽힌다."""
+        """STEP 문자열 안에는 괄호·쉼표가 얼마든지 들어온다. 제거하지 않으면 이름이 구조로 읽힌다."""
         body = self._step().replace("PRODUCT('bracket'", "PRODUCT('bracket (rev B), left'")
         self.assertEqual(["bracket (rev B), left"], self._read(body).products)
 

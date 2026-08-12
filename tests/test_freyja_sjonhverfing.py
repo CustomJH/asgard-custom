@@ -24,7 +24,9 @@ from pathlib import Path
 from asgard import skill_registry
 
 _NODE = shutil.which("node")
-_PLUGINS = Path(skill_registry.__file__).parent / "assets" / "skill_plugins"
+# 번들 뿌리는 skill_registry 가 이미 계산해 둔 것을 쓴다. `skill_registry.__file__` 의 부모로
+# 재면 그 모듈이 패키지가 되는 순간 한 단 깊어져 없는 경로를 가리킨다.
+_PLUGINS = skill_registry._BUNDLED_PLUGINS_DIR
 _PLUGIN = _PLUGINS / "freyja-sjonhverfing"
 _SKILL = _PLUGIN / "skills" / "asgard-freyja-sjonhverfing"
 _GATE = _SKILL / "engine" / "scripts" / "depth_gate.mjs"

@@ -159,7 +159,7 @@ class TestTheSeamIsFailOpen(unittest.TestCase):
         def _nothing(root: str, signals: dict) -> dict | None:
             return None
 
-        with mock.patch.object(bifrost, "_by_policy", _nothing):
+        with mock.patch.object(bifrost.shape, "_by_policy", _nothing):
             ledger = bifrost._NullLedger()
             found = ledger.choose_shape(_CLS, unit_count=3, specialists=[], planned=True)
         self.assertEqual(found["shape"], "graph")

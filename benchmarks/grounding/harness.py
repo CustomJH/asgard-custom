@@ -10,7 +10,7 @@
 
 `_stem_floor` 독스트링이 값을 못 옮긴 이유로 "재는 자가 없어서"를 든다. 이 파일이 그 자다.
 
-**제품 코드는 안 고친다.** 하한은 주입으로 바꾼다 — `recall._stem_floor` 와
+**제품 코드는 안 고친다.** 하한은 주입으로 바꾼다 — `recall.stems._stem_floor` 와
 `norn._stem_floor` 두 자리를 갈아 끼운다. 두 자리인 이유: `norn` 이 `from .recall import
 _stem_floor` 로 **이름을 자기 모듈에 복사**해 오므로 `recall` 쪽만 갈면 `_spans` 는 옛 식을
 계속 쓴다 (그 갈라짐이야말로 `_stem_floor` 독스트링이 막으려던 것이라, 벤치가 먼저 그 실수를
@@ -192,12 +192,30 @@ ARMS: list[tuple[str, object]] = [
 ]
 
 
-def install(fn) -> None:
-    """하한을 두 자리에 동시에 꽂는다 — 갈라지면 재는 것이 무엇인지 알 수 없어진다."""
-    from asgard.memory import norn, recall
+# 하한을 **부르는** 모듈들. 재수출한 파사드가 아니라 호출부가 사는 자리여야 한다 —
+# `norn/insight.py` 는 import 시점에 `_stem_floor` 를 자기 모듈 전역으로 복사하므로,
+# 패키지 파사드(`norn._stem_floor`)를 바꿔도 `_spans` 는 원본을 계속 부른다.
+_FLOOR_CALLERS = (
+    ("asgard.memory.recall.stems", "_stem_hit 이 부르는 자리"),
+    ("asgard.memory.norn.insight", "_spans 가 부르는 자리"),
+)
 
-    recall._stem_floor = fn  # `recall._stem_hit` 이 여기서 찾는다
-    norn._stem_floor = fn  # `norn._spans` 가 여기서 찾는다
+
+def install(fn) -> None:
+    """하한을 부르는 **모든** 자리에 꽂는다 — 하나라도 빠지면 계약 열이 조용히 거짓이 된다.
+
+    26-08-13 평가가 그 자리를 찾았다: 이 하네스가 파사드(`norn._stem_floor`)에 꽂고 있어서
+    `_spans` 는 늘 원본 하한으로 돌았고, 그런데도 REPORT 의 계약 칸은 12개 arm 전부 `ok` 로
+    적혀 있었다. 다시 돌리니 11개가 깨져 있었다 — 벤치가 자기가 안 바꾼 것을 바꿨다고 적은
+    것이다. 이름이 없으면 여기서 죽는다: 소유 자리가 옮겨졌다는 뜻이고, 그때 조용히 넘어가면
+    같은 거짓이 다시 쌓인다."""
+    import importlib
+
+    for module_name, role in _FLOOR_CALLERS:
+        module = importlib.import_module(module_name)
+        if not hasattr(module, "_stem_floor"):
+            raise RuntimeError(f"{module_name}._stem_floor 가 없다 ({role}) — 하한의 소유 자리가 옮겨졌다")
+        module._stem_floor = fn
 
 
 # ── 지표 ─────────────────────────────────────────────────────────────────────

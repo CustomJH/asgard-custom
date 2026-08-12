@@ -712,7 +712,7 @@ class TestContradictionLedger(NornBase):
 class TestPlanAndApply(NornBase):
     def test_plan_skips_llm_when_wiki_tiny(self):
         self._add("페이지 하나뿐", "하나")
-        with mock.patch.object(norn, "_complete", side_effect=AssertionError("must not call LLM")):
+        with mock.patch.object(norn.plan, "_complete", side_effect=AssertionError("must not call LLM")):
             plan = norn.plan_norn(self.tmp, self.d)
         self.assertEqual(plan["ops"], [])
 
@@ -720,7 +720,7 @@ class TestPlanAndApply(NornBase):
         a = self._add("사용자는 uv run pytest 를 선호한다", "pytest 선호 a")
         b = self._add("사용자는 uv run pytest 를 선호한다 — 항상", "pytest 선호 b")
         raw = json.dumps({"ops": [{"op": "merge", "src": a, "dst": b, "why": "same"}, {"op": "bogus"}]})
-        with mock.patch.object(norn, "_complete", return_value=raw):
+        with mock.patch.object(norn.plan, "_complete", return_value=raw):
             plan = norn.plan_norn(self.tmp, self.d)
         self.assertEqual(len(plan["ops"]), 1)
         self.assertEqual(len(plan["dropped"]), 1)
@@ -805,15 +805,15 @@ class TestWake(NornBase):
         norn._save_state(self.d, {})
 
     def test_not_due_is_silent_and_spawns_nothing(self):
-        with mock.patch.object(norn, "spawn_pass", return_value=True) as spawn:
+        with mock.patch.object(norn.auto, "spawn_pass", return_value=True) as spawn:
             self.assertIsNone(norn.wake(self.tmp, self.d))
         self.assertEqual(spawn.call_count, 0)
 
     def test_off_tier_nudges_without_spawning(self):
         self._due()
         with (
-            mock.patch.object(norn, "spawn_pass", return_value=True) as spawn,
-            mock.patch.object(norn, "_memory_settings", return_value={"norn_auto": "off"}),
+            mock.patch.object(norn.auto, "spawn_pass", return_value=True) as spawn,
+            mock.patch.object(norn.auto, "_memory_settings", return_value={"norn_auto": "off"}),
         ):
             line = norn.wake(self.tmp, self.d)
         self.assertIn("노른 제안", line or "")
@@ -822,8 +822,8 @@ class TestWake(NornBase):
     def test_autonomous_tier_spawns_detached_and_latches(self):
         self._due()
         with (
-            mock.patch.object(norn, "spawn_pass", return_value=True) as spawn,
-            mock.patch.object(norn, "_memory_settings", return_value={"norn_auto": "safe"}),
+            mock.patch.object(norn.auto, "spawn_pass", return_value=True) as spawn,
+            mock.patch.object(norn.auto, "_memory_settings", return_value={"norn_auto": "safe"}),
         ):
             first = norn.wake(self.tmp, self.d)
             second = norn.wake(self.tmp, self.d)  # 같은 누적 — 두 번 스폰하면 백그라운드가 겹친다
@@ -838,8 +838,8 @@ class TestWake(NornBase):
         """시작하지 않은 일을 시작했다고 말하면 사용자는 오지 않을 결과를 기다린다."""
         self._due()
         with (
-            mock.patch.object(norn, "spawn_pass", return_value=False),
-            mock.patch.object(norn, "_memory_settings", return_value={"norn_auto": "full"}),
+            mock.patch.object(norn.auto, "spawn_pass", return_value=False),
+            mock.patch.object(norn.auto, "_memory_settings", return_value={"norn_auto": "full"}),
         ):
             self.assertIsNone(norn.wake(self.tmp, self.d))
 
@@ -860,9 +860,9 @@ class TestWake(NornBase):
         """due 판정은 파일 두 개다 — 비싼 손질은 분리 스폰한 자식 몫이라야 턴이 안 늘어진다."""
         self._due()
         with (
-            mock.patch.object(norn, "plan_norn", side_effect=AssertionError("wake 가 LLM 을 불렀다")),
-            mock.patch.object(norn, "spawn_pass", return_value=True),
-            mock.patch.object(norn, "_memory_settings", return_value={"norn_auto": "safe"}),
+            mock.patch.object(norn.auto, "plan_norn", side_effect=AssertionError("wake 가 LLM 을 불렀다")),
+            mock.patch.object(norn.auto, "spawn_pass", return_value=True),
+            mock.patch.object(norn.auto, "_memory_settings", return_value={"norn_auto": "safe"}),
         ):
             self.assertTrue(norn.wake(self.tmp, self.d))
 
@@ -917,11 +917,11 @@ class TestAutonomyTiers(NornBase):
 
     def test_opt_in_is_read_from_settings(self):
         strong = {"op": "insight", "title": "t", "grounding": 0.95}
-        with mock.patch.object(norn, "_memory_settings", return_value={"norn_insight_auto": True}):
+        with mock.patch.object(norn.auto, "_memory_settings", return_value={"norn_insight_auto": True}):
             self.assertTrue(norn.insight_auto())
             auto, _ = norn.partition_ops([strong], "safe")
             self.assertEqual(auto, [strong])
-        with mock.patch.object(norn, "_memory_settings", return_value={}):
+        with mock.patch.object(norn.auto, "_memory_settings", return_value={}):
             self.assertFalse(norn.insight_auto())
 
     def test_insight_without_a_grounding_score_never_auto_applies(self):
@@ -957,7 +957,7 @@ class TestAutonomyTiers(NornBase):
                 ]
             }
         )
-        with mock.patch.object(norn, "_complete", return_value=raw):
+        with mock.patch.object(norn.plan, "_complete", return_value=raw):
             result = norn.run_auto(self.tmp, self.d)
         self.assertEqual(result["mode"], "safe")
         self.assertEqual(result["applied"], [])
@@ -984,8 +984,8 @@ class TestAutonomyTiers(NornBase):
             }
         )
         with (
-            mock.patch.object(norn, "_complete", return_value=raw),
-            mock.patch.object(norn, "insight_auto", return_value=True),
+            mock.patch.object(norn.plan, "_complete", return_value=raw),
+            mock.patch.object(norn.auto, "insight_auto", return_value=True),
         ):
             result = norn.run_auto(self.tmp, self.d)
         self.assertEqual([o["op"] for o in result["applied"]], ["insight"])
@@ -997,7 +997,7 @@ class TestAutonomyTiers(NornBase):
         self._add("페이지 둘 전혀 다른 내용", "둘")
         for i in range(30):
             memory.log_op(self.d, "add:note", f"p{i}")
-        with mock.patch.object(norn, "_complete", return_value='{"ops": []}'):
+        with mock.patch.object(norn.plan, "_complete", return_value='{"ops": []}'):
             norn.run_auto(self.tmp, self.d)
         self.assertFalse(norn.norn_due(self.d)[0])  # 같은 누적으로 재발화하지 않는다
 

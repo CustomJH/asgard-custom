@@ -204,7 +204,7 @@ class TestWarnThresholdIsAShareOfTheCeiling(unittest.TestCase):
     "핵심만 끝내고 탐색은 버려라"를 달고 돌았다. 몫이면 상한을 올린 만큼 경고도 따라 올라간다."""
 
     def test_default_threshold_is_eighty_percent_of_the_ceiling(self):
-        self.assertEqual(bg.warn_threshold({}), bg.DEFAULTS["session_cost_units"] * 0.8)
+        self.assertEqual(bg.warn_threshold({}), int(bg.DEFAULTS["session_cost_units"]) * 0.8)
 
     def test_threshold_follows_a_raised_ceiling(self):
         self.assertEqual(bg.warn_threshold({"session_cost_units": 60_000_000}), 48_000_000)
@@ -216,7 +216,7 @@ class TestWarnThresholdIsAShareOfTheCeiling(unittest.TestCase):
     def test_junk_falls_back_to_the_share(self):
         # 0·문자열을 문턱으로 받으면 "언제나 경고"가 되어 경고가 신호이기를 그만둔다.
         for junk in ({"warn_cost_units": 0}, {"warn_cost_units": "soon"}):
-            self.assertEqual(bg.warn_threshold(junk), bg.DEFAULTS["session_cost_units"] * 0.8)
+            self.assertEqual(bg.warn_threshold(junk), int(bg.DEFAULTS["session_cost_units"]) * 0.8)
 
     def test_verdict_stays_quiet_under_the_share(self):
         ledger = bg.Ledger()

@@ -83,7 +83,8 @@ def _probe_one(entry: dict, workdir: str) -> dict | None:
                 out.append(sid)
         return out
 
-    _recall._dispersion = _spy  # ty: ignore[invalid-assignment]
+    # 꽂는 자리는 정의한 모듈이다 — `_rerank_order` 는 파사드가 아니라 `recall.rerank` 에서 찾는다.
+    _recall.rerank._dispersion = _spy  # ty: ignore[invalid-assignment]
     os.environ["ASGARD_MEMORY_RERANK_DISPERSION"] = "0"
     try:
         os.environ["ASGARD_MEMORY_RERANK"] = "on"
@@ -93,7 +94,7 @@ def _probe_one(entry: dict, workdir: str) -> dict | None:
         os.environ["ASGARD_MEMORY_RERANK"] = "off"
         off = _retrieve()
     finally:
-        _recall._dispersion = original
+        _recall.rerank._dispersion = original
 
     if dispersion is None:
         return None  # 리랭크가 길이 게이트에서 아예 안 켜진 문항 — 이 축의 표본이 아니다

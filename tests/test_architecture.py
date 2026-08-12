@@ -396,6 +396,36 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
         ("연동", frozenset({"sync"})),
         ("파사드", frozenset({"__init__"})),
     ),
+    # 회수 — 위 `memory` 표의 ("회수", {"recall"}) 행이 이 패키지를 부모 층에서 잰 자리이고,
+    # 여기는 그 안쪽이다. 순수 계산과 행 읽기가 바닥, 그것들을 합치는 두 회수기가 그 위, 턴에
+    # 실을 것을 고르는 blocks 가 맨 위다.
+    "memory.recall": (
+        # 패키지 안의 어느 모듈도 안 부른다 — 유사도·어간·전파·리랭크 같은 순수 계산(grams·
+        # stems·ppr·rerank·clean), 행 읽기(rows), 응답에서 실존 경로만 추리는 넛지(nudge).
+        ("바닥", frozenset({"grams", "stems", "rows", "clean", "ppr", "rerank", "nudge"})),
+        # 바닥만 부른다. search 는 네 스트림을 합치고 snapshot 은 세션 카탈로그를 동결하는데,
+        # 서로를 안 부르므로 같은 등급이다.
+        ("회수", frozenset({"search", "snapshot"})),
+        # search 의 결과와 rows 를 읽어 턴마다 붙일 블록을 고른다 — 회수 위인 이유가 그것이다.
+        ("주입", frozenset({"blocks"})),
+        ("파사드", frozenset({"__init__"})),
+    ),
+    # 손질 — 위 `memory` 표의 ("손질", {"norn"}) 행이 이 패키지를 부모 층에서 잰 자리이고,
+    # 여기는 그 안쪽이다. 쓰기가 검증 위인 것이 이 패키지의 계약이다: 검증을 통과한 op 만
+    # apply 까지 온다.
+    "memory.norn": (
+        # 패키지 안의 어느 모듈도 안 부른다 — 근거 대조·극성 판정(insight), 트리거와 latch 를
+        # 담는 상태 파일 한 자리(state).
+        ("바닥", frozenset({"insight", "state"})),
+        # LLM 이 낸 op 목록에서 기계가 확인한 것만 남긴다. insight 만 부른다.
+        ("검증", frozenset({"validate"})),
+        # 손질 패스 둘 — 증거를 모아 델타를 제안하고 검증까지 돌리는 쪽(plan), 검증을 지난 op 를
+        # 백업 뒤 커밋하는 쪽(apply). 서로를 안 부르므로 같은 등급이다.
+        ("패스", frozenset({"plan", "apply"})),
+        # 언제 손질할지와 무엇까지 스스로 할지를 정해 plan·apply 를 부른다. 그 둘이 아래라 여기다.
+        ("자율", frozenset({"auto"})),
+        ("파사드", frozenset({"__init__"})),
+    ),
     "agent": (
         (
             "바닥",
@@ -441,6 +471,41 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
         ("명령", frozenset({"commands"})),
         ("파사드", frozenset({"__init__"})),
     ),
+    # 세션 — 한 턴의 tool use 루프. 위 `agent` 표의 ("세션", {"session"}) 행이 부모 층에서 잰
+    # 자리이고, 여기는 그 안쪽이다. 형상은 heimdall.trinity·heimdall.core 와 같다: 상태 하나를
+    # 믹스인 넷이 나눠 지고, 그 상태 선언(`_shared`)은 아무 믹스인도 안 부른다.
+    "agent.session": (
+        # 패키지 안의 어느 모듈도 안 부른다 — 턴 결과·예외·툴콜 형상(types), provider 별 SDK
+        # 클라이언트 한 자리(client), 정본 스키마와 provider 형식 사이의 변환(wire).
+        ("바닥", frozenset({"types", "client", "wire"})),
+        # 믹스인 넷이 공유하는 세션 상태의 선언. types 만 부르고, 값은 `AgentSession.__init__` 이
+        # 채운다 — 믹스인을 부르면 상태가 자기를 드는 쪽을 알게 되므로 그 방향이 여기서 막힌다.
+        ("상태", frozenset({"_shared"})),
+        # 트랜스포트 루프 셋(chat·messages·responses)과 압축 믹스인(compress). 넷 다 `_shared` 의
+        # 상태만 읽고 서로를 안 부르므로 같은 등급이다.
+        ("믹스인", frozenset({"chat", "messages", "responses", "compress"})),
+        # AgentSession — 믹스인 넷을 한 턴의 생애로 엮는다. 넷이 전부 아래라 여기다.
+        ("세션", frozenset({"core"})),
+        ("파사드", frozenset({"__init__"})),
+    ),
+    # 후긴 — 컨텍스트 압축 엔진. 압축은 사다리(T0 위생 → T1 프룬 → 요약 → T3 서버측)라서 표도
+    # 그 순서 그대로다: 단계 하나가 옆 단계를 안 부르고, engine 만 전부를 순서대로 부른다.
+    "agent.huginn": (
+        # 패키지 안의 어느 모듈도 안 부른다 — 핸드오프 문구 뼈대(contract), [compress] 설정
+        # 해석(policy), 토큰 근사(tokens), 세션 트랜스포트로 요약 1회를 부르는 함수(caller).
+        ("바닥", frozenset({"contract", "policy", "tokens", "caller"})),
+        # 메시지를 실제로 손대는 단계들 — 직렬화(text), 결정론 압축(prune), 고아 툴콜 제거
+        # (pairs), 서버측 압축 요청·판별(server). 서로를 안 부른다.
+        ("가공", frozenset({"text", "prune", "pairs", "server"})),
+        # 트랜스크립트에서 핸드오프 쌍을 판별해 떼어낸다. contract·text·tokens 를 부르므로 가공 위다.
+        ("핸드오프", frozenset({"handoff"})),
+        # 요약이 자를 구간의 앞뒤를 역할 교대가 맞는 자리로 옮긴다 — 그 경계를 handoff 의 판별에서
+        # 받으므로 핸드오프 위다.
+        ("경계", frozenset({"align"})),
+        # 세션 1개의 압축 상태와 사다리 실행. 위 네 등급을 전부 부르는 유일한 자리다.
+        ("엔진", frozenset({"engine"})),
+        ("파사드", frozenset({"__init__"})),
+    ),
     "agent.heimdall": (
         # LLM·IO 없이 판정하거나 상태만 적는 자리.
         ("순수", frozenset({"classify", "journal", "planning", "roles", "todo", "patch_merge", "ticket_lease"})),
@@ -460,6 +525,21 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
     "agent.heimdall.core": (
         ("순수", frozenset({"_shared"})),
         ("면", frozenset({"sessions", "recall", "routing", "closing"})),
+        ("파사드", frozenset({"__init__"})),
+    ),
+    # Trinity 를 배차 장부에 비추는 어댑터. 위 `agent.heimdall` 표의 ("선언", {"bifrost"}) 행이
+    # 부모 층에서 잰 자리이고, 여기는 그 안쪽이다.
+    "agent.heimdall.bifrost": (
+        # 오케스트레이션 형상 판정 — 신호와 사용자 정책만 읽고 패키지 안의 어느 모듈도 안 부른다.
+        ("형상", frozenset({"shape"})),
+        # 한 퀘스트의 배차 장부. shape 의 판정으로 형상을 정하므로 그 위다.
+        ("장부", frozenset({"ledger"})),
+        # 장부를 드는 쪽 — 준비된 일감을 배차하고 워커 질문에 답하는 감독 고리(coordinator),
+        # 장부가 안 선 경로가 쓰는 비활성 장부와 형상 판정을 먼저 두는 진입점(null).
+        # coordinator 의 런타임 임포트는 orchestration 뿐이지만(장부는 인자로 받는다) 여기 두는
+        # 이유는 방향이다: 아래에 두면 ledger→coordinator 가 통과하고, 그러면 장부가 자기를
+        # 모는 쪽을 알게 된다.
+        ("감독", frozenset({"coordinator", "null"})),
         ("파사드", frozenset({"__init__"})),
     ),
     # 명령 표면 — `_app` 이 루트 Typer 앱과 전역 플래그를 들고, 그룹 모듈은 거기에 자기 명령을
@@ -542,10 +622,12 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
                     "plan_api",
                     # review — health의 프로젝트 경계와 review_agent 도메인을 조립하는 승인 표면.
                     "review",
-                    # siege(장부 읽기)·siege_act(장부 몰기) — 형제를 안 부른다. 둘 다 저장소 뿌리를
-                    # health 에서 직접 받으므로 같은 등급이고, 그래서 서로를 부르면 빨개진다.
+                    # siege(장부 읽기)·siege_act(장부 몰기)·siege_serve(우편함을 모델에게 잇기) —
+                    # 형제를 안 부른다. 셋 다 저장소 뿌리를 health 에서 직접 받으므로 같은 등급이고,
+                    # 그래서 서로를 부르면 빨개진다.
                     "siege",
                     "siege_act",
+                    "siege_serve",
                     "studio",
                     "surface",
                     "sync",
@@ -582,6 +664,64 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
         ("표면", frozenset({"server"})),
         ("파사드", frozenset({"__init__"})),
     ),
+    # 되짚기 자료의 사람 표면. 도메인 계산은 전부 `tutor` 에 있고 여기는 그것을 화면·JSON·
+    # 보고서로 옮기는 자리라, 표의 방향도 재료 → 표현 → 갈래 → 진입 하나뿐이다.
+    "commands.tutor": (
+        # 패키지 안의 어느 모듈도 안 부른다 — 보고서에 손으로 적은 답을 걷는 자리(answers),
+        # 되짚기 엔진에 늦게 닿고 없으면 침묵하는 자리(engines), 세 표면이 같이 쓰는 이름표(labels).
+        ("바닥", frozenset({"answers", "engines", "labels"})),
+        # 같은 사실을 세 형식으로 낸다 — 터미널(screen), 훅·스튜디오가 읽는 JSON(payload),
+        # 절이 하나 더 있는 보고서(report). 셋 다 engines·labels 만 부르고 서로를 안 부른다.
+        ("표현", frozenset({"screen", "payload", "report"})),
+        # 기본 갈래를 뺀 나머지 명령 갈래. screen 으로 그리므로 표현 위다.
+        ("갈래", frozenset({"lanes"})),
+        # 플래그 하나를 갈래 하나에 맞추고 기본 갈래는 직접 돈다 — 아래 셋을 전부 부른다.
+        ("진입", frozenset({"entry"})),
+        ("파사드", frozenset({"__init__"})),
+    ),
+    # 다국어 휴먼체 판정. 언어를 늘리는 접점이 registry 하나이므로 표도 그 접점을 기준으로
+    # 갈린다: 언어 코퍼스는 registry 를 모르고, judge 는 개별 언어를 모른다.
+    "bragi": (
+        # 패키지 안의 어느 모듈도 안 부른다 — 흔적 하나의 자료형과 심각도 눈금(tell), 언어
+        # 판정(detect), 원문 보존 대상을 지운 검사 사본(clean), on/off 상태(mode).
+        ("바닥", frozenset({"tell", "detect", "clean", "mode"})),
+        # 패턴을 tell 로 적는 자리 — 언어 무관(universal), 언어별 코퍼스(english·korean·corpora),
+        # 구 목록으로 못 잡는 분포 자질(stats). 서로를 안 부른다.
+        ("흔적", frozenset({"universal", "english", "korean", "corpora", "stats"})),
+        # 언어 코드를 코퍼스에 맞춘다. 코퍼스 셋을 부르므로 그 위이고, 판정을 안 부르는 것이
+        # 이 자리의 조건이다 — 언어를 늘릴 때 고치는 파일이 여기 하나로 남는다.
+        ("등록", frozenset({"registry"})),
+        # 흔적 목록 → 등급 → 게이트가 소비하는 문자열. registry 로 언어를 고르고 clean 의 사본을
+        # 읽으므로 등록 위다.
+        ("판정", frozenset({"judge"})),
+        ("파사드", frozenset({"__init__"})),
+    ),
+    # 자가발전 인박스 — 디스크 자리와 두 채굴원이 바닥이고, 그 위로 채굴(inbox) → 처분
+    # (decisions) → 자율 손잡이(autonomy) → 턴 끝 한 줄(nudge) 순으로 올라간다. 방향이 뒤집히면
+    # 인박스가 화면을 알게 되고, 그러면 화면 없이 채굴만 돌리는 경로가 사라진다.
+    "evolution": (
+        # 패키지 안의 어느 모듈도 안 부른다 — 경로·seen latch·넛지 지문 파일(store), 퀘스트 로그
+        # 읽기(quests), 신호에서 SKILL.md 초안 본문을 쓰는 자리(drafts).
+        ("바닥", frozenset({"store", "quests", "drafts"})),
+        # 정정 발화를 탐지해 store 가 정한 자리에 적는다. 채굴원이라 inbox 아래다 — quests 와
+        # 같은 자리인데, store 를 부르는 만큼만 한 등급 위다.
+        ("정정", frozenset({"corrections"})),
+        # 두 채굴원(quests·corrections)의 신호를 drafts 의 초안으로 세워 pending 에 올린다.
+        ("채굴", frozenset({"inbox"})),
+        # 인박스가 올린 것에 손을 댄다 — 초안을 LLM 으로 다시 쓰거나(distill) 설치된 learned
+        # 스킬을 파일·latch 짝으로 보관·복원한다(skills). 둘은 서로를 안 부른다.
+        ("가공", frozenset({"distill", "skills"})),
+        # 초안의 처분 — inbox 의 pending 목록을 읽고 store 의 latch 를 고치며, 승인 뒤에는
+        # skills 의 배차 명단 재렌더를 부른다. 그 셋이 전부 아래라 여기다.
+        ("처분", frozenset({"decisions"})),
+        # 스스로 캘지(autoscan)·스스로 설치할지(autonomy_mode)를 정해 decisions 의 승인을
+        # 대신 누른다. 관문을 없애지 않고 누르는 손만 정책이 드는 자리라 처분 위다.
+        ("자율", frozenset({"autonomy"})),
+        # 턴 끝에 나가는 한 줄 — 채굴과 자동 설치를 돌린 뒤 무엇이 늘었는지 말한다. 이 패키지에서
+        # 유일하게 화면을 아는 자리이고, 아무도 이것을 안 부른다.
+        ("표면", frozenset({"nudge"})),
+        ("파사드", frozenset({"__init__"})),
+    ),
     "hooks": (
         # 훅끼리는 여전히 서로를 안 부른다 — 그게 배포 계약이다. 훅은 `.claude/hooks/`로 복사되므로
         # 형제를 이름으로 부르면 복사본에서 죽는다. 같은 등급끼리 금지라 임포트 하나만 생겨도 이
@@ -601,6 +741,7 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
                     "budget_guard",
                     "charter_activate",
                     "craft_gate",
+                    "dispatch_context",
                     "failure_tracker",
                     "git_guard",
                     "lagom_activate",
@@ -613,6 +754,7 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
                     "readonly_guard",
                     "release_guard",
                     "secret_guard",
+                    "siege_inbox",
                     "subagent_gate",
                     "tutor_note",
                     "unattended_context",
@@ -638,7 +780,8 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
         ),
         # 바닥 하나씩만 얹는다. 서로는 안 부른다.
         ("한 단", frozenset({"firing", "ledger", "runners", "scope", "session", "shell", "transition"})),
-        ("두 단", frozenset({"contracts", "readonly", "tickets", "tree"})),
+        # destructive — 되돌리기 어려운 명령을 가려내는 판정기. `shell`(한 단)만 얹는다.
+        ("두 단", frozenset({"contracts", "destructive", "readonly", "tickets", "tree"})),
         # 실행과 관측 — `summary` 가 아래를 거의 다 부르는 유일한 자리다 (관측을 한 함수로 모은다).
         ("조립", frozenset({"baseline", "summary"})),
         ("파사드", frozenset({"__init__"})),
@@ -702,6 +845,28 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
         ("파생", frozenset({"projection", "retain", "evolve", "learning", "automation"})),
         ("파사드", frozenset({"__init__"})),
     ),
+    # 스킬·플러그인 등록부 — 파일 읽기와 휠 내장 선언이 바닥이고, 신뢰 경계(manifest)를 지나야
+    # 디스크 배치(anchor·bundles)가 있고, 그 배치를 읽는 소비자들이 그 위에 선다. manifest 가
+    # 아래인 것이 계약이다 — 복사·실행이 검증을 우회할 방향이 없다.
+    "skill_registry": (
+        # 패키지 안의 어느 모듈도 안 부른다 — SKILL.md 프론트매터·본문 읽기(frontmatter),
+        # 휠에 코드로 들어 있는 기본 플러그인 선언(builtin).
+        ("바닥", frozenset({"frontmatter", "builtin"})),
+        # plugin.json 과 자원 트리를 검사하는 신뢰 경계. frontmatter 만 부른다.
+        ("검증", frozenset({"manifest"})),
+        # 검증을 지난 것을 디스크에 놓는다 — 앵커 스킬 트리를 프로젝트 옆에 푸는 자리(anchor),
+        # 동봉·제3자 묶음의 출처와 설치(bundles). 둘은 서로를 안 부른다.
+        ("설치", frozenset({"anchor", "bundles"})),
+        # 놓인 묶음을 읽는 두 소비자 — 어느 스킬이 어느 역할에게 열려 있는지 판정하고(policy),
+        # 선언된 진입점을 셸 없이 돌린다(runner). 둘은 서로를 안 부른다.
+        ("정책·실행", frozenset({"policy", "runner"})),
+        # 목록·본문·자원을 policy 의 판정으로 걸러 내보낸다. 그 필터가 아래라서 여기다.
+        ("차례표", frozenset({"catalog"})),
+        # catalog 를 읽어 어느 스킬인지 정한다 — 요청 문장마다 고르거나(resolve) 프로젝트 설정에
+        # 결속·해제를 남긴다(assignment). 둘은 서로를 안 부른다.
+        ("선정", frozenset({"assignment", "resolve"})),
+        ("파사드", frozenset({"__init__"})),
+    ),
     "studio": (
         # mentions — `@이름`을 읽어 에인헤랴르 명부에 맞춰 보는 어휘. 저장소를 안 보고
         # profiles 만 본다(foundation) — vocab 과 같은 자리인 이유가 그것이다.
@@ -755,6 +920,21 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
         ("조합", frozenset({"agents", "roles"})),
         # 역할 명부를 클라이언트 형식으로 옮긴다.
         ("어댑터", frozenset({"codex", "cursor", "freyja"})),
+        ("파사드", frozenset({"__init__"})),
+    ),
+    # 이번 변경을 사용자가 되짚게 만드는 층. 화면은 `commands.tutor` 가 지고 여기는 사실만
+    # 만든다 — 그래서 표의 위쪽도 화면이 아니라 "턴 끝에 실을 카드"(native)다.
+    "tutor": (
+        # 패키지 안의 어느 모듈도 안 부른다 — 공개 시그니처 대조(contracts), git 에서 읽는
+        # 재료(diffs), 물음 종류의 화면 이름(labels), 사실을 사람에 맞춰 줄이는 조절(pacing).
+        ("바닥", frozenset({"contracts", "diffs", "labels", "pacing"})),
+        # 재료를 읽어 판정을 만든다 — 파일 하나의 인벤토리와 물음(points), 세션·하루·한 주의
+        # 서사와 도중 팁(narrative). 서로를 안 부른다.
+        ("판정", frozenset({"points", "narrative"})),
+        # 파일별 판정과 표면 대조를 `Lesson` 하나로 묶는다. points 를 부르므로 판정 위다.
+        ("조립", frozenset({"lesson"})),
+        # 네이티브 루프에 닿는 경로 — lesson 을 카드 한 장과 모드로 옮긴다.
+        ("도달", frozenset({"native"})),
         ("파사드", frozenset({"__init__"})),
     ),
 }

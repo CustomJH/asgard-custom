@@ -138,7 +138,7 @@ class TestNornLinkConcurrency(MemoryTempHome):
                 threading.Event().wait(INTERLEAVE_WAIT)
             return page
 
-        with mock.patch.object(norn, "_read", _slow_read):
+        with mock.patch.object(norn.apply, "_read", _slow_read):
             self._run_interleaved(
                 lambda: norn._add_link(self.d, left, right),
                 lambda: memory.merge(donor, left, self.d),
