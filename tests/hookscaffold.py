@@ -1,4 +1,4 @@
-"""시험이 훅을 배포 배치 그대로 깔게 하는 한 줄.
+"""시험이 배포본을 실물 그대로 돌리게 하는 자리 — 훅 배치, PATH 의 CLI, 그리고 홈 격리.
 
 훅은 `.claude/hooks/`(또는 `.cursor/`·`.codex/`)로 복사돼 그 폴더에서 subprocess 로 돈다. 그
 폴더에는 훅 파일만 있는 게 아니라 공용 라이브러리(`asgard_hooklib/`)가 함께 있고, 그 인접이 곧
@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import os
+import site
 import stat
 import sys
 import time
@@ -48,6 +49,25 @@ def deploy_cli(bin_dir: str) -> str:
         )
     os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     return path
+
+
+def isolated_home_env(home: str, **extra: str) -> dict[str, str]:
+    """실물 `asgard` 를 부를 하위 프로세스용 환경 — 아스가르드의 홈만 `home` 으로 옮긴다.
+
+    이걸 안 쓰고 진짜 홈으로 `asgard init` 을 돌리면 그 임시 폴더가 사용자의
+    `~/.asgard/projects.json` 에 등록되고, 폴더는 시험 끝에 지워져도 등록은 남는다. 26-08-12 에
+    사람이 `asgard sync` 한 번에 30줄짜리 "폴더가 없어져서 뺄게요" 를 받은 자리다.
+
+    `PYTHONUSERBASE` 를 진짜 홈으로 되박는 이유는 격리 대상이 **아스가르드의 홈**이지 파이썬
+    설치가 아니기 때문이다: HOME 을 옮기면 인터프리터의 per-user site-packages(`~/.local/lib/...`)
+    도 같이 옮겨 가, `pip install --user` 로 깔린 선언 의존성이 하위 프로세스에서 통째로 사라진다.
+    그러면 init 이 임포트 단계에서 죽고, 단언은 그것을 "안 깔았다" 로 읽는다 — 원인과 증상이
+    어긋난다.
+    """
+    env: dict[str, str] = {**os.environ, "HOME": home, "PYTHONUSERBASE": site.getuserbase(), **extra}
+    env.pop("ASGARD_HOME", None)
+    env.pop("ASGARD_PROFILE", None)
+    return env
 
 
 def until(predicate, timeout: float = 30.0, step: float = 0.1) -> bool:

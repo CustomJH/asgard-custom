@@ -9,6 +9,7 @@
 
 import json
 import os
+import shutil
 import tempfile
 import unittest
 from unittest import mock
@@ -43,6 +44,37 @@ class TestRegistry(Base):
         self.assertEqual((entries[0]["cc"], entries[0]["cursor"], entries[0]["codex"]), (True, True, False))
         registry.forget(self.root)
         self.assertEqual(registry.load(), [])
+
+    def test_write_drops_roots_whose_folder_is_gone(self):
+        """사람이 지운 프로젝트는 sync 를 기다리지 않고 다음 쓰기에서 빠진다.
+
+        이 정리가 없으면 죽은 엔트리가 쌓인다 — 시험이 임시 폴더에서 실물 `asgard init` 을
+        돌리면 그 경로가 등록되고 폴더는 시험 끝에 지워지기 때문이다 (26-08-12)."""
+        gone = os.path.join(self.root, "deleted-project")
+        os.makedirs(gone)
+        registry.record(gone, True, False, False)
+        os.rmdir(gone)
+        registry.record(self.root, True, False, False)  # 다른 프로젝트를 등록하는 김에 정리된다
+        self.assertEqual([p["root"] for p in registry.load()], [self.root])
+
+    def test_record_does_not_prune_the_root_it_is_recording(self):
+        """정리는 **다른** 등록에만 닿는다 — 방금 등록한 루트를 같은 호출이 도로 걷어가면
+        부른 쪽에는 성공으로 보이면서 목록에는 아무것도 안 남는다."""
+        pending = os.path.join(self.root, "not-created-yet")
+        registry.record(pending, True, False, False)
+        self.assertEqual([p["root"] for p in registry.load()], [pending])
+
+    def test_write_keeps_roots_on_a_volume_that_is_not_mounted(self):
+        """부모까지 통째로 안 보이면 지운 게 아니라 안 꽂힌 것이다 — 등록을 들고 있는다.
+
+        외장 디스크의 `/Volumes/ext/proj` 는 빠져 있는 동안 `proj` 도 `ext` 도 없다. 여기서
+        지우면 디스크를 다시 꽂아도 그 프로젝트는 목록에 없다."""
+        unmounted = os.path.join(self.root, "volume", "proj")
+        os.makedirs(unmounted)
+        registry.record(unmounted, True, False, False)
+        shutil.rmtree(os.path.dirname(unmounted))  # 마운트 지점째 사라진 상태
+        registry.record(self.root, True, False, False)
+        self.assertIn(unmounted, [p["root"] for p in registry.load()])
 
     def test_load_broken_file_fails_open(self):
         os.makedirs(os.path.join(self._home.name, ".asgard"), exist_ok=True)
@@ -540,8 +572,14 @@ class TestSyncProject(Base):
         self.assertFalse(os.path.exists(directory))
 
     def test_run_sync_prunes_missing_root_and_syncs_rest(self):
-        registry.record(j := os.path.join(self.root, "gone"), True, False, False)  # 사라진 루트
         registry.record(self.root, True, False, False)
+        # 실사 순서 그대로 — 있는 폴더를 등록하고 나서 지운다. 없는 채로 등록하고 뒤에 다른
+        # 등록이 한 번 더 일어나면 쓰기마다 도는 정리가 sync 보다 먼저 걷어가고, 그러면 이
+        # 시험은 sync 의 정리(`run_sync` 의 forgotten 갈래)를 증명하지 못한 채 초록이 된다.
+        os.makedirs(j := os.path.join(self.root, "gone"))
+        registry.record(j, True, False, False)
+        os.rmdir(j)
+        self.assertIn(j, [p["root"] for p in registry.load()])  # sync 가 볼 죽은 등록이 실재한다
         cwd = os.getcwd()
         os.chdir(self._home.name)  # cwd 자동등록이 안 걸리는 위치
         try:

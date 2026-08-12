@@ -19,12 +19,13 @@
 import json
 import os
 import shutil
-import site
 import subprocess
 import sys
 import tempfile
 import unittest
 from unittest import mock
+
+from hookscaffold import isolated_home_env
 
 from asgard import manual as M
 from asgard.manual import MANUAL_NAMES
@@ -159,7 +160,7 @@ class TestCommonLayer(ManualBase):
             self.assertIn("공통 규칙", loaded["body"])
 
     def test_project_rules_come_after_common_ones(self):
-        """충돌 해소가 순서에 달려 있다 — 나중(=더 구체적인 프로젝트 규칙)이 이긴다."""
+        """충돌 해소가 순서에 달려 있다 — 나중(=더 구체적인 프로젝트 규칙)이 우선한다."""
         self.common("MANUAL.md", "- 공통: 커밋은 한국어로")
         self.write("MANUAL.md", "- 프로젝트: 커밋은 영어로")
         loaded = M.load_manual(self.root)
@@ -168,7 +169,7 @@ class TestCommonLayer(ManualBase):
         self.assertLess(loaded["body"].index("공통:"), loaded["body"].index("프로젝트:"))
 
     def test_layer_note_appears_only_when_both_layers_load(self):
-        """한 층뿐이면 '나중 것이 이긴다'는 잡음이다 — 두 층이 실제로 실렸을 때만 붙는다."""
+        """한 층뿐이면 '나중 것이 우선한다'는 잡음이다 — 두 층이 실제로 실렸을 때만 붙는다."""
         self.write("MANUAL.md", "- 프로젝트만")
         self.assertNotIn("repository-specific rule wins", M.note(self.root))
         self.common("MANUAL.md", "- 공통도")
@@ -265,7 +266,7 @@ class TestFragments(ManualBase):
 
 @unittest.skipIf(sys.platform == "win32", "심볼릭 링크 생성에 권한이 필요하다 (Windows)")
 class TestSymlinkFence(ManualBase):
-    """저장소 밖을 가리키는 링크는 안 싣는다.
+    """저장소 밖을 가리키는 링크는 안 넣는다.
 
     왜 이 검사가 있는가: `os.path.isfile`도 `os.listdir`도 링크를 따라가고 `.md` 판정은
     **링크 이름**에 걸린다. git은 트리 밖을 가리키는 링크도 그대로 커밋하므로, 울타리가
@@ -297,7 +298,7 @@ class TestSymlinkFence(ManualBase):
         os.symlink(target, os.path.join(self.root, ".asgard", "manual", "00-x.md"))
         loaded = M.load_manual(self.root)
         assert loaded is not None
-        self.assertEqual(loaded["sources"], ["MANUAL.md"])  # 성한 것은 계속 실린다
+        self.assertEqual(loaded["sources"], ["MANUAL.md"])  # 성한 것은 계속 들어간다
         self.assertNotIn("hunter2", loaded["body"])
 
     def test_escaped_alias_lets_the_next_one_win(self):
@@ -343,7 +344,7 @@ class TestInertness(ManualBase):
         self.assertEqual(M.note(self.root), "")
 
     def test_starter_template_has_no_stray_comment_terminator(self):
-        """주석 안에 종료 기호를 글자로 쓰면 거기서 주석이 끝나 안내문 절반이 프롬프트에 실린다."""
+        """주석 안에 종료 기호를 글자로 쓰면 거기서 주석이 끝나 안내문 절반이 프롬프트에 들어간다."""
         self.assertEqual(M._COMMENT.sub("", MANUAL_STARTER_MD).strip(), "")
 
     def test_text_outside_comments_activates(self):
@@ -351,7 +352,7 @@ class TestInertness(ManualBase):
         loaded = M.load_manual(self.root)
         assert loaded is not None
         self.assertIn("v1 prefix", loaded["body"])
-        self.assertNotIn("HOW TO USE IT", loaded["body"])  # 안내문은 여전히 안 실린다
+        self.assertNotIn("HOW TO USE IT", loaded["body"])  # 안내문은 여전히 안 들어간다
 
 
 class TestMarker(ManualBase):
@@ -632,6 +633,8 @@ class TestScaffoldE2E(unittest.TestCase):
         self.bin = found
         self.root = tempfile.mkdtemp(prefix="manual-e2e-")
         self.addCleanup(shutil.rmtree, self.root, True)
+        self.home = tempfile.mkdtemp(prefix="manual-home-")
+        self.addCleanup(shutil.rmtree, self.home, True)
         subprocess.run(["git", "init"], cwd=self.root, capture_output=True, check=False)
 
     def init(self, *extra: str) -> None:
@@ -641,6 +644,7 @@ class TestScaffoldE2E(unittest.TestCase):
             capture_output=True,
             text=True,
             timeout=180,
+            env=isolated_home_env(self.home),  # 임시 루트를 사람의 프로젝트 목록에 안 남긴다
         )
         self.assertEqual(0, done.returncode, done.stderr)
 
@@ -716,15 +720,7 @@ class TestScaffoldE2E(unittest.TestCase):
     def test_init_seeds_the_common_manual_once(self):
         """공통 자리는 리포 밖이라 스캐폴드 목록에 못 넣는다 — init이 없을 때만 따로 깐다."""
         with tempfile.TemporaryDirectory() as fake_home:
-            env: dict[str, str] = {**os.environ, "HOME": fake_home}
-            env.pop("ASGARD_HOME", None)
-            env.pop("ASGARD_PROFILE", None)
-            # 격리 대상은 **아스가르드의 홈**이지 파이썬 설치가 아니다: HOME 을 옮기면 인터프리터의
-            # per-user site-packages(`~/.local/lib/...`) 도 같이 옮겨 가, `pip install --user` 로 깔린
-            # 선언 의존성이 하위 프로세스에서 통째로 사라진다. 그러면 init 이 import 단계에서 죽고
-            # 아래 단언은 "매뉴얼을 안 깐다"로 읽힌다 — 원인과 증상이 어긋난다. 사용자 베이스만
-            # 진짜 홈에 고정해 그 교란을 끊는다 (HOME 은 그대로 임시 디렉터리 = 계약은 불변).
-            env["PYTHONUSERBASE"] = site.getuserbase()
+            env = isolated_home_env(fake_home)
             done = subprocess.run(
                 [self.bin, "init", "--cc", "--yes", "-q"],
                 cwd=self.root,

@@ -34,6 +34,8 @@ import sys
 import tempfile
 import unittest
 
+from hookscaffold import isolated_home_env
+
 # 두 게이트가 각각 하나씩 잡는 원문 — 합쳐진 판정이 출처를 잃지 않는지까지 한 번에 본다.
 DEFECT = "def load(path):\n    try:\n        return open(path).read()\n    except Exception:\n        pass\n"
 CLEAN = "def load(path):\n    with open(path) as handle:\n        return handle.read()\n"
@@ -105,6 +107,8 @@ class ShippedHookRuns(unittest.TestCase):
         self.bin = found
         self.root = tempfile.mkdtemp(prefix="craftgate-e2e-")
         self.addCleanup(shutil.rmtree, self.root, True)
+        self.home = tempfile.mkdtemp(prefix="craftgate-home-")
+        self.addCleanup(shutil.rmtree, self.home, True)
         self._git("init")
         self._git("config", "user.email", "t@t")
         self._git("config", "user.name", "t")
@@ -114,7 +118,12 @@ class ShippedHookRuns(unittest.TestCase):
 
     def _scaffold(self, flag: str) -> None:
         done = subprocess.run(
-            [self.bin, "init", flag, "--yes", "-q"], cwd=self.root, capture_output=True, text=True, timeout=180
+            [self.bin, "init", flag, "--yes", "-q"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            timeout=180,
+            env=isolated_home_env(self.home),  # 임시 루트를 사람의 프로젝트 목록에 안 남긴다
         )
         self.assertEqual(0, done.returncode, done.stderr)
 
