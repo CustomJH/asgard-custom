@@ -353,6 +353,8 @@ def hook_files(hooks_dir: str, client: str = "claude-code") -> list[tuple[str, s
         (j(hooks_dir, "manual-activate.py"), hook("manual-activate")),
         (j(hooks_dir, "agent-activate.py"), hook("agent-activate")),
         (j(hooks_dir, "map-activate.py"), hook("map-activate")),
+        # 판정자 입력 — 하네스가 관측한 실행 기록. 배선은 판정자 서브에이전트가 있는 호스트에만.
+        (j(hooks_dir, "verifier-context.py"), hook("verifier-context")),
     ]
     # 공용 라이브러리는 훅과 **같은 폴더**에 깔린다. 그 인접이 곧 임포트 경로다: 스크립트로 실행된
     # 훅은 자기 폴더가 `sys.path[0]` 이라 `import asgard_hooklib` 이 그대로 선다. 표에 한 줄씩

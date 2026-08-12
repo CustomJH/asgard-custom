@@ -206,6 +206,20 @@ def cc_settings() -> str:
                                 },
                             ]
                         },
+                        # The verdict's own input — the harness-observed record of what ran since the
+                        # last verdict. Without it a subagent Verifier knows only what the coordinator
+                        # typed, so the party being judged writes the judge's brief. Memory stays
+                        # blocked (see the thinker-only matcher below): this widens observation, not
+                        # interpretation.
+                        {
+                            "matcher": "^asgard-verifier$",
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/verifier-context.py"',
+                                }
+                            ],
+                        },
                         {
                             "matcher": "^asgard-thinker$",
                             "hooks": [
@@ -364,6 +378,15 @@ def cc_settings() -> str:
                                 {
                                     "type": "command",
                                     "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/map-activate.py"',
+                                },
+                                # Canon Law 9 — the same tracker, second observation site. This host
+                                # does not call PostToolUse when a tool call fails (measured; see the
+                                # hook's header), so the tool-failure lane exists only here: at the turn
+                                # boundary the tracker reads the transcript tail instead of a payload.
+                                # Once per turn, not once per tool call.
+                                {
+                                    "type": "command",
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/failure-tracker.py"',
                                 },
                                 # 되짚기 — 이 턴이 쓴 코드를 사용자 앞에 물음으로 되돌린다. 절대
                                 # 안 막는다(health 등급): 되짚기가 관문이 되면 사람이 먼저 끈다.

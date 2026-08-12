@@ -133,6 +133,13 @@ def cursor_hooks_json() -> str:
                         {"command": f"{py} .cursor/hooks/manual-activate.py cursor"},
                         {"command": f"{py} .cursor/hooks/agent-activate.py cursor"},
                         {"command": f"{py} .cursor/hooks/map-activate.py cursor"},
+                        # 판정자 입력 — 하네스가 관측한 실행 기록. 매처를 거는 이유는 게이트와 같다:
+                        # 이 이벤트는 역할 신원을 들고 오므로 판정자만 고를 수 있다 (도구 훅인
+                        # preToolUse 와 다른 점이다 — 그쪽엔 agent_type 이 없다).
+                        {
+                            "matcher": "^asgard-verifier$",
+                            "command": f"{py} .cursor/hooks/verifier-context.py cursor",
+                        },
                     ],
                     "subagentStop": [
                         # 매처 없음 — 로그 규율은 세 역할만 받지만, 배차 장부를 접는 것은 불린

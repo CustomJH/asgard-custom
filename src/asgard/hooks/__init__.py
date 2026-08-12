@@ -52,6 +52,7 @@ REGISTRY: dict[str, str] = {
     "manual-activate": "manual_activate",  # 커스텀 매뉴얼 — 오딘이 쓴 프로젝트 규칙 주입 (루트 MANUAL.md)
     "agent-activate": "agent_activate",  # 에인헤랴르 — 이 세션을 도는 에이전트의 정체성 주입 (배치 해석 포함)
     "map-activate": "map_activate",  # Project map — turn-start refresh + bounded role context
+    "verifier-context": "verifier_context",  # 판정자 입력 — SubagentStart, 하네스 관측 실행 기록 (메모리는 여전히 차단)
 }
 
 

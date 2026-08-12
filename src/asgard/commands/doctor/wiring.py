@@ -456,6 +456,7 @@ _PARITY_HOOKS = (
     "manual-activate.py",
     "agent-activate.py",
     "map-activate.py",
+    "verifier-context.py",
 )
 # 파일만 깔리고 배선이 없으면 그 규율은 없는 것과 같다 — 설정 원문에 이름이 있는지로 본다.
 _PARITY_WIRED = tuple(

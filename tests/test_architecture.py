@@ -616,6 +616,7 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
                     "subagent_gate",
                     "tutor_note",
                     "unattended_context",
+                    "verifier_context",
                     "verifier_gate",
                     "write_sentinel",
                 }
@@ -630,7 +631,11 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
         # 아무것도 안 부른다 — 파일·git 원시 연산, 해시, 증거 술어, 정책 표.
         # siege — 배차 장부에 한 줄 적으라고 CLI 프로세스를 띄우는 문. asgard 를 임포트하지
         # 않는 것이 요점이라(배포 인터프리터에는 없다) 여기 바닥에 선다.
-        ("바닥", frozenset({"evidence", "inject", "integrity", "paths", "policy", "siege", "workspace"})),
+        # transcript — 세션 기록 JSONL 을 읽어 도구 호출을 짝짓는다. stdlib 만 쓰고 아무도 안 부른다.
+        (
+            "바닥",
+            frozenset({"evidence", "inject", "integrity", "paths", "policy", "siege", "transcript", "workspace"}),
+        ),
         # 바닥 하나씩만 얹는다. 서로는 안 부른다.
         ("한 단", frozenset({"firing", "ledger", "runners", "scope", "session", "shell", "transition"})),
         ("두 단", frozenset({"contracts", "readonly", "tickets", "tree"})),

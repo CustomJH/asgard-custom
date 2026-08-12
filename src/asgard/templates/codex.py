@@ -187,6 +187,12 @@ command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/agent-activate.py
 type = "command"
 command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/map-activate.py" codex'
 
+# Verifier input — the harness-observed record of what ran since the last verdict. No matcher here:
+# this block has none, so the hook checks the agent name itself and exits for everyone else.
+[[hooks.SubagentStart.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/verifier-context.py" codex'
+
 [[hooks.PreToolUse]]
 matcher = "^Agent$"
 
