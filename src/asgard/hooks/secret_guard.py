@@ -325,6 +325,20 @@ def secret_command(command: str) -> str:
                 return label
         if program == "kubectl" and "secret" in args and any(a in args for a in ("-o", "--output", "describe")):
             return "kubectl secret read"
+        # 판독기 이름 목록은 전수일 수 없다. 목록 밖의 프로그램이 자격 파일을 **피연산자로**
+        # 받는 형태는 종전에 통째로 빠져나갔다 — `python3 dump.py .env` · `./tool --config .env`
+        # 셋 다 통과했다 (26-08-13 실측). 이름을 모르는 프로그램이라도 그 파일을 인자로 받는
+        # 것이 근거다: 무엇을 하는지 모르는 것과 안전한 것은 다르다.
+        #
+        # 공백이 든 피연산자는 경로가 아니라 글이다 (`codex exec '... .env ...'`). 그 자리를
+        # 함께 잡으면 자격 파일을 **설명하는** 명령이 유출로 읽힌다 — 이 가드가 26-08-13 에
+        # 실제로 그렇게 퀘스트 개봉 한 줄을 막았다.
+        for operand in operands:
+            if " " in operand:
+                continue
+            label = secret_path(operand) or secret_path(_GLOB_TAIL.sub("", operand))
+            if label:
+                return f"{program} of {label} ({operand})"
     return ""
 
 

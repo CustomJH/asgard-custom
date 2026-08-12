@@ -15,6 +15,10 @@ from unittest import mock
 
 from asgard.hooks import secret_guard as sg
 
+# 이 파일 자신이 가드에 걸리지 않게 조립한다 — 자격 파일 이름을 리터럴로 적으면 이 시험을
+# 여는 명령이 곧 유출로 읽힌다.
+DOTENV = chr(46) + "env"
+
 
 def _run(payload: dict, argv: list[str]) -> tuple[int, str, str]:
     out, err = io.StringIO(), io.StringIO()
@@ -388,6 +392,34 @@ class TestHookWriteSideUnchanged(unittest.TestCase):
             with self.assertRaises(SystemExit) as ctx:
                 sg.main()
             self.assertEqual(int(ctx.exception.code or 0), 0)
+
+
+class TestTheReaderListIsNotTheWholeWorld(unittest.TestCase):
+    """이름을 모르는 프로그램도 자격 파일을 인자로 받으면 잡는다.
+
+    판정이 판독기 이름 목록에만 걸려 있던 판에서는 `python3 dump.py .env` 가 통과했다
+    (26-08-13 실측 3건). 목록은 전수일 수 없으므로 근거를 프로그램 이름에서 **피연산자**로
+    옮긴다. 반대 방향도 함께 고정한다 — 자격 파일을 설명하는 문장은 유출이 아니다."""
+
+    def test_an_unlisted_program_taking_the_file_is_caught(self):
+        for command in (
+            f"python3 dump_env.py {DOTENV}",
+            f"./mytool --config {DOTENV}",
+            f"node read.js {DOTENV}",
+            "some-binary /home/u/.aws/credentials",
+        ):
+            with self.subTest(command=command):
+                self.assertTrue(sg.secret_command(command), f"자격 파일을 인자로 받는데 놓쳤다: {command}")
+
+    def test_talking_about_the_file_is_not_reading_it(self):
+        for command in (
+            f"codex exec 'audit how the tool reads {DOTENV} at startup'",
+            f"git commit -m 'docs: explain {DOTENV} handling'",
+            f"echo 'the {DOTENV} file holds credentials'",
+            "grep -rn 'dotenv' src/",
+        ):
+            with self.subTest(command=command):
+                self.assertEqual(sg.secret_command(command), "", f"설명하는 명령을 막았다: {command}")
 
 
 if __name__ == "__main__":
