@@ -28,11 +28,15 @@ READONLY_BASH_HINT = (
     "--frozen/--locked/--offline in between), python -m pytest|unittest|compileall|py_compile, "
     "python -c '<one-line smoke with no writes>', node --check <file>, node [--test] <tests/ script>, "
     "npm|pnpm|yarn test|lint|check, tests/ scripts. "
+    "`asgard siege` — reading it (show/inbox/blocked/gates/ready/waves/watch) and speaking about "
+    "your own attempt on it (ask/escalate/heartbeat, and `done` only in its self-naming form: "
+    "`asgard siege done --quest <quest> --agent <you> --outcome failed` — a positional dispatch id "
+    "would let you settle somebody else's attempt). "
     "sed/awk without in-place writes. Allowed commands may be chained with `|`, `&&`, `||`, `;` "
     "(each segment is judged on its own), and `2>/dev/null` / `2>&1` / `< /dev/null` are fine. "
     'Shell loops of read-only commands are fine (`for f in a b; do wc -c "$f"; done`). '
     "Blocked: file writes, redirection to a file, heredocs, $()/backticks, paths outside the "
-    "project (the harness's own isolated unit workspace and this session's scratchpad are allowed). "
+    "project (the harness's own isolated unit workspace and this project's scratchpad are allowed). "
     "A `$VAR` is fine as an operand, but not as the script of `python -c` / sed / awk — there the "
     "judged text is not the text that runs, so those lanes abstain. "
     "Use python -c with a literal snippet instead of a scratch file, and for a uv project (uv.lock) "
@@ -57,6 +61,11 @@ _PY_SNIPPET_MUTATION = re.compile(
     r"|shutil\.(?:rmtree|move|copy\w*|chown|make_archive|unpack_archive|disk_usage)"
     r"|write_text|write_bytes|\.write\s*\(|pickle\.dump|\bexec\s*\(|\beval\s*\("
     r"|open\s*\([^)]*['\"](?:[wax]b?\+?|[rb]+\+b?)['\"]"
+    # 표준 라이브러리의 제자리 편집 통로. 여는 모드가 `open()` 자리에 안 드러나서 위 항목이
+    # 못 본다 — `fileinput.input(path, inplace=True)` 는 원본을 백업으로 옮기고 stdout 을 그
+    # 파일로 돌린다. 이 한 줄이 없던 판에서는 그 스니펫이 **읽기로 인정돼** 통제 표면 판정을
+    # 통째로 건너뛰었다 (26-08-13 3차 판정이 찾았다).
+    r"|\bfileinput\b"
     r"|\bsocket\b|urllib|requests|httpx"
 )
 
@@ -109,7 +118,99 @@ _GIT_READ = {"diff", "status", "log", "show", "grep", "ls-files", "rev-parse"}
 _GIT_INDEX_ONLY = {"add", "commit"}
 
 
+# 배차 장부를 읽는 동사. 읽기 전용 역할이 자기가 선 그래프를 보는 자리다.
+_SIEGE_READ = {"show", "inbox", "blocked", "gates", "ready", "waves", "watch"}
+# 배차받은 쪽이 **자기 시도에 대해** 말하는 동사. 트리를 한 바이트도 안 바꾸고 닿는 곳은
+# `.asgard/orchestration.db` 하나라, 판정의 물리 대조가 덮는 자리와 겹치지 않는다 — 여기가
+# 닫혀 있으면 읽기 전용 역할은 실패를 보고할 길이 없고, 종료 훅이 그 배차를 succeeded 로 접는다
+# (26-08-13 실측: asgard-ullr 의 실패 보고가 이 가드에서 exit 1). 남의 상태를 바꾸는 동사
+# (`answer`·`decide`·`force`·`reset`·`settle`)는 여전히 밖에 둔다.
+_SIEGE_SELF_REPORT = {"ask", "done", "escalate", "heartbeat"}
+# `siege done` 이 값을 받는 플래그. 위치 인자를 가리려면 어느 토큰이 앞 플래그의 값인지 알아야 한다.
+_SIEGE_DONE_FLAGS = {
+    "--agent",
+    "--body",
+    "--file",
+    "--outcome",
+    "--quest",
+    "--run",
+    "--sender",
+    "--subject",
+    "--task",
+}
+
+
+def _siege_done_flags(tokens: list[str]) -> dict[str, str] | None:
+    """`siege done` 의 플래그와 값. 위치 인자가 하나라도 있으면 None.
+
+    이 동사는 위치 인자로 임의의 dispatch id 를 받는다. 그대로 열면 판정자가 자기가 판정하는
+    Run 의 남의 배차를 정산할 수 있어, 같은 변경이 `dispatch-context` 에서 판정자를 빼는 이유와
+    정면으로 어긋난다.
+    """
+    seen: dict[str, str] = {}
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        name, sep, inline = token.partition("=")
+        if token == "--json":
+            index += 1
+            continue
+        if name in _SIEGE_DONE_FLAGS:
+            # `--quest=q1` 은 한 토큰, `--quest q1` 은 두 토큰이다. 값 자리가 비면 그 플래그는
+            # 값을 못 받은 것이고, 아래 대조가 빈 문자열을 이름으로 읽지 않게 그대로 둔다.
+            seen[name] = inline if sep else (tokens[index + 1] if index + 1 < len(tokens) else "")
+            index += 1 if sep else 2
+            continue
+        return None  # 위치 인자 — 남의 dispatch id 가 들어올 수 있는 자리다
+    return seen
+
+
+def _siege_done_is_self_scoped(tokens: list[str], caller: str = "") -> bool:
+    """`siege done` 이 **자기** 시도만 가리키는가.
+
+    `--quest` 와 `--agent` 로 지목하는 형태만 통과시키고, 부르는 쪽 이름을 아는 자리에서는
+    `--agent` 가 그 이름인지까지 본다 — 이름을 안 보면 읽기 전용 역할이 `--agent asgard-worker`
+    라고 적어 워커의 시도를 접을 수 있고, 그것은 위치 인자를 막은 이유와 같은 구멍이다.
+
+    퀘스트까지는 안 본다. 활성 퀘스트를 아는 것은 세션 상태를 읽는 훅이고 이 라이브러리는 명령문
+    하나만 보며, 남의 퀘스트 id 는 지어내야 나오는 값이라 실수로 닿지 않는다 — 이 가드가 서는
+    자리는 적대 봉쇄가 아니라 실수 방지다.
+    """
+    flags = _siege_done_flags(tokens)
+    if flags is None or not (flags.get("--quest") and flags.get("--agent")):
+        return False
+    return not caller or flags["--agent"] == caller
+
+
+def _safe_siege(tokens: list[str], caller: str = "") -> bool:
+    """`asgard siege <동사> …` 하나의 판정 — 읽거나, 자기 시도에 대해 말하거나, 둘 다 아니거나.
+
+    첫 토큰이 플래그일 수 있다 (`asgard siege --json` 은 목록 조회다). 그것을 동사로 읽으면 이
+    저장소에서 가장 자주 치는 조회가 막힌다.
+    """
+    verb = next((token for token in tokens if not token.startswith("-")), "")
+    if not verb or verb in _SIEGE_READ:
+        return True
+    if verb == "done":
+        return _siege_done_is_self_scoped(tokens[tokens.index(verb) + 1 :], caller)
+    return verb in _SIEGE_SELF_REPORT
+
+
 _STREAM_EDITORS = {"sed", "gsed", "awk", "gawk", "nawk", "mawk"}
+
+
+def _in_place_flag(arg: str) -> bool:
+    """제자리 편집 플래그인가 — 뭉친 낱글자와 `=` 접미까지 본다.
+
+    `-i` 와 `-i` 로 시작하는 것만 보던 판에서는 `sed -ni s/x/y/ <파일>` 과
+    `--in-place=bak` 이 읽기로 인정돼 통과했다 (26-08-13 판정). 낱글자 묶음은 순서가 자유라
+    `i` 가 묶음 안 어디에 있든 제자리 편집이고, 긴 플래그는 값이 `=` 로 붙어 온다.
+    `-i.bak` 처럼 접미가 붙는 표기는 점 앞까지만 묶음으로 읽는다."""
+    if arg.startswith("--"):
+        return arg.split("=", 1)[0] in {"--in-place", "--include"}
+    if not arg.startswith("-") or len(arg) < 2:
+        return False
+    return "i" in arg[1:].split(".", 1)[0]
 
 
 def _safe_stream_editor(program: str, tokens: list[str], roots: tuple[str, ...]) -> bool:
@@ -119,7 +220,7 @@ def _safe_stream_editor(program: str, tokens: list[str], roots: tuple[str, ...])
     (`awk '/^\\.dark/,0'`) 절대경로로 오독돼 정당한 관측이 차단됐다 (26-07-26 실측)."""
     is_sed = program.endswith("sed")
     args = tokens[1:]
-    if any(a == "-i" or a.startswith("-i") or a in {"--in-place", "--include"} for a in args):
+    if any(_in_place_flag(a) for a in args):
         return False
     if is_sed and any(a in {"-f", "--file"} or a.startswith("--file=") for a in args):
         return False  # 스크립트를 파일로 받으면 내용을 판정할 수 없다 (fail-closed)
@@ -154,7 +255,7 @@ _COMMAND_HEADERS = {"while", "until", "if", "elif"}  # 뒤에 오는 것이 명�
 _WORDLIST_HEADERS = {"for", "select"}  # 뒤에 오는 것은 낱말 목록이다
 
 
-def _safe_segment(segment: str, roots: tuple[str, ...] = ()) -> bool:
+def _safe_segment(segment: str, roots: tuple[str, ...] = (), caller: str = "") -> bool:
     try:
         tokens = shlex.split(segment)
     except ValueError:
@@ -213,7 +314,7 @@ def _safe_segment(segment: str, roots: tuple[str, ...] = ()) -> bool:
     if program == "git":
         return git_flags_safe(tokens, roots) and git_subcommand(tokens) in _GIT_READ
     if (inner := strip_runner(tokens)) is not None:
-        return _safe_segment(shlex.join(inner), roots)
+        return _safe_segment(shlex.join(inner), roots, caller)
     if program in {"npm", "pnpm", "yarn"}:
         return len(tokens) >= 2 and tokens[1] in {"test", "lint", "check"}
     if program == "cargo":
@@ -244,6 +345,8 @@ def _safe_segment(segment: str, roots: tuple[str, ...] = ()) -> bool:
         # 여러 테스트 파일을 한 번에 — `pytest a b`와 동형. 단일 operand만 받으면 판정자가 파일마다
         # 턴을 나눠 써야 한다 (26-07-26 실측: 다중 형태 차단 후 한 파일씩 재시도).
         return all(_is_test_path(operand) for operand in operands)
+    if program == "asgard" and tokens[1:2] == ["siege"]:
+        return _safe_siege(tokens[2:], caller)
     if program == "asgard" and len(tokens) >= 4 and tokens[1:3] == ["skills", "show"]:
         if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", tokens[3]):
             return False
@@ -343,11 +446,17 @@ def _safe_asgard_hook(tokens: list[str], roots: tuple[str, ...] = ()) -> bool:
     return name == "verifier-gate.py"
 
 
-def is_readonly_bash_safe(command: str, root: str | None = None, roots: tuple[str, ...] | None = None) -> bool:
+def is_readonly_bash_safe(
+    command: str, root: str | None = None, roots: tuple[str, ...] | None = None, agent: str = ""
+) -> bool:
     """Return True only for Bash commands admitted in a read-only role.
 
     `roots`를 넘기면 그것이 정본이다 — 이미 뿌리를 구한 호출자(훅의 main)가 설정을 두 번 읽지
-    않게 한다. 안 넘기면 `root` 하나에서 `work_roots`로 편다."""
+    않게 한다. 안 넘기면 `root` 하나에서 `work_roots`로 편다.
+
+    `agent`는 부르는 쪽의 역할 이름이다. `asgard siege done` 한 자리에서만 쓴다 — 그 동사가
+    `--agent` 로 누구를 지목했는지 대조하는 데 필요하고, 이름을 모르는 호출자(통제 표면 갈래)는
+    빈 값으로 두어 그 대조를 건너뛴다."""
     command = command.strip()
     if not command:
         return False
@@ -370,7 +479,7 @@ def is_readonly_bash_safe(command: str, root: str | None = None, roots: tuple[st
     # 판정이 뒤집힌다: 그 뒤 `.claude/hooks/quest-log.py` 라는 경로 인자가 통제 표면 갈래에
     # 걸려 기장 자체가 막힌다 (26-08-05 실측 2회 — open 과 사본 대조가 그렇게 거부됐다).
     # 한 토막일 때 되던 것이 파이프 뒤에서 되는 것뿐이라 열리는 권한은 없다.
-    return all(_safe_asgard_hook(part, roots) or _safe_segment(shlex.join(part), roots) for part in parts)
+    return all(_safe_asgard_hook(part, roots) or _safe_segment(shlex.join(part), roots, agent) for part in parts)
 
 
 def is_index_only_git(command: str, roots: tuple[str, ...]) -> bool:

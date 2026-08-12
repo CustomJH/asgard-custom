@@ -328,6 +328,82 @@ class TestExistingDisciplineUnchanged(Sandboxed):
         )
 
 
+class TestAReadOnlyRoleCanSpeakAboutItsOwnAttempt(Sandboxed):
+    """배차 장부는 트리가 아니다 — 자기 시도에 대해 말하는 것까지 막으면 실패가 사라진다.
+
+    26-08-13 실측: asgard-ullr 에게 주입된 `<asgard-dispatch>` 블록이 알려 준 실패 보고 명령이
+    이 가드에서 exit 1 로 막혔다. 주입은 없는 길을 알려 주고 있었고, 그동안 읽기 전용 역할의
+    배차는 결과와 무관하게 전부 `succeeded` 로 접혔다.
+    """
+
+    def test_reporting_a_failure_is_allowed(self) -> None:
+        self.assertTrue(
+            readonly_guard.is_readonly_bash_safe(
+                'asgard siege done --quest q1 --agent asgard-ullr --outcome failed --body "못 찾았어요"', self.repo
+            )
+        )
+
+    def test_leaving_a_question_and_reading_the_ledger_are_allowed(self) -> None:
+        for command in (
+            'asgard siege ask run_abc "어느 단위가 이 파일을 쥐나요?" --sender asgard-loki',
+            "asgard siege escalate run_abc '막혔어요'",
+            "asgard siege heartbeat run_abc task_1 disp_1 --phase investigating",
+            "asgard siege show run_abc --json",
+            "asgard siege watch run_abc",
+            "asgard siege",
+        ):
+            self.assertTrue(readonly_guard.is_readonly_bash_safe(command, self.repo), command)
+
+    def test_done_only_opens_in_its_self_naming_form(self) -> None:
+        """위치 인자 dispatch id 는 남의 시도다 — 판정자가 자기가 판정하는 Run 을 정산하게 된다.
+
+        같은 변경이 `dispatch_context` 에서 판정자를 빼는 이유가 그것이라, 이 자리를 넓게 열면
+        두 결정이 서로 어긋난다."""
+        self.assertFalse(readonly_guard.is_readonly_bash_safe("asgard siege done disp_1 succeeded", self.repo))
+        self.assertFalse(
+            readonly_guard.is_readonly_bash_safe("asgard siege done disp_1 --outcome failed", self.repo),
+            "위치 dispatch id 가 플래그와 섞이면 통과했다",
+        )
+        self.assertFalse(
+            readonly_guard.is_readonly_bash_safe("asgard siege done --quest q1 --outcome failed", self.repo),
+            "자기 이름 없이 통과했다 — 그러면 무엇을 접는지가 안 정해진다",
+        )
+        self.assertTrue(
+            readonly_guard.is_readonly_bash_safe("asgard siege done --quest=q1 --agent=asgard-loki --json", self.repo),
+            "`--flag=value` 형태를 위치 인자로 읽었다",
+        )
+
+    def test_done_must_name_the_caller_when_the_caller_is_known(self) -> None:
+        """`--agent` 를 안 보면 위치 인자를 막은 것이 무의미하다 — 판정자가 워커라고 적으면 그만이다."""
+        mine = 'asgard siege done --quest q1 --agent asgard-loki --outcome failed --body "막혔어요"'
+        theirs = "asgard siege done --quest q1 --agent asgard-worker --outcome failed"
+        self.assertTrue(readonly_guard.is_readonly_bash_safe(mine, self.repo, agent="asgard-loki"))
+        self.assertFalse(readonly_guard.is_readonly_bash_safe(theirs, self.repo, agent="asgard-loki"))
+        # 이름을 모르는 호출자(통제 표면 갈래)는 대조를 건너뛴다 — 거기 판정 대상은 이 축이 아니다.
+        self.assertTrue(readonly_guard.is_readonly_bash_safe(theirs, self.repo))
+
+    def test_reading_the_ledger_survives_a_leading_flag(self) -> None:
+        """`asgard siege --json` 의 첫 토큰은 동사가 아니다 — 그것을 동사로 읽으면 목록 조회가 막힌다."""
+        self.assertTrue(readonly_guard.is_readonly_bash_safe("asgard siege --json", self.repo))
+
+    def test_driving_someone_elses_state_stays_blocked(self) -> None:
+        """자기 시도에 대해 말하는 것과 그래프를 미는 것은 다르다 — 뒤쪽은 코디네이터의 손이다."""
+        for command in (
+            "asgard siege reset --all",
+            "asgard siege answer msg_1 '그렇게 하세요'",
+            "asgard siege decide gate_1 A",
+            "asgard siege force task_1 completed",
+            "asgard siege settle disp_1 succeeded",
+            "asgard siege start '새 목표'",
+        ):
+            self.assertFalse(readonly_guard.is_readonly_bash_safe(command, self.repo), command)
+
+    def test_the_refusal_still_teaches_where_the_lane_is(self) -> None:
+        from asgard.hooks.asgard_hooklib.readonly import READONLY_BASH_HINT
+
+        self.assertIn("asgard siege done --quest", READONLY_BASH_HINT)
+
+
 class TestReadingTheControlSurfaceIsNotWriting(Sandboxed):
     """통제 표면은 **위조**를 막는 자리지 열람을 막는 자리가 아니다.
 
@@ -358,6 +434,65 @@ class TestReadingTheControlSurfaceIsNotWriting(Sandboxed):
         self.assertEqual(self.edit(os.path.join(self.repo, ".asgard", ".gitignore"))[0], 2)
 
 
+class TestNamingIsNotOpening(Sandboxed):
+    """경로를 **입에 올리는 것**은 여는 것이 아니다.
+
+    26-08-13 평가에서 이 저장소를 조사하는 읽기 명령이 네 번 하드 블록됐다. 넷 다 아무것도
+    고치지 않았고, 걸린 이유는 하나다 — 통제 표면 판정의 글자 그물이 명령문 어디든 경로 이름이
+    보이면 쓰기로 읽었다. 외부 도구에 넘긴 프롬프트 안의 경로, 파이프 끝에 붙은 `sort` 때문에
+    읽기 전용 인정을 못 받은 명령, 퀘스트 기장을 세는 스크립트가 그렇게 막혔다.
+
+    아래 두 축을 함께 고정한다. 이름만 오르내리는 명령은 지나가고, 같은 파일을 실제로 고치는
+    명령은 그대로 막힌다."""
+
+    MENTION_ONLY = [
+        "codex exec 'audit the hooks listed in .claude/settings.json'",
+        "codex exec 'the ledger lives in .asgard/quest — explain the format'",
+        'grep -n "hook" .claude/settings.json | sort -u',
+        'grep -rn "quest" .asgard/quest | sort | uniq -c',
+        # 버리는 리다이렉션은 파일을 만들지 않는다. 조각을 재조립해 판정하던 판에서는 꺾쇠가
+        # 인용돼 `/dev/null` 이 뿌리 밖 경로로 남았고, 같은 읽기가 `2>/dev/null` 한 마디
+        # 때문에 통제 표면 쓰기로 뒤집혔다 (26-08-13 2차 판정).
+        'grep -n "hook" .claude/settings.json 2>/dev/null | sort -u',
+        "grep x .asgard/quest/q.jsonl 2>/dev/null | cut -c1-9",
+        "grep x .asgard/quest/q.jsonl 2>&1 | cut -c1-9",
+        "echo 'write it to .asgard/state/x later'",
+        "python3 -c \"print('.asgard/state is the harness state directory')\"",
+    ]
+
+    # 여는 쪽은 **이름 목록으로 물으면 반드시 샌다**. 26-08-13 판정이 그 반례를 들었다:
+    # `sed -i` 는 막히는데 `gsed -i` 는 통과했고, `perl -pi` 와 `sqlite3` 도 같이 새고 있었다.
+    # 아래 목록은 그 셋을 고정한다 — 새 편집기 이름이 목록에 없어도 막혀야 통과다.
+    OPENING = [
+        ("echo x > .claude/settings.json", "리다이렉션"),
+        ("rm .asgard/state/gate-events.jsonl", "삭제"),
+        ("cp /tmp/x .claude/settings.local.json", "덮어쓰기"),
+        ("echo forged >> .asgard/quest/q.jsonl", "덧붙이기"),
+        ("./w -m .asgard/quest/f.jsonl", "미지 프로그램이 기장 경로를 인자로 받는 자리"),
+        ("sed -i 's/hooks/x/' .claude/settings.json", "제자리 편집"),
+        ("gsed -i 's/hooks/x/' .claude/settings.json", "이름만 다른 제자리 편집"),
+        ("perl -pi -e 's/hooks/x/' .asgard/asgard-setting-project.json", "다른 인터프리터의 제자리 편집"),
+        ("sqlite3 .asgard/orchestration.db 'delete from dispatches'", "DB 클라이언트가 상태 파일을 연다"),
+        ("ex -s -c '%s/a/b/|x' .claude/settings.json", "목록에 없는 편집기"),
+        ("gsed -ni 's/hooks/x/' .claude/settings.json", "뭉친 낱글자 안의 제자리 편집 플래그"),
+        ("sed --in-place=bak 's/hooks/x/' .claude/settings.json", "= 로 값을 받는 제자리 편집"),
+        (
+            "python3 -c \"import fileinput; [print(l) for l in fileinput.input('.claude/settings.json', inplace=True)]\"",
+            "여는 모드가 안 드러나는 표준 라이브러리 제자리 편집",
+        ),
+    ]
+
+    def test_mentioning_a_control_path_is_not_a_write(self) -> None:
+        for command in self.MENTION_ONLY:
+            with self.subTest(command=command):
+                self.assertEqual(self.bash(command)[0], 0, f"읽기 명령을 막았다: {command}")
+
+    def test_actually_opening_it_is_still_blocked(self) -> None:
+        for command, why in self.OPENING:
+            with self.subTest(command=command):
+                self.assertEqual(self.bash(command)[0], 2, f"{why} 를 통과시켰다: {command}")
+
+
 class TestShellControlFlowClassifies(Sandboxed):
     """읽기 전용 명령만 담은 반복문이 미분류로 막히지 않는다.
 
@@ -377,26 +512,37 @@ class TestShellControlFlowClassifies(Sandboxed):
 
 
 class TestHostScratchpadIsAWorkTarget(Sandboxed):
-    """호스트가 이 세션에 내준 임시 자리 — 시스템 프롬프트가 "여기를 쓰라"고 지정하는 폴더다.
+    """호스트가 이 프로젝트에 내준 임시 자리 — 시스템 프롬프트가 "여기를 쓰라"고 지정하는 폴더다.
 
-    프로젝트 밖이라 경로 이탈로 막혀서, 역할이 계측 스크립트를 저장소 안에 쓰거나 포기했다."""
+    프로젝트 밖이라 경로 이탈로 막혀서, 역할이 계측 스크립트를 저장소 안에 쓰거나 포기했다.
+    여는 열쇠는 프로젝트 슬러그다: 세션 id 로 좁히면 이어받은 세션이 통째로 닫힌다 — 호스트가
+    이어받기마다 새 id 를 내주는데 문맥에 남아 다시 쓰이는 경로는 처음 세션의 것이다."""
 
-    def _scratch(self, session: str) -> str:
-        return os.path.join(tempfile.gettempdir(), "claude-501", "proj", session, "scratchpad")
+    def _scratch(self, project: str, session: str) -> str:
+        slug = project.replace(os.sep, "-").replace("_", "-")
+        return os.path.join(tempfile.gettempdir(), "claude-501", slug, session, "scratchpad")
 
-    def test_this_session_scratchpad_opens(self) -> None:
-        session = "39f84a83-abcd"
-        with mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": session}, clear=False):
-            self.assertEqual(self.edit(os.path.join(self._scratch(session), "probe.py"))[0], 0)
+    def test_this_projects_scratchpad_opens(self) -> None:
+        path = os.path.join(self._scratch(self.repo, "39f84a83-abcd"), "probe.py")
+        self.assertEqual(self.edit(path)[0], 0)
 
-    def test_another_sessions_scratchpad_stays_closed(self) -> None:
-        with mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": "mine"}, clear=False):
-            self.assertEqual(self.edit(os.path.join(self._scratch("someone-else"), "probe.py"))[0], 2)
+    def test_a_resumed_session_keeps_the_first_sessions_scratchpad(self) -> None:
+        """이어받기가 남긴 경로는 처음 세션의 id 를 달고 있다 — 그 경로로도 계속 써야 한다."""
+        first = os.path.join(self._scratch(self.repo, "35a5a493-first"), "findings", "notes.md")
+        with mock.patch.dict(os.environ, {"CLAUDE_CODE_SESSION_ID": "9995e4dd-resumed"}, clear=False):
+            self.assertEqual(self.edit(first)[0], 0)
 
-    def test_without_a_session_identity_nothing_opens(self) -> None:
-        env = {name: "" for name in workspace_lib._HOST_SESSION_ENV}
-        with mock.patch.dict(os.environ, env, clear=False):
-            self.assertEqual(self.edit(os.path.join(self._scratch("mine"), "probe.py"))[0], 2)
+    def test_another_projects_scratchpad_stays_closed(self) -> None:
+        path = os.path.join(self._scratch(self.stranger, "39f84a83-abcd"), "probe.py")
+        self.assertEqual(self.edit(path)[0], 2)
+
+    def test_the_temp_root_itself_stays_closed(self) -> None:
+        slug = self.repo.replace(os.sep, "-").replace("_", "-")
+        path = os.path.join(tempfile.gettempdir(), "claude-501", slug, "session", "probe.py")
+        self.assertEqual(self.edit(path)[0], 2)
+
+    def test_without_a_root_nothing_opens(self) -> None:
+        self.assertFalse(workspace_lib._within_host_scratchpad(self._scratch(self.repo, "s"), ()))
 
 
 class TestJudgedTextMustBeExecutedText(Sandboxed):

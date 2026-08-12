@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import sys
 
 # Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 넣지 못한다 — 인코딩 오류가
@@ -36,7 +37,19 @@ from asgard_hooklib.readonly import (  # noqa: E402
     is_readonly_bash_safe,
 )
 from asgard_hooklib.session import unattended  # noqa: E402
-from asgard_hooklib.shell import command_targets_control, first_escaping_operand, scannable_text  # noqa: E402
+from asgard_hooklib.shell import (  # noqa: E402
+    _DISCARD_REDIRECTION,
+    command_targets_control,
+    drop_inert_operands,
+    first_escaping_operand,
+    lex,
+    mutation_signal,
+    scannable_text,
+    without_heredoc_bodies,
+)
+from asgard_hooklib.shell import (  # noqa: E402
+    segments as _segments,
+)
 from asgard_hooklib.workspace import (  # noqa: E402
     _BOUNDARY_FILES,
     _CONTROL_PATHS,
@@ -164,6 +177,50 @@ def _allow(protocol: str) -> None:
 _WRITE_TOOLS = {"Write", "Edit", "NotebookEdit"}
 
 
+def _writer_reaches(command: str, roots: tuple[str, ...], markers: tuple[str, ...]) -> bool:
+    """이 표식의 경로를 인자로 받는 조각 중 읽기로 인정되지 않는 것이 있는가.
+
+    판정 단위가 명령 전체가 아니라 **조각**인 것이 요점이다. 여는 것은 그 경로를 받는 한
+    조각이고, 뒤에 붙은 필터는 아무것도 안 연다 — 파이프 끝의 `sort` 한 마디 때문에 기장을
+    세는 `grep` 이 위조 시도로 읽히던 자리다 (26-08-13).
+
+    "무엇이 쓰기인가"를 이름 목록으로 물으면 목록 밖의 제자리 편집기가 그대로 지나간다:
+    `sed -i` 는 막히고 `gsed -i` 는 통과하는 갈림이 실제로 났다 (26-08-13 판정). 그래서 묻는
+    방향을 뒤집는다 — 읽기로 **증명된** 조각만 놓아주고 나머지는 여는 것으로 본다. 그 증명은
+    이 저장소의 허용목록 판정기(`is_readonly_bash_safe`) 하나가 쥔다.
+
+    조각을 자르는 어휘는 `command_targets_control` 과 같아야 한다 — 히어독을 못 벗기는 분해기로
+    자르면 본문에 스친 한 마디 때문에 명령 전체가 미분류로 떨어진다.
+
+    폐기 리다이렉션은 자르기 **전에** 뗀다. `lex` 는 `2>/dev/null` 을 세 토큰으로 내고, 그것을
+    `shlex.join` 으로 다시 붙이면 꺾쇠가 인용돼 안쪽 판정기가 리다이렉션으로 못 읽는다 —
+    `/dev/null` 이 뿌리 밖 경로 인자로 남아, 원문이면 읽기로 인정될 조각이 재조립 뒤 미분류가
+    된다 (26-08-13 2차 판정이 잡은 반례). 버리는 리다이렉션은 파일을 만들지 않으므로 떼도
+    판정이 달라지지 않고, 실제로 파일을 만드는 `> path` 는 그대로 남아 미분류로 떨어진다."""
+    try:
+        tokens = drop_inert_operands(lex(without_heredoc_bodies(_DISCARD_REDIRECTION.sub("", command))))
+    except ValueError:
+        return True  # 못 읽는 글은 좁히지 않는다
+    for part in _segments(tokens):
+        if not any(path_token_targets_control(roots, token, markers) for token in part[1:]):
+            continue
+        if not is_readonly_bash_safe(shlex.join(part), roots=roots):
+            return True
+    return False
+
+
+def _reaches_foreign_harness_state(command: str, roots: tuple[str, ...]) -> bool:
+    """남의 저장소의 하네스 상태를 만지는가 — 뿌리 밖 이탈로 진단할 자리.
+
+    종전에는 이 진단이 통제 표면 갈래를 타고 나왔는데, 그 갈래가 쓰기 신호를 요구하게 되면서
+    읽기 형태가 아무 진단 없이 통과하게 됐다 (26-08-13). 통제 표면 이름이 보이는 명령으로만
+    좁힌다 — 뿌리 밖 경로 전부를 여기서 막으면 호스트 세션 디렉터리를 읽는 것까지 끊긴다."""
+    scannable = _without_workspace(scannable_text(command).replace("\\", "/"))
+    if not any(marker in scannable for marker in _CONTROL_PATHS + _PRIVATE_CONTROL_PATHS):
+        return False
+    return bool(first_escaping_operand(roots, command))
+
+
 def _forgery_surface_access(
     tool_name: str, command: str, normalized_path: str, path: str, roots: tuple[str, ...], readonly_shell: bool
 ) -> bool:
@@ -180,10 +237,19 @@ def _forgery_surface_access(
         return True
     if tool_name != "Bash" or readonly_shell:
         return False
+    # 기장 경로를 인자로 받는 **세그먼트가 읽기인가**를 본다. 명령 전체가 읽기 전용으로
+    # 인정되는지만 보면, 파이프 끝에 `sort` 한 마디가 붙었다는 이유로 기장을 세는 `grep` 이
+    # 위조 시도로 읽힌다 (26-08-13 평가에서 재현). 반대로 미지의 프로그램이 그 경로를 인자로
+    # 받는 형태(`./w -m .asgard/quest/f.jsonl`)는 여기서 그대로 걸린다.
+    if _writer_reaches(command, roots, _PRIVATE_CONTROL_PATHS):
+        return True
+    # 글자로만 보이는 자리는 **고칠 수 있는 연산이 있을 때만** 막는다. 여기는 위조를 막는
+    # 자리이지 열람을 막는 자리가 아닌데, 그 구분이 없던 판에서는 기장을 세기만 하는 스크립트가
+    # 차단됐다 (26-08-13 평가에서 재현).
+    if not mutation_signal(command):
+        return False
     scannable = _without_workspace(scannable_text(command).replace("\\", "/"))
-    return any(marker in scannable for marker in _PRIVATE_CONTROL_PATHS) or command_targets_control(
-        roots, command, _PRIVATE_CONTROL_PATHS
-    )
+    return any(marker in scannable for marker in _PRIVATE_CONTROL_PATHS)
 
 
 def refusal_reason(tool_name: str, command: str, path: str, roots: tuple[str, ...], agent: str) -> str:
@@ -205,7 +271,7 @@ def refusal_reason(tool_name: str, command: str, path: str, roots: tuple[str, ..
     # 계측 산출물을 한 줄도 못 남긴다.
     harness_owned = bool(path) and (
         _within_host_state(os.path.realpath(os.path.expanduser(path)), roots)
-        or _within_unit_workspace(os.path.expanduser(path))
+        or _within_unit_workspace(os.path.expanduser(path), roots)
         or within_managed_map(roots, _resolve_token(roots, path) if roots else "")
     )
     # 넓은 표식이 `.asgard` 하나로 좁아졌으므로 `.claude/settings*.json` 은 여기서 따로 본다 —
@@ -219,18 +285,23 @@ def refusal_reason(tool_name: str, command: str, path: str, roots: tuple[str, ..
             or path_token_targets_control(roots, path, _CONTROL_PATHS)
         )
     )
-    readonly_shell = tool_name == "Bash" and is_readonly_bash_safe(command, roots=roots)
+    readonly_shell = tool_name == "Bash" and is_readonly_bash_safe(command, roots=roots, agent=agent)
     # 색인에만 닿는 git 호출은 이 갈래에서 뺀다 — 담는 것은 쓰기가 아니라 그 반대이고, 팀이
     # 함께 읽는 `.asgard` 자산은 커밋돼야 판정의 물리 대조가 덮는다. 뿌리를 정하는 파일도 같이
     # 뺀다: 색인에 담는 것은 그 파일을 고치는 것이 아니다. 기장·영수증·상태는 그대로 막힌다
     # (`_forgery_surface_access` 는 이 완화를 안 본다).
     index_only_git = tool_name == "Bash" and not readonly_shell and is_index_only_git(command, roots)
-    # 넓은 통제 표식은 **뿌리 기준으로 푼 경로 인자**로만 판정한다. 명령문 전체를 부분문자열로
-    # 훑던 종전 갈래는 경로가 아닌 언급까지 잡았다: 저장소 밖 호스트 세션 디렉터리나 히어독
-    # 본문에 스친 한 마디가 읽기 전용 조사를 통째로 막았다. 인용 안쪽에 숨긴 쓰기가 이 갈래를
-    # 빠져나가는 것은 받아들인 값이다 — 그쪽은 write-sentinel 이 적고 verifier-gate 가 물리
-    # 대조로 잡는다. `_BOUNDARY_FILES` 만 글에서도 찾는다: 그 셋은 이 가드의 뿌리를 정하는
-    # 파일이라, 열리면 뒤이은 판정이 무엇을 기준으로 했는지부터 무의미해진다.
+    # 통제 표면에 닿는 길이 둘이라 판정도 둘이다.
+    #
+    # ① **경로 인자로 풀린 자리** — 그 경로를 받는 조각이 읽기로 증명되는가로 가른다. 명령
+    #    전체를 한 덩어리로 물으면 파이프 끝의 `sort` 한 마디가 기장을 세는 `grep` 을 쓰기로
+    #    만들고, 반대로 "무엇이 쓰기인가"를 이름 목록으로 물으면 목록 밖 편집기가 그대로
+    #    지나간다 — `sed -i` 는 막히고 `gsed -i` 는 통과했다 (26-08-13 판정이 잡은 반례).
+    # ② **글자로만 보이는 자리** — 히어독 본문이나 인용 안 문자열. 경계 파일 셋만 여기서도
+    #    찾는다: 그 파일들이 이 가드의 뿌리를 정하므로, 열리면 뒤이은 판정이 무엇을 기준으로
+    #    했는지부터 무의미해진다. 이쪽은 고칠 수 있는 연산이 함께 보일 때만 막는다 — 이름을
+    #    입에 올리는 것은 여는 것이 아닌데, 그 구분이 없던 판에서는 외부 도구에 넘긴 프롬프트가
+    #    통제 표면 쓰기로 읽혔다 (같은 날 네 번 재현).
     boundary_text = tool_name == "Bash" and any(
         name in _without_workspace(scannable_text(command).replace("\\", "/")) for name in _BOUNDARY_FILES
     )
@@ -238,7 +309,10 @@ def refusal_reason(tool_name: str, command: str, path: str, roots: tuple[str, ..
         tool_name == "Bash"
         and not readonly_shell
         and not index_only_git
-        and (command_targets_control(roots, command, _CONTROL_PATHS) or boundary_text)
+        and (
+            _writer_reaches(command, roots, _CONTROL_PATHS + _BOUNDARY_FILES)
+            or (boundary_text and mutation_signal(command))
+        )
     )
     if (
         _forgery_surface_access(tool_name, command, normalized_path, path, roots, readonly_shell)
@@ -257,6 +331,8 @@ def refusal_reason(tool_name: str, command: str, path: str, roots: tuple[str, ..
         ):
             return "escape"
         return "control"
+    if tool_name == "Bash" and not readonly_shell and _reaches_foreign_harness_state(command, roots):
+        return "escape"
     if bool(path) and not path_token_within_root(roots, path):
         return "escape"
     if agent in _READONLY_AGENTS and (tool_name in _WRITE_TOOLS or (tool_name == "Bash" and not readonly_shell)):

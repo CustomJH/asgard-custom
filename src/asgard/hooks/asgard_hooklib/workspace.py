@@ -191,17 +191,14 @@ def _without_workspace(text: str) -> str:
 _UNIT_WORKSPACE_PREFIX = "asgard-unit-"
 
 
-_HOST_SESSION_ENV = ("CLAUDE_CODE_SESSION_ID", "CLAUDE_SESSION_ID", "CURSOR_SESSION_ID", "CODEX_SESSION_ID")
-
-
-def _within_unit_workspace(candidate: str) -> bool:
+def _within_unit_workspace(candidate: str, roots: tuple[str, ...] = ()) -> bool:
     """하네스가 만든 격리 배정 작업공간 판정 — 프로젝트 밖이지만 하네스 소유 경로다.
 
     26-07-26 실측: wave 단위가 격리 워크스페이스($TMPDIR/asgard-unit-*)에서 뛸 때, 그 안의
     자기 파일을 절대경로로 가리키는 `node --test <ws>/tests/...`·`git -C <ws> status`가 경로
     이탈로 차단됐다 — 격리 레인과 경로 레인이 서로를 막아 관측 자체가 불가능해진다."""
     resolved = os.path.realpath(candidate)
-    if _within_host_scratchpad(resolved):
+    if _within_host_scratchpad(resolved, roots):
         return True
     temp_root = os.path.realpath(tempfile.gettempdir())
     try:
@@ -232,23 +229,26 @@ def _within_host_state(resolved: str, roots: tuple[str, ...]) -> bool:
     return bool(parts) and parts[0] in slugs
 
 
-def _within_host_scratchpad(resolved: str) -> bool:
-    """호스트가 이 세션에 내준 임시 자리인가 — 시스템 프롬프트가 "여기를 쓰라"고 지정하는 그 폴더다.
+def _within_host_scratchpad(resolved: str, roots: tuple[str, ...]) -> bool:
+    """호스트가 이 프로젝트에 내준 임시 자리인가 — 시스템 프롬프트가 "여기를 쓰라"고 지정하는 그 폴더다.
 
     프로젝트 밖이라 경로 이탈로 막혔는데, 막힌 쪽은 임시 계측 스크립트와 분석 산출물이라
-    역할이 그것을 저장소 안에 쓰거나 아예 포기했다 (26-08-04 실측). 세션 신원으로 좁힌다 —
-    임시 뿌리 아래에서 **이 세션의 id 를 경로에 담은** `scratchpad` 만 연다. 남의 세션 자리나
-    임시 뿌리 전체가 열리지는 않는다."""
+    역할이 그것을 저장소 안에 쓰거나 아예 포기했다 (26-08-04 실측).
+
+    좁히는 열쇠는 프로젝트 슬러그다 — `_within_host_state` 와 같은 열쇠이고, 호스트가 임시 뿌리
+    아래에 만드는 칸 이름이 그 슬러그다 (`<임시뿌리>/claude-501/-Users-…-asgard-custom/<세션>/scratchpad`).
+    세션 id 로 좁히던 판은 이어받은 세션에서 통째로 닫혔다: 호스트는 이어받기마다 새 id 를
+    내주는데 문맥에 남아 다시 쓰이는 경로는 처음 세션의 것이라 두 값이 어긋난다 (26-08-12 실측,
+    스크래치패드 하나를 세션 넷이 물려받아 셋이 차단당했다). 같은 프로젝트의 다른 세션 자리가
+    열리는 것은 받아들인 값이다 — 임시 뿌리 전체와 다른 프로젝트의 자리는 그대로 막힌다."""
     parts = resolved.split(os.sep)
     if "scratchpad" not in parts:
-        return False
-    session_ids = {value for name in _HOST_SESSION_ENV if (value := (os.environ.get(name) or "").strip())}
-    if not session_ids:
         return False
     temp_roots = {os.path.realpath(tempfile.gettempdir()), os.path.realpath("/tmp")}
     if not any(_within(base, resolved) for base in temp_roots):
         return False
-    return bool(session_ids.intersection(parts))
+    slugs = {root.replace(os.sep, "-").replace("_", "-") for root in roots}
+    return bool(slugs.intersection(parts[: parts.index("scratchpad")]))
 
 
 def _resolve_token(roots: tuple[str, ...], token: str) -> str:
@@ -276,7 +276,7 @@ def path_token_within_root(roots: tuple[str, ...], token: str) -> bool:
     if not roots:
         return True
     candidate = _resolve_token(roots, token)
-    if _within_unit_workspace(candidate) or _within_host_state(candidate, roots):
+    if _within_unit_workspace(candidate, roots) or _within_host_state(candidate, roots):
         return True
     return any(_within(root, candidate) for root in roots)
 

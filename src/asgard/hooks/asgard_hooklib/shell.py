@@ -102,9 +102,12 @@ def first_escaping_operand(roots: tuple[str, ...], command: str) -> str:
     막혔고, 처방대로 고칠 자리가 없었다).
 
     명령 이름 자리는 건너뛴다 — 인터프리터가 뿌리 밖에 사는 것은 정상이고
-    (`/Users/…/.local/bin/uv run …`), 그것을 이탈로 읽으면 모든 훅 호출이 이탈이 된다."""
+    (`/Users/…/.local/bin/uv run …`), 그것을 이탈로 읽으면 모든 훅 호출이 이탈이 된다.
+    버리는 리다이렉션도 먼저 뗀다: `/dev/null` 은 어느 뿌리에도 안 들지만 그리로 버리는 것은
+    이탈이 아니라 출력을 버리는 것이고, 안 떼면 `2>/dev/null` 한 마디가 읽기를 이탈로 만든다
+    (26-08-13 2차 판정)."""
     try:
-        tokens = drop_inert_operands(lex(without_heredoc_bodies(command)))
+        tokens = drop_inert_operands(lex(without_heredoc_bodies(_DISCARD_REDIRECTION.sub("", command))))
     except ValueError:
         return ""
     head = True
@@ -195,6 +198,74 @@ def drop_inert_operands(tokens: list[str]) -> list[str]:
                 continue
         kept.append(token)
     return kept
+
+
+# 이 명령이 무언가를 **고칠 수 있는가**. 목록은 셸 리다이렉션, 파일을 바꾸는 표준 명령, 그리고
+# 인터프리터 스니펫의 변형 표면 셋으로 나뉜다. `2>&1` 과 `>/dev/null` 은 파일을 만들지 않으므로
+# 리다이렉션 항목에서 뺀다 (앞의 숫자와 뒤의 `&`).
+_MUTATION_SIGNAL = re.compile(
+    r"(?<![0-9<>&])>>?(?!\s*&)(?!\s*/dev/null)"
+    r"|(?<![\w-])(?:tee|truncate|dd|shred|install|chmod|chown|ln)(?![\w-])"
+    r"|(?<![\w-])(?:rm|mv|cp)(?![\w-])"
+    r"|(?<![\w-])sed\s+[^|;&]*-i"
+    r"|write_text|write_bytes|\.write\s*\(|\.writelines\s*\("
+    r"|open\s*\([^)]*['\"][waxr]\+?b?\+?['\"]"
+    # 여는 모드가 `open()` 자리에 안 드러나는 제자리 편집. `readonly._PY_SNIPPET_MUTATION` 도
+    # 같은 이름을 잡는다 — 두 표가 갈리면 한쪽에서 막힌 것이 다른 쪽에서 통과한다.
+    r"|\bfileinput\b"
+    r"|os\.(?:remove|unlink|rename|replace|rmdir|removedirs|makedirs|mkdir|truncate|chmod|chown|symlink|link)"
+    r"|shutil\.(?:rmtree|move|copy\w*|make_archive|unpack_archive)"
+    r"|Path\([^)]*\)\.(?:write|unlink|rmdir|mkdir|rename|replace|touch)"
+    r"|(?<![\w-])(?:touch|mkdir|rmdir)(?![\w-])"
+)
+
+
+# 작업 트리나 색인을 바꾸는 git 하위 명령. 정규식으로 잡으면 전역 플래그(`-C <경로>`)를
+# 건너뛰는 자리가 되짚기를 부르므로 (26-08-05 에 훅 하나가 그 형태로 600초 상한을 태웠다)
+# 토큰으로 읽고 `git_subcommand` 에 묻는다.
+_GIT_MUTATING = {
+    "add", "am", "apply", "branch", "checkout", "cherry-pick", "clean", "commit", "config", "fetch", "gc",
+    "merge", "mv", "notes", "prune", "pull", "push", "rebase", "reset", "restore", "revert", "rm",
+    "sparse-checkout", "stash", "submodule", "switch", "tag", "update-index", "update-ref", "worktree",
+}
+
+
+def segments(tokens: list[str]) -> list[list[str]]:
+    """구분자로 자른 조각들 — 각 조각의 첫 토큰이 그 조각의 프로그램이다.
+
+    `shell_parts` 와 달리 토큰 목록을 받는다. 히어독을 벗긴 뒤(`without_heredoc_bodies`)
+    토큰으로 판정하는 자리들이 같은 어휘를 쓰게 하는 것이 요점이다."""
+    out: list[list[str]] = [[]]
+    for token in tokens:
+        if token in _SEGMENT_SEPARATORS or token == "&":
+            out.append([])
+        else:
+            out[-1].append(token)
+    return [segment for segment in out if segment]
+
+
+def mutation_signal(command: str) -> bool:
+    """이 명령문 어딘가에 **고칠 수 있는 연산**이 있는가 — 언급과 개방을 가르는 자리.
+
+    통제 표면 판정에는 명령문 글자를 훑는 그물이 둘 있다 (경계 파일 이름, 사설 통제 경로).
+    그 그물이 사는 이유는 인자로 안 풀리는 자리에 숨긴 쓰기를 잡는 것인데 — `python -c
+    "$PAYLOAD"` — 글자만 보면 **읽기까지 같이 잡는다**. 26-08-13 평가에서 외부 도구에 넘긴
+    프롬프트, 파이프 끝에 붙은 `sort`, 퀘스트 로그를 세는 스크립트, 셸 `for` 루프가 그렇게
+    막혔고 넷 다 아무것도 안 고치는 명령이었다.
+
+    그래서 그물은 남기되 한 겹을 더한다: 고칠 수 있는 연산이 명령 어딘가에 있을 때만 그물이
+    발동한다. 쓰기를 놓치는 방향으로는 안 열린다 — 파싱이 안 되면 신호가 있다고 답하고
+    (fail-closed), git 은 하위 명령을 토큰으로 확인한다."""
+    if _MUTATION_SIGNAL.search(command):
+        return True
+    try:
+        tokens = drop_inert_operands(lex(without_heredoc_bodies(command)))
+    except ValueError:
+        return True
+    return any(
+        os.path.basename(segment[0]) == "git" and git_subcommand(segment) in _GIT_MUTATING
+        for segment in segments(tokens)
+    )
 
 
 def scannable_text(command: str) -> str:
