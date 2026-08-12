@@ -72,7 +72,8 @@ class TestDestructiveDetection(unittest.TestCase):
             with self.subTest(command=command):
                 reason = destructive_reason(command)
                 self.assertIsNotNone(reason, f"파괴 연산을 놓쳤다: {command}")
-                self.assertIn(needle, reason)
+                # 위 단언이 None 을 이미 걷었다. `or ""` 는 판독기가 그 좁힘을 못 따라와서 붙인다.
+                self.assertIn(needle, reason or "")
 
     def test_allowed(self):
         for command in self.ALLOWED:

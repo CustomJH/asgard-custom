@@ -800,7 +800,9 @@ def run_policy_set(assignments: list[str], *, json_out: bool = False) -> int:
             key, _, raw = text.partition("=")
             key = key.strip()
             if key not in PROJECT_OWNED_POLICY_KEYS:
-                raise ValueError(f"{key or '<빈 키>'} 는 이 명령이 여는 키가 아니에요 — {', '.join(PROJECT_OWNED_POLICY_KEYS)}")
+                raise ValueError(
+                    f"{key or '<빈 키>'} 는 이 명령이 여는 키가 아니에요 — {', '.join(PROJECT_OWNED_POLICY_KEYS)}"
+                )
             if key == "baseline_checks":
                 checks.append(raw.strip())
                 continue

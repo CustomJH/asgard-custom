@@ -136,7 +136,9 @@ def budget(
     raise typer.Exit(run_budget(transcript=transcript, json_out=json_, quiet=quiet))
 
 
-@app.command(help="the four Trinity settings this repository owns — which command is its baseline, and how long it may take")
+@app.command(
+    help="the four Trinity settings this repository owns — which command is its baseline, and how long it may take"
+)
 def trinity(
     set_: list[str] = typer.Option(
         None,

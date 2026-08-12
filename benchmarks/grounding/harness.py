@@ -215,7 +215,9 @@ def install(fn) -> None:
         module = importlib.import_module(module_name)
         if not hasattr(module, "_stem_floor"):
             raise RuntimeError(f"{module_name}._stem_floor 가 없다 ({role}) — 하한의 소유 자리가 옮겨졌다")
-        module._stem_floor = fn
+        # 모듈을 이름으로 들고 왔으므로 속성도 이름으로 꽂는다 — 점 표기로 적으면 판독기가
+        # 그 이름을 `ModuleType` 에서 찾다가 못 찾는다.
+        setattr(module, "_stem_floor", fn)
 
 
 # ── 지표 ─────────────────────────────────────────────────────────────────────

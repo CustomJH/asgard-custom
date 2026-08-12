@@ -795,7 +795,7 @@ class TestSubagentGate(TrinityBase):
 
         seen: list[list[str]] = []
         original = subagent_gate.ledger_call
-        subagent_gate.ledger_call = lambda root, argv: seen.append(argv) or True
+        subagent_gate.ledger_call = lambda root, argv: seen.append(argv) or True  # ty: ignore[invalid-assignment]
         try:
             subagent_gate.siege_close(self.root, "q1", "asgard-worker")
             subagent_gate.siege_close(self.root, "q1", "asgard-worker", outcome="failed")

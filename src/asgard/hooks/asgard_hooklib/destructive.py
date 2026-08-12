@@ -149,6 +149,13 @@ def _dotted(node) -> str:
     return ".".join(reversed(parts))
 
 
+# `ast.parse` 가 스니펫을 못 읽을 때 나는 예외 둘. 튜플을 이름으로 두는 이유는 배포 계약이다 —
+# 포매터는 이 저장소를 py314 로 보고 `except (A, B):` 를 괄호 없는 형태로 고쳐 쓰는데, 훅은
+# 호스트가 들고 있는 아무 파이썬에서나 서야 해서 3.9 파싱을 시험이 지킨다
+# (`test_architecture.test_hooks_parse_on_old_python`). 이름 하나면 포매터가 건드릴 것이 없다.
+_PARSE_FAILED = (SyntaxError, ValueError)
+
+
 def _python_snippet_deletes_tree(snippet: str) -> bool:
     """스니펫이 트리를 **호출**하는가 — 글자로 스친 것과 실행되는 것을 가른다.
 
@@ -157,7 +164,7 @@ def _python_snippet_deletes_tree(snippet: str) -> bool:
     글자로 되돌아간다 — 못 읽는 코드 앞에서는 한 번 묻는 쪽이 낫다."""
     try:
         tree = ast.parse(snippet)
-    except (SyntaxError, ValueError):
+    except _PARSE_FAILED:
         return bool(_TREE_DELETE.search(snippet))
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
