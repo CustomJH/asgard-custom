@@ -28,6 +28,10 @@ def load_module(path: str, name: str):
     import importlib.util
 
     spec = importlib.util.spec_from_file_location(name, path)
+    # 훅은 확장자 없는 이름으로도 불리므로 spec·loader 가 None 으로 돌아올 수 있다. 그때
+    # 그대로 진행하면 AttributeError 가 나고 어느 파일이 안 열렸는지가 사라진다.
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load {name} from {path}")
     module = importlib.util.module_from_spec(spec)
     sys.modules[name] = module
     spec.loader.exec_module(module)

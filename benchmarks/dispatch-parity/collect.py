@@ -61,9 +61,7 @@ def main() -> int:
     args = ap.parse_args()
 
     if not DB_PATH.exists():
-        json.dump(
-            {"error": "db_not_found", "path": str(DB_PATH)}, sys.stderr, ensure_ascii=False
-        )
+        json.dump({"error": "db_not_found", "path": str(DB_PATH)}, sys.stderr, ensure_ascii=False)
         sys.stderr.write("\n")
         return 2
 

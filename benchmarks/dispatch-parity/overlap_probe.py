@@ -59,10 +59,7 @@ def main() -> int:
 
     for row in records:
         start, end = span(row)
-        print(
-            f"  {row['agent']:<18} {row['state']:<9} {end - start:7.1f}s  "
-            f"caller={row['parent_agent'] or '<none>'}"
-        )
+        print(f"  {row['agent']:<18} {row['state']:<9} {end - start:7.1f}s  caller={row['parent_agent'] or '<none>'}")
 
     failures: list[str] = []
     picked: dict[str, dict] = {}
@@ -82,7 +79,10 @@ def main() -> int:
         spans = [span(picked[name]) for name in SPECIALISTS]
         overlap = min(e for _, e in spans) - max(s for s, _ in spans)
         unsettled = [name for name in SPECIALISTS if not picked[name]["settled_at"]]
-        print(f"  overlap: {overlap:.1f}s" + (f" (provisional — {', '.join(unsettled)} still running)" if unsettled else ""))
+        print(
+            f"  overlap: {overlap:.1f}s"
+            + (f" (provisional — {', '.join(unsettled)} still running)" if unsettled else "")
+        )
         if unsettled:
             failures.append(
                 "still running: " + ", ".join(unsettled) + " — a dispatch that has not settled has no end, "
