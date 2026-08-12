@@ -10,7 +10,7 @@
    ],
    "terminal": "DIRECT_DONE",
    "verify_level": "micro",
-   "harness_ms": 186.2
+   "harness_ms": 464.6
   },
   {
    "profile": "tiny-tested",
@@ -24,7 +24,7 @@
    ],
    "terminal": "DONE",
    "verify_level": "micro",
-   "harness_ms": 2001.5
+   "harness_ms": 3850.9
   },
   {
    "profile": "small",
@@ -38,7 +38,7 @@
    ],
    "terminal": "DONE",
    "verify_level": "micro",
-   "harness_ms": 2058.6
+   "harness_ms": 3288.6
   },
   {
    "profile": "medium",
@@ -52,7 +52,7 @@
    ],
    "terminal": "DONE",
    "verify_level": "micro",
-   "harness_ms": 2021.0
+   "harness_ms": 4896.7
   },
   {
    "profile": "large",
@@ -66,7 +66,7 @@
    ],
    "terminal": "DONE",
    "verify_level": "micro",
-   "harness_ms": 2213.2
+   "harness_ms": 3781.7
   },
   {
    "profile": "sensitive",
@@ -80,7 +80,7 @@
    ],
    "terminal": "DONE",
    "verify_level": "micro",
-   "harness_ms": 2008.0
+   "harness_ms": 4047.1
   },
   {
    "profile": "ambiguous",
@@ -94,7 +94,7 @@
    ],
    "terminal": "DONE",
    "verify_level": "micro",
-   "harness_ms": 2031.8
+   "harness_ms": 5053.5
   },
   {
    "profile": "parallel",
@@ -109,7 +109,7 @@
    ],
    "terminal": "DONE",
    "verify_level": "micro",
-   "harness_ms": 2101.6
+   "harness_ms": 6212.2
   },
   {
    "profile": "research",
@@ -125,7 +125,7 @@
    ],
    "terminal": "DONE",
    "verify_level": "micro",
-   "harness_ms": 2775.1
+   "harness_ms": 7547.1
   },
   {
    "profile": "fail-1",
@@ -141,7 +141,7 @@
    ],
    "terminal": "DONE",
    "verify_level": "micro",
-   "harness_ms": 2921.3
+   "harness_ms": 8191.7
   },
   {
    "profile": "fail-3",
@@ -162,7 +162,7 @@
    ],
    "terminal": "DONE",
    "verify_level": "micro",
-   "harness_ms": 4994.5
+   "harness_ms": 13584.3
   },
   {
    "profile": "destructive",
@@ -174,20 +174,372 @@
    ],
    "terminal": "ESCALATE_ODIN",
    "verify_level": "micro",
-   "harness_ms": 161.8
+   "harness_ms": 516.2
+  },
+  {
+   "profile": "readonly",
+   "tier": 0,
+   "steps": 0,
+   "llm_calls": 0,
+   "sequence": [
+    "DIRECT_DONE"
+   ],
+   "terminal": "DIRECT_DONE",
+   "verify_level": "micro",
+   "harness_ms": 459.3
+  },
+  {
+   "profile": "tiny-tested",
+   "tier": 1,
+   "steps": 2,
+   "llm_calls": 1,
+   "sequence": [
+    "WORKER",
+    "BASELINE_VERIFY",
+    "DONE"
+   ],
+   "terminal": "DONE",
+   "verify_level": "micro",
+   "harness_ms": 5211.5
+  },
+  {
+   "profile": "small",
+   "tier": 2,
+   "steps": 2,
+   "llm_calls": 2,
+   "sequence": [
+    "WORKER",
+    "VERIFIER",
+    "DONE"
+   ],
+   "terminal": "DONE",
+   "verify_level": "micro",
+   "harness_ms": 5454.7
+  },
+  {
+   "profile": "medium",
+   "tier": 3,
+   "steps": 2,
+   "llm_calls": 2,
+   "sequence": [
+    "WORKER",
+    "VERIFIER",
+    "DONE"
+   ],
+   "terminal": "DONE",
+   "verify_level": "micro",
+   "harness_ms": 5813.1
+  },
+  {
+   "profile": "large",
+   "tier": 4,
+   "steps": 2,
+   "llm_calls": 2,
+   "sequence": [
+    "WORKER",
+    "VERIFIER",
+    "DONE"
+   ],
+   "terminal": "DONE",
+   "verify_level": "micro",
+   "harness_ms": 5717.1
+  },
+  {
+   "profile": "sensitive",
+   "tier": 4,
+   "steps": 2,
+   "llm_calls": 2,
+   "sequence": [
+    "WORKER",
+    "VERIFIER",
+    "DONE"
+   ],
+   "terminal": "DONE",
+   "verify_level": "micro",
+   "harness_ms": 5717.6
+  },
+  {
+   "profile": "ambiguous",
+   "tier": 3,
+   "steps": 2,
+   "llm_calls": 2,
+   "sequence": [
+    "WORKER",
+    "VERIFIER",
+    "DONE"
+   ],
+   "terminal": "DONE",
+   "verify_level": "micro",
+   "harness_ms": 5653.3
+  },
+  {
+   "profile": "parallel",
+   "tier": 4,
+   "steps": 3,
+   "llm_calls": 3,
+   "sequence": [
+    "THINKER",
+    "WORKER",
+    "VERIFIER",
+    "DONE"
+   ],
+   "terminal": "DONE",
+   "verify_level": "micro",
+   "harness_ms": 6901.5
+  },
+  {
+   "profile": "research",
+   "tier": 4,
+   "steps": 4,
+   "llm_calls": 4,
+   "sequence": [
+    "WORKER",
+    "THINKER",
+    "WORKER",
+    "VERIFIER",
+    "DONE"
+   ],
+   "terminal": "DONE",
+   "verify_level": "micro",
+   "harness_ms": 7884.8
+  },
+  {
+   "profile": "fail-1",
+   "tier": 3,
+   "steps": 4,
+   "llm_calls": 4,
+   "sequence": [
+    "WORKER",
+    "VERIFIER",
+    "WORKER_RETRY",
+    "VERIFIER",
+    "DONE"
+   ],
+   "terminal": "DONE",
+   "verify_level": "micro",
+   "harness_ms": 8174.7
+  },
+  {
+   "profile": "fail-3",
+   "tier": 5,
+   "steps": 9,
+   "llm_calls": 9,
+   "sequence": [
+    "WORKER",
+    "VERIFIER",
+    "WORKER_RETRY",
+    "VERIFIER",
+    "WORKER_RETRY",
+    "VERIFIER",
+    "THINKER_REPLAN",
+    "WORKER_RETRY",
+    "VERIFIER",
+    "DONE"
+   ],
+   "terminal": "DONE",
+   "verify_level": "micro",
+   "harness_ms": 13846.4
+  },
+  {
+   "profile": "destructive",
+   "tier": 5,
+   "steps": 0,
+   "llm_calls": 0,
+   "sequence": [
+    "ESCALATE_ODIN"
+   ],
+   "terminal": "ESCALATE_ODIN",
+   "verify_level": "micro",
+   "harness_ms": 487.1
+  },
+  {
+   "profile": "readonly",
+   "tier": 0,
+   "steps": 0,
+   "llm_calls": 0,
+   "sequence": [
+    "DIRECT_DONE"
+   ],
+   "terminal": "DIRECT_DONE",
+   "verify_level": "micro",
+   "harness_ms": 559.6
+  },
+  {
+   "profile": "tiny-tested",
+   "tier": 1,
+   "steps": 2,
+   "llm_calls": 1,
+   "sequence": [
+    "WORKER",
+    "BASELINE_VERIFY",
+    "DONE"
+   ],
+   "terminal": "DONE",
+   "verify_level": "micro",
+   "harness_ms": 5108.3
+  },
+  {
+   "profile": "small",
+   "tier": 2,
+   "steps": 2,
+   "llm_calls": 2,
+   "sequence": [
+    "WORKER",
+    "VERIFIER",
+    "DONE"
+   ],
+   "terminal": "DONE",
+   "verify_level": "micro",
+   "harness_ms": 5369.8
+  },
+  {
+   "profile": "medium",
+   "tier": 3,
+   "steps": 2,
+   "llm_calls": 2,
+   "sequence": [
+    "WORKER",
+    "VERIFIER",
+    "DONE"
+   ],
+   "terminal": "DONE",
+   "verify_level": "micro",
+   "harness_ms": 5247.5
+  },
+  {
+   "profile": "large",
+   "tier": 4,
+   "steps": 2,
+   "llm_calls": 2,
+   "sequence": [
+    "WORKER",
+    "VERIFIER",
+    "DONE"
+   ],
+   "terminal": "DONE",
+   "verify_level": "micro",
+   "harness_ms": 5440.0
+  },
+  {
+   "profile": "sensitive",
+   "tier": 4,
+   "steps": 2,
+   "llm_calls": 2,
+   "sequence": [
+    "WORKER",
+    "VERIFIER",
+    "DONE"
+   ],
+   "terminal": "DONE",
+   "verify_level": "micro",
+   "harness_ms": 5525.2
+  },
+  {
+   "profile": "ambiguous",
+   "tier": 3,
+   "steps": 2,
+   "llm_calls": 2,
+   "sequence": [
+    "WORKER",
+    "VERIFIER",
+    "DONE"
+   ],
+   "terminal": "DONE",
+   "verify_level": "micro",
+   "harness_ms": 5195.1
+  },
+  {
+   "profile": "parallel",
+   "tier": 4,
+   "steps": 3,
+   "llm_calls": 3,
+   "sequence": [
+    "THINKER",
+    "WORKER",
+    "VERIFIER",
+    "DONE"
+   ],
+   "terminal": "DONE",
+   "verify_level": "micro",
+   "harness_ms": 5195.7
+  },
+  {
+   "profile": "research",
+   "tier": 4,
+   "steps": 4,
+   "llm_calls": 4,
+   "sequence": [
+    "WORKER",
+    "THINKER",
+    "WORKER",
+    "VERIFIER",
+    "DONE"
+   ],
+   "terminal": "DONE",
+   "verify_level": "micro",
+   "harness_ms": 5595.0
+  },
+  {
+   "profile": "fail-1",
+   "tier": 3,
+   "steps": 4,
+   "llm_calls": 4,
+   "sequence": [
+    "WORKER",
+    "VERIFIER",
+    "WORKER_RETRY",
+    "VERIFIER",
+    "DONE"
+   ],
+   "terminal": "DONE",
+   "verify_level": "micro",
+   "harness_ms": 6061.1
+  },
+  {
+   "profile": "fail-3",
+   "tier": 5,
+   "steps": 9,
+   "llm_calls": 9,
+   "sequence": [
+    "WORKER",
+    "VERIFIER",
+    "WORKER_RETRY",
+    "VERIFIER",
+    "WORKER_RETRY",
+    "VERIFIER",
+    "THINKER_REPLAN",
+    "WORKER_RETRY",
+    "VERIFIER",
+    "DONE"
+   ],
+   "terminal": "DONE",
+   "verify_level": "micro",
+   "harness_ms": 7671.7
+  },
+  {
+   "profile": "destructive",
+   "tier": 5,
+   "steps": 0,
+   "llm_calls": 0,
+   "sequence": [
+    "ESCALATE_ODIN"
+   ],
+   "terminal": "ESCALATE_ODIN",
+   "verify_level": "micro",
+   "harness_ms": 248.8
   }
  ],
  "role_distribution": {
-  "DIRECT_DONE": 1,
-  "WORKER": 11,
-  "BASELINE_VERIFY": 1,
-  "DONE": 10,
-  "VERIFIER": 13,
-  "THINKER": 2,
-  "WORKER_RETRY": 4,
-  "THINKER_REPLAN": 1,
-  "ESCALATE_ODIN": 1
+  "DIRECT_DONE": 3,
+  "WORKER": 33,
+  "BASELINE_VERIFY": 3,
+  "DONE": 30,
+  "VERIFIER": 39,
+  "THINKER": 6,
+  "WORKER_RETRY": 12,
+  "THINKER_REPLAN": 3,
+  "ESCALATE_ODIN": 3
  },
- "reps": 1,
+ "reps": 3,
  "verify_level": "default"
 }
