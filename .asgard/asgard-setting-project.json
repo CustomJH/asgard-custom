@@ -94,8 +94,10 @@
     ],
     "failure_threshold": 3,
     "verify_level": "low",
-    "baseline_checks": [],
-    "baseline_timeout": 120,
+    "baseline_checks": [
+      "uv run python -m pytest -q -x"
+    ],
+    "baseline_timeout": 600,
     "baseline_parallel": true,
     "gate_first_max_lines": 25,
     "quest_retention": 30,

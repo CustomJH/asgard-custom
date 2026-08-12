@@ -136,6 +136,32 @@ def budget(
     raise typer.Exit(run_budget(transcript=transcript, json_out=json_, quiet=quiet))
 
 
+@app.command(help="the four Trinity settings this repository owns — which command is its baseline, and how long it may take")
+def trinity(
+    set_: list[str] = typer.Option(
+        None,
+        "--set",
+        help="baseline_checks=<command> (repeatable) · baseline_timeout=<seconds> · baseline_parallel=true|false · verify_level=low|high|full",
+        metavar="KEY=VALUE",
+    ),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    import json
+    import os
+
+    from ..commands.setup import run_policy_set
+
+    if not set_:
+        from ..commands.setup import PROJECT_OWNED_POLICY_KEYS
+        from ..settings import load_project
+
+        policy = load_project(os.getcwd()).get("trinity_policy")
+        current = {k: (policy or {}).get(k) for k in PROJECT_OWNED_POLICY_KEYS} if isinstance(policy, dict) else {}
+        print(json.dumps(current, ensure_ascii=False, indent=2))
+        raise typer.Exit(0)
+    raise typer.Exit(run_policy_set(list(set_), json_out=json_))
+
+
 @app.command(help="how THIS change is built up close — how big each unit is, how deep, how long it holds things")
 def craft(
     base: str = typer.Option("HEAD", "--base", help="the git ref to compare against (default HEAD)"),

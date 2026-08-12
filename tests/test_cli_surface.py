@@ -29,6 +29,10 @@
 """
 
 import ast
+import contextlib
+import inspect
+import io
+import json
 import os
 import re
 import shutil
@@ -398,6 +402,80 @@ class TestHelpMentionsTheRealShells(unittest.TestCase):
         command = getattr(get_command(cli.app), "commands")["completions"]
         listed = set(re.findall(r"[a-z]+", (command.help or "").split("(")[-1]))
         self.assertTrue(set(comp._SHELLS) <= listed, f"`completions` 도움말이 {comp._SHELLS}를 다 담지 않는다")
+
+
+class TestTrinityPolicyHasADoor(unittest.TestCase):
+    """저장소가 소유한 네 정책 키에 명령이 있는가.
+
+    `hooks.readonly_guard` 는 `.asgard/` 아래 편집을 어느 역할에도 안 연다. 그래서 이 넷은
+    명령이 없으면 아무도 못 고치고, 결정론 레인이 꺼진 채로 남는다 — 26-08-13 까지 그랬다.
+    """
+
+    def _set(self, root: str, *assignments: str) -> int:
+        from asgard.commands import setup
+
+        cwd = os.getcwd()
+        os.chdir(root)
+        try:
+            return setup.run_policy_set(list(assignments), json_out=True)
+        finally:
+            os.chdir(cwd)
+
+    def _policy(self, root: str) -> dict:
+        with open(os.path.join(root, ".asgard", "asgard-setting-project.json"), encoding="utf-8") as handle:
+            return json.load(handle)["trinity_policy"]
+
+    def test_every_project_owned_key_is_reachable(self):
+        """표가 넷을 프로젝트 소유라고 적어 두면 넷 다 이 명령으로 닿아야 한다."""
+        from asgard.commands.setup import PROJECT_OWNED_POLICY_KEYS
+
+        with tempfile.TemporaryDirectory() as root:
+            os.makedirs(os.path.join(root, ".asgard"))
+            written = {
+                "baseline_checks": "uv run pytest -q",
+                "baseline_timeout": "300",
+                "baseline_parallel": "false",
+                "verify_level": "high",
+            }
+            self.assertEqual(set(written), set(PROJECT_OWNED_POLICY_KEYS), "표가 늘었는데 시험이 안 따라왔다")
+            with contextlib.redirect_stdout(io.StringIO()):
+                code = self._set(root, *(f"{k}={v}" for k, v in written.items()))
+            self.assertEqual(code, 0)
+            policy = self._policy(root)
+            self.assertEqual(policy["baseline_checks"], ["uv run pytest -q"])
+            self.assertEqual((policy["baseline_timeout"], policy["baseline_parallel"]), (300, False))
+            self.assertEqual(policy["verify_level"], "high")
+
+    def test_a_key_outside_the_table_is_refused(self):
+        """판정 키를 여는 척하면 sync 가 되돌리는 값을 고친 줄 알고 넘어간다."""
+        with tempfile.TemporaryDirectory() as root:
+            os.makedirs(os.path.join(root, ".asgard"))
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                code = self._set(root, "failure_threshold=9")
+            self.assertEqual(code, 2)
+            self.assertIn("failure_threshold", out.getvalue())
+
+    def test_the_other_sections_survive_a_write(self):
+        """섹션 교체라, 먼저 읽어 병합하지 않으면 paths·agents 가 한 번에 사라진다."""
+        with tempfile.TemporaryDirectory() as root:
+            os.makedirs(os.path.join(root, ".asgard"))
+            path = os.path.join(root, ".asgard", "asgard-setting-project.json")
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump({"trinity_policy": {"verify_level": "low"}, "paths": {"additional_roots": ["../x"]}}, handle)
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(self._set(root, "baseline_timeout=600"), 0)
+            with open(path, encoding="utf-8") as handle:
+                data = json.load(handle)
+            self.assertEqual(data["paths"], {"additional_roots": ["../x"]}, "다른 섹션이 사라졌다")
+            self.assertEqual(data["trinity_policy"]["verify_level"], "low", "안 건드린 키가 사라졌다")
+
+    def test_the_doctor_prescription_names_the_command(self):
+        """가드가 막는 편집을 처방하면 역할이 그 앞에서 멈춘다 — 26-08-05 예산 상한과 같은 자리."""
+        from asgard.commands.doctor import gate
+
+        source = inspect.getsource(gate)
+        self.assertIn("asgard trinity --set baseline_checks", source)
+        self.assertNotIn("`.asgard/asgard-setting-project.json` → trinity_policy.baseline_checks", source)
 
 
 if __name__ == "__main__":

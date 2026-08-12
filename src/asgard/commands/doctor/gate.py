@@ -224,9 +224,9 @@ def _auto_baseline_check(root: str, policy: dict, quest_log_mod) -> dict | None:
         "ok": False,
         "detail": f"자동 감지 명령이 이전 실행에서 상한에 끊겼어요: {', '.join(c[:60] for c in stalled)} "
         f"(현재 상한 {timeout}초) — 결정론 레인이 꺼진 채라 쓰기 퀘스트마다 LLM Verifier 가 붙어요",
-        "fix": "`.asgard/asgard-setting-project.json` → trinity_policy.baseline_checks 에 이 저장소의 "
-        "빠른 행위 검사를 적고(예: `uv run pytest -q -x tests/<범위>`), 필요하면 baseline_timeout 도 "
-        "그 명령이 실제로 쓰는 초로 올려 주세요",
+        "fix": "`asgard trinity --set baseline_checks='uv run pytest -q -x'` 로 이 저장소의 행위 검사를 "
+        "적고, 필요하면 `--set baseline_timeout=<초>` 도 그 명령이 실제로 쓰는 초로 올려 주세요 "
+        "(설정 파일 직접 편집은 통제 표면 가드가 막습니다)",
     }
 
 
