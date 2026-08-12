@@ -540,6 +540,36 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
     return files, label
 
 
+def refresh_role_agents(root: str) -> list[str]:
+    """이미 깔려 있는 역할 에이전트 파일의 스킬 명단을 지금 디스크 상태로 다시 그린다.
+
+    명단은 파일에 구워지므로 스킬이 설치되는 순간 낡는다 — 26-08-12 실측: 배포된 워커 명단이
+    17개인 옆에서 라이브 목록은 18개였고, 빠진 하나가 그날 자동 설치된 스킬이었다. 그 창을
+    닫는 자리다. 조립은 setup 과 doctor 가 쓰는 것과 같은 두 줄이라 셋이 갈릴 수 없다.
+
+    `.claude/` 는 통째로 `.gitignore` 안이라(`.gitignore:237`) 이 다시 그리기는 어느 퀘스트의
+    물리 diff 에도 안 들어간다. 판정자가 읽는 증거는 그대로 남는다.
+
+    없는 파일은 안 만든다 — 스캐폴드를 까는 것은 `init`·`sync` 의 일이고, 여기서 만들면 클라이언트를
+    안 쓰기로 한 저장소에 파일이 생긴다. 반환 = 실제로 내용이 바뀐 파일 이름."""
+    changed: list[str] = []
+    for fname, content in ROLE_AGENTS:
+        path = os.path.join(root, ".claude", "agents", fname)
+        if not os.path.isfile(path):
+            continue
+        agent = fname.removeprefix("asgard-").removesuffix(".md")
+        try:
+            expected = claude_agent(content, root) + skill_catalog(root, agent, loader="cli")
+            with open(path, encoding="utf-8") as handle:
+                if handle.read() == expected:
+                    continue
+            io_files.write_text(path, expected)
+            changed.append(fname)
+        except OSError:
+            continue  # 한 파일을 못 써도 나머지는 갱신한다 — 명단 갱신은 편의지 설치 조건이 아니다
+    return changed
+
+
 def run_setup(
     cc: bool = False,
     cursor: bool = False,

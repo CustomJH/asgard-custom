@@ -60,6 +60,18 @@ class RegistryTest(unittest.TestCase):
         self.assertEqual(matched, {"asgard-freyja-design"})
         self.assertIn("[task-match] asgard-freyja-design", catalog)
 
+    def test_the_baked_catalog_sends_the_agent_to_the_runtime_resolver_first(self):
+        """파일로 구워지는 갈래는 구운 시점의 목록이라, 그 뒤 설치된 학습 스킬이 없다.
+
+        26-08-12 실측: 배포된 워커 명단 17개 옆에서 라이브 목록은 18개였고, 빠진 하나가 그날
+        자동 설치된 스킬이었다. 그래서 이 갈래는 목록을 읽기 전에 디스크를 다시 보게 한다."""
+        baked = skill_registry.skill_catalog(self.root, "worker", loader="cli")
+        self.assertIn("asgard skills resolve --agent", baked)
+        self.assertIn("installed after this file was written", baked)
+        # 매 턴 계산되는 갈래는 이 문제가 없으므로 같은 지시를 안 진다
+        live = skill_registry.skill_catalog(self.root, "worker", matched={"asgard-worker-testing"})
+        self.assertNotIn("asgard skills resolve --agent", live)
+
     def test_bare_catalog_commands_list_current_inventory(self):
         from cli_boundary import run_cli
 

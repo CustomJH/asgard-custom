@@ -68,6 +68,23 @@ def _completion_updates(root: str, cfg: dict, payload: dict, mode: str) -> dict:
     return output
 
 
+def _stage_correction(payload: dict) -> None:
+    """사용자 정정 신호 채굴 (제2 채굴원) — 개인/진화 스코프라 프로젝트 메모리 연결과 무관하게
+    항상 시도한다. 탐지 실패·중복·오염 = 조용히 넘어간다 (턴을 막지 않는다).
+
+    뿌리는 cwd 가 아니라 git toplevel 이다. 읽는 쪽(`memory tick` → evolution.mine)이 toplevel 을
+    쓰므로, 여기서 cwd 를 쓰면 저장소 하위에서 연 세션의 정정이 아무도 안 읽는
+    `<하위>/.asgard/evolution/corrections.jsonl` 에 쌓인다 — 쓰는 자리와 읽는 자리가 갈리면
+    채굴원이 조용히 죽는다 (같은 이유로 backends.run_tick 이 먼저 고친 자리)."""
+    with contextlib.suppress(Exception):
+        from ...evolution import record_correction
+        from ..evolve import _root as _git_toplevel
+
+        record_correction(
+            _git_toplevel(), str(payload.get("user_text") or ""), str(payload.get("assistant_text") or "")
+        )
+
+
 def run_sync_turn(mode: str) -> int:
     """hook 전용 JSON stdin 표면 — 자동 turn retain과 완료 proposal을 한 lifecycle 호출로 처리."""
     try:
@@ -77,14 +94,7 @@ def run_sync_turn(mode: str) -> int:
         payload = _json.loads(raw or "{}")
         if not isinstance(payload, dict):
             raise ValueError("turn payload must be a JSON object")
-        # 사용자 정정 신호 채굴 (제2 채굴원) — 개인/진화 스코프라 프로젝트 메모리 연결과 무관하게
-        # 항상 시도한다. 탐지 실패·중복·오염 = 조용히 False (턴을 막지 않는다).
-        with contextlib.suppress(Exception):
-            from ...evolution import record_correction
-
-            record_correction(
-                os.getcwd(), str(payload.get("user_text") or ""), str(payload.get("assistant_text") or "")
-            )
+        _stage_correction(payload)
         # 개인 에피소드 레인 적재 — 네이티브 루프의 `_persist_turn`이 하는 일을 외부
         # 클라이언트는 여기서 한다. 프로젝트 메모리 연결 **앞**에 두는 것이 핵심이다:
         # 개인 대화 원문은 팀 뱅크와 무관하고, 아래 early-return 뒤에 두면 프로젝트가

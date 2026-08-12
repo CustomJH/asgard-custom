@@ -4,9 +4,13 @@ import typer
 
 from ._app import app
 
-# 자가발전 인박스 (CUS-251) — 퀘스트 로그 채굴 → 스킬 후보 → 승인만이 활성화 경로.
+# 자가발전 인박스 (CUS-251) — 퀘스트 로그 채굴 → 스킬 후보 → 설치. 설치를 누가 누르는지는
+# 자율 등급이 정한다 (`evolution.autonomy`); 등급이 안 받는 초안은 여기서 사람을 기다린다.
 evolve_app = typer.Typer(
-    help="what Asgard has learned and wants to keep — dig it out of the quest logs, then say yes or no",
+    help=(
+        "what Asgard has learned and wants to keep — dug out of the quest logs. How much of it "
+        "installs on its own is the [evolution].autonomy grade; the rest waits here for a yes or no"
+    ),
     no_args_is_help=True,
 )
 app.add_typer(evolve_app, name="evolve")

@@ -176,14 +176,22 @@ class _VerdictMixin(_RunState):
             )
         hd._record_outcome(self.tc, "pass", self.saw_red)
         try:  # 자가발전 (CUS-253) — 방금 닫힌 퀘스트가 hard-won(FAIL→PASS)이면 초안으로 증류한다.
-            # 채굴은 하니스가, 활성화는 사람이 (consent-first). 채굴은 pending 인박스까지라
-            # 능력을 바꾸지 않고 되돌릴 수 있다 — 자율의 경계가 거기다 (evolution.autoscan_enabled).
-            # 종전에는 여기서 "채굴할 수 있다"고 말만 했다: 놓친 넛지 하나가 교훈 하나의 영구
-            # 소실이었다 (퀘스트 로그는 keep-last-N으로 지워진다).
-            from ....evolution import autoscan, unmined_signals
+            # 채굴은 늘 하고, 설치는 자율 등급이 정한다 (evolution.autonomy — 기본 safe 는 퀘스트
+            # 로그 채굴분만 설치한다). 등급이 무엇이든 되돌아오는 자리에 머문다: 설치 안 된 것은
+            # pending 초안이고, 설치된 것은 `evolve archive` 한 줄로 물러난다.
+            # 여기가 호스트 모드의 `memory tick` 과 같은 등급을 써야 하는 이유는 하나다 — 어느
+            # 문으로 들어왔느냐에 따라 배우는 속도가 달라지면 안 된다.
+            from ....evolution import autoapprove, autoscan, unmined_signals
 
             mined = autoscan(hd.root)
-            if mined:
+            installed = autoapprove(hd.root, mined)
+            if installed:
+                names = ", ".join(str(row.get("name") or row.get("id") or "?") for row in installed[:3])
+                hd.on_text(
+                    f"  {ui.dim('│ ⠶ 학습 스킬 ' + str(len(installed)) + '건 설치 — ' + names)}\n"
+                    f"  {ui.dim('│   다음 배차부터 쓰인다 · 물리기: asgard evolve archive <이름>')}\n"
+                )
+            elif mined:
                 names = ", ".join(str(row.get("name") or row.get("id") or "?") for row in mined[:3])
                 hd.on_text(
                     f"  {ui.dim('│ ⠶ hard-won 교훈 ' + str(len(mined)) + '건 증류 — ' + names)}\n"

@@ -544,3 +544,31 @@ Git-canonical records as evidence, and the output always names which path answer
 `[project_memory].reflect` to `backend` or `local` to pin it.
 
 Use `asgard memory connect` to configure a backend and `asgard doctor` to verify its binding and readiness.
+
+### Learned skills
+
+Quests that failed before they passed are the lessons worth keeping. At the end of every turn
+Asgard mines the quest log for them — deterministically, no model involved — and writes each one
+as an evidence card: the failure signature, the criteria, the command that finally exited 0.
+
+```bash
+asgard evolve list                # drafts waiting on you
+asgard evolve approve <id>        # install one — the next dispatch can reach it, no restart
+asgard evolve curate              # which learned skills have gone quiet
+asgard evolve archive <name>      # put one away (asgard evolve restore <name> brings it back)
+asgard evolve bench <name> --cmd "<command>" --metric wall   # A/B it with the skill off and on
+```
+
+How far it goes on its own is one setting, `[evolution].autonomy`, or `ASGARD_EVOLVE_AUTONOMY`:
+
+| grade | what installs itself |
+| --- | --- |
+| `off` | nothing — every draft waits for `asgard evolve approve` |
+| `safe` (default) | lessons mined from the quest log |
+| `full` | those plus lessons mined from your own corrections |
+
+Autonomy presses the same approval gate rather than bypassing it, so a draft still has to name a
+trigger a future task could match, must not collide with an existing skill, and never carries an
+environment-dependent failure. What went in on its own says so in its approval receipt, and
+`asgard evolve archive` takes it back out. Learned skills reach workers and delivery specialists;
+the Verifier and Loki never see them, at any grade.

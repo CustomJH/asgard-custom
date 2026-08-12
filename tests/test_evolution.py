@@ -959,43 +959,49 @@ class TestNudge(EvoBase):
     """
 
     def test_latches_per_signal_set(self):
-        _hard_won(self.root, "q1", sig="alpha 게이트 판정 누락")
-        line = evolution.nudge_line(self.root)
-        assert line is not None
-        self.assertIn("1건", line)
-        self.assertIsNone(evolution.nudge_line(self.root))  # 같은 집합 재넛지 금지 (제안 피로 방지)
-        _hard_won(self.root, "q2", sig="beta 경계 반올림 오판")
-        line2 = evolution.nudge_line(self.root)
-        assert line2 is not None
-        self.assertIn("2건", line2)  # 새 집합 → 다시 한 번만
+        """대기 집합 latch — 자율이 꺼져 초안이 인박스에 머무는 등급에서 재는 축이다."""
+        with mock.patch.dict(os.environ, {evolution.AUTONOMY_ENV: "off"}):
+            _hard_won(self.root, "q1", sig="alpha 게이트 판정 누락")
+            line = evolution.nudge_line(self.root)
+            assert line is not None
+            self.assertIn("1건", line)
+            self.assertIsNone(evolution.nudge_line(self.root))  # 같은 집합 재넛지 금지 (제안 피로 방지)
+            _hard_won(self.root, "q2", sig="beta 경계 반올림 오판")
+            line2 = evolution.nudge_line(self.root)
+            assert line2 is not None
+            self.assertIn("2건", line2)  # 새 집합 → 다시 한 번만
 
     def test_silent_without_quests(self):
         self.assertIsNone(evolution.nudge_line(self.root))  # quest 디렉토리 없음 = 침묵
 
 
 class TestAutoscan(EvoBase):
-    """교훈은 스스로 채굴되고, 활성화만 사람이 한다.
+    """교훈은 스스로 채굴된다.
 
     종전에는 채굴까지 사람 손이었다 — 넛지는 신호 집합이 바뀔 때 한 번만 말하는 latch라 놓치면
     영영 조용했고, 퀘스트 로그는 keep-last-N으로 지워진다. 즉 **교훈이 조용히 사라지는 쪽**이
     기본값이었다 (26-07-31 실측: 저장소에 hard-won 신호 2건이 닷새째 미채굴, 인박스는 부재).
+
+    설치까지 갈지는 자율 등급이 정한다 — 그 축은 TestAutonomy 가 잰다.
     """
 
     def test_a_closed_hard_won_quest_becomes_a_draft_without_being_asked(self):
-        _hard_won(self.root)
-        self.assertEqual(evolution.pending_list(self.root), [])
-        line = evolution.nudge_line(self.root)
-        assert line is not None
-        self.assertIn("승인", line)  # 사람에게 남은 일은 승인이다
-        self.assertEqual(len(evolution.pending_list(self.root)), 1)
+        with mock.patch.dict(os.environ, {evolution.AUTONOMY_ENV: "off"}):
+            _hard_won(self.root)
+            self.assertEqual(evolution.pending_list(self.root), [])
+            line = evolution.nudge_line(self.root)
+            assert line is not None
+            self.assertIn("승인", line)  # 등급이 off면 사람에게 남은 일은 승인이다
+            self.assertEqual(len(evolution.pending_list(self.root)), 1)
 
-    def test_mining_alone_installs_nothing(self):
-        """자율의 경계 — 채굴은 가역·비활성이고, 라우팅에 서는 것은 승인뿐이다."""
-        _hard_won(self.root)
-        evolution.nudge_line(self.root)
-        self.assertFalse(os.path.isdir(self.proj_skills()))
-        self.assertEqual(skill_bank.learned_skills(self.root), {})
-        self.assertEqual(skill_bank.resolve_learned(self.root, "verifier gate 판정 레코드", "worker"), [])
+    def test_mining_alone_installs_nothing_when_autonomy_is_off(self):
+        """off 등급의 경계 — 채굴은 가역·비활성이고, 라우팅에 서는 것은 승인뿐이다."""
+        with mock.patch.dict(os.environ, {evolution.AUTONOMY_ENV: "off"}):
+            _hard_won(self.root)
+            evolution.nudge_line(self.root)
+            self.assertFalse(os.path.isdir(self.proj_skills()))
+            self.assertEqual(skill_bank.learned_skills(self.root), {})
+            self.assertEqual(skill_bank.resolve_learned(self.root, "verifier gate 판정 레코드", "worker"), [])
 
     def test_it_can_be_turned_off(self):
         _hard_won(self.root)
@@ -1110,6 +1116,268 @@ class TestCorrections(EvoBase):
         line = evolution.nudge_line(self.root)
         assert line is not None
         self.assertIn("1건", line)
+
+    def test_a_correction_lands_where_the_miner_reads(self):
+        """쓰는 뿌리와 읽는 뿌리가 같아야 한다 — 저장소 하위에서 연 세션이 그 축을 잰다.
+
+        훅 표면은 종전에 cwd 를 썼고 채굴기는 git toplevel 을 읽었다. 둘이 갈리면 정정은
+        아무도 안 보는 자리에 쌓이고 채굴원 하나가 조용히 죽는다 (26-08-12)."""
+        import io as _io
+        import subprocess
+
+        from asgard.commands.memory.autosave import run_sync_turn
+
+        subprocess.run(["git", "init", "-q", self.root], check=True)
+        sub = os.path.join(self.root, "packages", "web")
+        os.makedirs(sub)
+        payload = {"user_text": "그게 아니야, memory_context 는 한국어로 해", "assistant_text": "영어로 썼다"}
+        here = os.getcwd()
+        os.chdir(sub)
+        try:
+            with (
+                mock.patch("sys.stdin", _io.StringIO(json.dumps(payload))),
+                mock.patch("sys.stdout", _io.StringIO()),
+            ):
+                self.assertEqual(run_sync_turn("claude"), 0)
+        finally:
+            os.chdir(here)
+        self.assertEqual(len(evolution._corrections(self.root)), 1)
+        self.assertFalse(os.path.exists(os.path.join(sub, ".asgard", "evolution", evolution.CORRECTIONS_FILE)))
+
+    def test_a_bare_prohibition_is_caught_whatever_its_ending(self):
+        """`-지 마` 계열의 종결형들. `마라` 가 빠져 있었다 (26-08-12 실측: 표본 10개 중 1건 누수)."""
+        for text in ("테스트 삭제하지 마라", "그거 하지 마", "전체 트리를 stash 하지 마세요", "그렇게 쓰지 말아라"):
+            self.assertIsNotNone(evolution.correction_signal(text), text)
+        # 낱말 속 동음 음절은 절 끝이 안 서므로 안 걸린다 — 넓힌 자리가 뚫리지 않았는지 같이 본다
+        for text in ("이모지 마스크를 씌워줘", "이번 주에 하지 마라톤 일정을 잡아줘"):
+            self.assertIsNone(evolution.correction_signal(text), text)
+
+
+class TestInstallRedrawsTheDeployedRoster(EvoBase):
+    """서브에이전트는 스킬 명단을 자기 파일에서 읽는다 — 그 파일이 설치 시점에 안 바뀌면
+    방금 깐 스킬은 다음 `asgard sync` 까지 배차에 안 보인다 (26-08-12 실측)."""
+
+    def _deployed(self, fname: str = "asgard-worker.md") -> str:
+        return os.path.join(self.root, ".claude", "agents", fname)
+
+    def test_an_installed_skill_appears_in_the_deployed_worker_roster(self):
+        os.makedirs(os.path.dirname(self._deployed()), exist_ok=True)
+        with open(self._deployed(), "w", encoding="utf-8") as handle:
+            handle.write("옛 계약\n<available_skills>\n</available_skills>")
+        _hard_won(self.root)
+        cand = evolution.mine(self.root)[0]
+        ok, msg = evolution.approve(self.root, cand["id"])
+        self.assertTrue(ok, msg)
+        with open(self._deployed(), encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertIn(cand["name"], text)
+        self.assertIn("asgard skills resolve --agent", text)
+
+    def test_a_client_that_was_never_scaffolded_stays_absent(self):
+        """스캐폴드를 까는 것은 init·sync 의 일이다 — 설치가 안 쓰는 클라이언트를 열지 않는다."""
+        _hard_won(self.root)
+        cand = evolution.mine(self.root)[0]
+        self.assertTrue(evolution.approve(self.root, cand["id"])[0])
+        self.assertFalse(os.path.exists(self._deployed()))
+        self.assertFalse(os.path.isdir(os.path.join(self.root, ".claude")))
+
+
+class TestCardCarriesOnlyWhatTransfers(EvoBase):
+    """카드는 다음 사람이 옮겨 쓸 만큼만 진다 — 원 퀘스트 장부는 퀘스트 로그가 이미 갖고 있다.
+
+    26-08-12 실측: 상한 없이 뜬 첫 카드는 기준 6줄·파일 10개·명령 6줄이었고, 그것을 받은
+    워커가 쓸모를 찾은 것은 함정 한 줄뿐이었다."""
+
+    def _fat_quest(self) -> str:
+        _write_quest(
+            self.root,
+            "q-fat",
+            [
+                _quest_line("q-fat", role="thinker", event="plan", subtask="등급 + 호출자 + 뿌리 + 탐지"),
+                _quest_line("q-fat", verdict="FAIL", failure_sig="stale-comment-contradicts-code", failure_count=1),
+                _quest_line(
+                    "q-fat",
+                    verdict="PASS",
+                    criteria=[
+                        f"기준 {n} 을 off|safe|full 로 넣는다 | verify: pytest -q | artifacts: src/a.py"
+                        for n in range(6)
+                    ],
+                    commands=[{"cmd": f"pytest tests/t{n}.py", "exit_code": 0} for n in range(6)],
+                    changed_files=[f"src/asgard/mod_{n}.py" for n in range(10)],
+                ),
+            ],
+        )
+        cand = evolution.mine(self.root)[0]
+        text = evolution.show(self.root, cand["id"])
+        assert text is not None
+        return text
+
+    def test_the_description_names_the_failure_and_where_it_happened(self):
+        text = self._fat_quest()
+        meta, _body = skill_bank.parse_skill_md(text) or ({}, "")
+        desc = str(meta.get("description") or "")
+        self.assertIn("stale-comment-contradicts-code", desc)
+        self.assertIn("mod_0.py", desc)  # 어느 자리였는지 — 다음에 그 파일을 열면 화면에 다시 뜬다
+        self.assertNotIn("등급 + 호출자", desc)  # 퀘스트가 스스로를 부른 이름은 안 들어간다
+        # 자르는 축이 이름 개수라 마지막 이름이 온전하다 — 글자 수로 자르면 `mod_` 가 남는다
+        self.assertEqual(desc.count("mod_"), 4)
+        self.assertIn("외 6개", desc)
+        self.assertEqual(desc.count(".py"), 4)  # 넷 다 확장자까지 온전하다 — 중간에서 끊긴 이름이 없다
+
+    def test_the_particle_stays_attached_to_the_word_before_it(self):
+        """`autosave.py 에서` 는 조사가 떨어진 자리다 — Lagom·Bragi 가 금지하는 모양이고,
+        판정기가 이 줄을 영어로 분류해 못 잡으므로 시험이 대신 잡는다."""
+        text = self._fat_quest()
+        meta, _body = skill_bank.parse_skill_md(text) or ({}, "")
+        self.assertNotIn(" 에서", str(meta.get("description") or ""))
+
+    def test_the_remainder_is_counted_after_names_are_merged(self):
+        """이름이 겹치면 원본 개수로 세는 순간 남은 수가 부풀어 오른다 — `cli/evolve.py` 와
+        `commands/evolve.py` 는 설명에서 한 이름이다 (26-08-12 실측: `외 6개`라고 했는데 다섯이었다)."""
+        sig = {
+            "quest_id": "q",
+            "signal": "boom-sig",
+            "failure_sig": "boom-sig",
+            "fail_count": 1,
+            "escalated": False,
+            "criteria": [],
+            "pass_commands": [],
+            "subtasks": [],
+            "task_class": "",
+            "fail_whys": [],
+            "changed_files": ["a/x.py", "b/x.py", "c/y.py", "d/z.py", "e/w.py", "f/v.py"],
+        }
+        desc = evolution._draft(sig)[1].splitlines()[2]
+        self.assertIn("x.py, y.py, z.py, w.py", desc)
+        self.assertIn("외 1개", desc)  # 고유 이름 다섯 중 넷을 적었다
+
+    def test_a_quest_with_nowhere_to_point_drops_the_clause(self):
+        """자리를 말할 것이 없으면 `— 에서 겪고 고친 자리` 가 명사 없는 조사만 남긴다."""
+        sig = {
+            "quest_id": "q",
+            "signal": "boom-sig",
+            "failure_sig": "boom-sig",
+            "fail_count": 1,
+            "escalated": False,
+            "criteria": [],
+            "pass_commands": [],
+            "changed_files": [],
+            "subtasks": [],
+            "task_class": "",
+            "fail_whys": [],
+        }
+        self.assertEqual(evolution._draft(sig)[1].splitlines()[2], "description: boom-sig (FAIL 1회 뒤 PASS)")
+
+    def test_the_criteria_fallback_also_drops_the_harness_tail(self):
+        sig = {
+            "quest_id": "q",
+            "signal": "boom-sig",
+            "failure_sig": "boom-sig",
+            "fail_count": 1,
+            "escalated": False,
+            "criteria": ["기준 하나 | verify: pytest -q"],
+            "pass_commands": [],
+            "changed_files": [],
+            "subtasks": [],
+            "task_class": "",
+            "fail_whys": [],
+        }
+        desc = evolution._draft(sig)[1].splitlines()[2]
+        self.assertIn("기준 하나에서", desc)
+        self.assertNotIn("verify:", desc)
+
+    def test_only_the_harness_contract_tail_is_cut_from_a_criteria_line(self):
+        """맨 막대로 자르면 기준 문장 안의 막대에서도 잘린다 (`off|safe|full` → `off`)."""
+        text = self._fat_quest()
+        line = next(ln for ln in text.splitlines() if ln.startswith("- criteria:"))
+        self.assertIn("off|safe|full 로 넣는다", line)
+        self.assertNotIn("verify:", line)
+        self.assertNotIn("artifacts:", line)
+
+    def test_the_body_caps_the_quest_ledger_and_says_it_capped(self):
+        text = self._fat_quest()
+        self.assertEqual(text.count("- criteria:"), 2)
+        self.assertNotIn("verify: pytest -q", text)  # 하네스 계약 꼬리는 이 변경의 내용이 아니다
+        self.assertEqual(len([ln for ln in text.splitlines() if ln.startswith("- `pytest tests/t")]), 3)
+        files_line = next(ln for ln in text.splitlines() if ln.startswith("- 대상 파일:"))
+        self.assertEqual(files_line.count("mod_"), 4)
+        self.assertIn("외 6개", files_line)  # 잘랐다는 사실을 카드가 스스로 말한다
+
+    def test_a_small_quest_loses_nothing(self):
+        _hard_won(self.root)
+        cand = evolution.mine(self.root)[0]
+        text = evolution.show(self.root, cand["id"])
+        assert text is not None
+        self.assertIn("verifier_gate.py", text)
+        self.assertNotIn("외 ", text)  # 상한에 안 걸렸으면 잘랐다는 말도 없다
+
+
+class TestAutonomy(EvoBase):
+    """자율 성장 등급 — 승인 관문을 없애지 않고 정책이 대신 누른다 (evolution.autonomy).
+
+    등급이 무엇이든 되돌아오는 자리에만 선다: 설치 안 된 것은 pending 초안이고, 설치된 것은
+    `evolve archive` 로 물러난다. 판정 표면(Verifier·loki)은 어느 등급에서도 못 본다.
+    """
+
+    def _installed(self) -> dict:
+        return skill_bank.learned_skills(self.root)
+
+    def test_the_default_grade_installs_a_quest_lesson_and_says_how_to_undo(self):
+        _hard_won(self.root)
+        line = evolution.nudge_line(self.root)
+        assert line is not None
+        self.assertIn("스스로 설치했다", line)
+        self.assertIn("archive", line)  # 되돌리는 길을 같은 줄에서 말한다
+        self.assertEqual(evolution.pending_list(self.root), [])
+        skills = self._installed()
+        self.assertEqual(len(skills), 1)
+        name, skill = next(iter(skills.items()))
+        self.assertTrue(skill_bank.resolve_learned(self.root, f"또 {skill['triggers'][0]} 가 났다", "worker"))
+        with open(os.path.join(self.proj_skills(), name, skill_bank.APPROVAL_FILE), encoding="utf-8") as handle:
+            receipt = json.load(handle)
+        self.assertEqual(receipt["approved_by"], "policy")  # 누가 눌렀는지 되짚을 수 있다
+
+    def test_safe_leaves_a_correction_to_the_person(self):
+        """정정은 발화 한 줄이라 증거가 얇다 — safe 는 초안으로만 남긴다."""
+        evolution.record_correction(self.root, "그게 아니야, 릴리스 노트는 한국어로 해", "")
+        evolution.nudge_line(self.root)
+        self.assertEqual(len(evolution.pending_list(self.root)), 1)
+        self.assertEqual(self._installed(), {})
+
+    def test_full_installs_a_correction_that_names_something(self):
+        with mock.patch.dict(os.environ, {evolution.AUTONOMY_ENV: "full"}):
+            evolution.record_correction(self.root, "그게 아니야, memory_context 는 한국어로 해", "")
+            evolution.nudge_line(self.root)
+            self.assertEqual(evolution.pending_list(self.root), [])
+            self.assertEqual(len(self._installed()), 1)
+
+    def test_even_full_refuses_a_draft_nobody_could_route(self):
+        """트리거 자리가 빈 초안은 어느 등급에서도 설치되지 않는다 — 정책은 approve 의 검사를 그대로 지난다.
+
+        정정 발화에 코드가 부르는 이름이 하나도 없으면 채굴기는 자리표시자를 넣는다. 그 상태로
+        설치되면 영영 안 걸리는 스킬이 뱅크에 쌓이므로, 사람이 트리거를 적어 넣어야 한다."""
+        with mock.patch.dict(os.environ, {evolution.AUTONOMY_ENV: "full"}):
+            evolution.record_correction(self.root, "그게 아니야, 릴리스 노트는 한국어로 해", "")
+            evolution.nudge_line(self.root)
+            pending = evolution.pending_list(self.root)
+            self.assertEqual(len(pending), 1)
+            self.assertEqual(self._installed(), {})
+            draft = evolution.show(self.root, pending[0]["id"])
+            assert draft is not None
+            self.assertIn(evolution.PLACEHOLDER_TRIGGER, draft)
+
+    def test_a_draft_the_person_already_has_stays_theirs(self):
+        """인박스에 이미 있던 초안은 정책이 안 건드린다 — 안 실었다는 판단을 뒤집지 않는다."""
+        _hard_won(self.root)
+        staged = evolution.mine(self.root)
+        self.assertEqual(len(staged), 1)
+        evolution.nudge_line(self.root)  # 자율 등급 safe 로 한 바퀴 더 돈다
+        self.assertEqual(len(evolution.pending_list(self.root)), 1)
+        self.assertEqual(self._installed(), {})
+
+    def test_an_unknown_grade_falls_back_to_safe(self):
+        with mock.patch.dict(os.environ, {evolution.AUTONOMY_ENV: "aggressive"}):
+            self.assertEqual(evolution.autonomy_mode(), "safe")
 
 
 if __name__ == "__main__":

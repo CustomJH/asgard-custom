@@ -973,9 +973,16 @@ def skill_catalog(
     elif loader == "load_skill":
         instruction = "Call `load_skill` with the exact name only when a description matches the task."
     else:
+        # 이 갈래만 파일로 구워져 클라이언트 에이전트 파일에 들어간다 (commands.setup). 구운 시점의 목록이라
+        # 그 뒤에 설치된 학습 스킬은 여기 없다 — 26-08-12 실측: 명단 17개인 배포본 옆에서 라이브
+        # 목록은 18개였고, 빠진 하나가 그날 자동 설치된 스킬이었다. 그래서 목록을 읽기 전에 런타임
+        # 조회를 한 번 시킨다. `resolve` 는 디스크의 지금 상태를 보므로 배포본 나이와 무관하다.
+        # (`load_skill` 갈래는 매 턴 계산되므로 이 문제가 없다.)
         instruction = (
-            "Run `asgard skills show <exact-name>` only when a description matches the task, "
-            "then follow the returned body."
+            'Run `asgard skills resolve --agent <your-role> "<the request>"` once before planning: it reads '
+            "the skills on disk right now, so it also finds ones installed after this file was written, and "
+            "it sizes the work shape. Then run `asgard skills show <exact-name>` for anything it named and "
+            "for any description below that matches the task, and follow the returned body."
         )
     items = "\n".join(
         f"  - {'[task-match] ' if matched is not None and row['name'] in matched else ''}"

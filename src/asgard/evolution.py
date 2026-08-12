@@ -2,7 +2,11 @@
 
 quest 로그(.asgard/quest/*.jsonl)에서 hard-won 신호(실패를 딛고 PASS에 도달한 퀘스트)만
 결정론적으로 선별해 스킬 초안을 만들고, .asgard/evolution/pending/ 인박스에 스테이징한다.
-승인(asgard evolve approve)만이 learned 스킬 뱅크(.asgard/skills/)로 설치하는 유일한 경로다.
+
+learned 스킬 뱅크(.asgard/skills/)로 설치하는 함수는 `approve` 하나다. 그 하나를 누가 누르는지는
+자율 등급이 정한다 (`autonomy_mode` — 기본 safe 는 퀘스트 로그 채굴분을 스스로 설치하고, 정정
+채굴분은 사람에게 남긴다). 등급이 무엇이든 검사는 approve 안에 있고, 설치된 것은
+`evolve archive` 로 물러난다.
 
 설계 근거 (CUS-251 리서치):
 - 선별은 결정론, 가치 판단은 사용자 — 저신호 휴리스틱 양산은 승인율을 0으로 만든다는
@@ -15,6 +19,7 @@ quest 로그(.asgard/quest/*.jsonl)에서 hard-won 신호(실패를 딛고 PASS�
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -62,6 +67,12 @@ _IDENT = re.compile(r"[A-Za-z_]*[A-Za-z0-9]+_[A-Za-z0-9_]*[A-Za-z0-9](?:\.[A-Za-
 # 기준 한 줄의 `| verify: …`·`| artifacts: …` 꼬리는 하네스 계약 서식이지 이 변경의 내용이 아니다.
 # 안 자르면 모든 초안이 같은 명령줄에서 같은 조각을 건져 온다 (`tutor_rationale._goal` 과 같은 자름).
 _CONTRACT_TAIL = "|"
+# 카드 본문에 적을 때는 꼬리를 정확히 집는다. 맨 막대만 보고 자르면 기준 문장 안의 막대에서도
+# 잘린다 — 26-08-12 실측: `자동 설치 정책 evolution.autonomy off|safe|full 로 넣는다` 가
+# `… off` 에서 끊겼다. `_triggers` 쪽 맨 막대는 그대로 둔다: 거기서 짧게 자르는 것은 트리거
+# 후보를 덜 건지는 쪽이라 손해가 조용하고, 그 자름은 이미 시험이 붙잡고 있다.
+_CONTRACT_TAIL_RE = re.compile(r"\s*\|\s*(?:verify|artifacts)\s*:")
+_DESC_FILES = 4  # description 에 적는 파일 이름 개수 — 한 줄로 읽히는 상한
 _SEPARATORS = ("-", "_", ".")
 _TRIGGER_MIN = 4  # 구분자가 든 이름의 하한 — 구분자 없는 낱말은 길이와 무관하게 안 받는다
 _TRIGGER_CAP = 6
@@ -141,8 +152,8 @@ def _quest_signal(events: list[dict]) -> dict | None:
 #
 # "그게 아니야" / "~하지 마" / "~말고 …로 해" 류의 정정은 FAIL→PASS 만큼 고신호다:
 # 사용자가 방금 실제로 교정했다는 실측 증거. 탐지는 0-LLM 보수 패턴 — 애매하면 버린다
-# (false positive 1건이 승인 피로 10건보다 나쁘다). 처분은 기존 인박스 계약 그대로:
-# 후보 스테이징 → 사람 승인만이 활성화.
+# (false positive 1건이 승인 피로 10건보다 나쁘다). 처분은 기존 인박스 계약 그대로 후보
+# 스테이징이고, 기본 등급 safe 는 이 채굴원을 자동 설치에서 뺀다 (_AUTONOMY_ORIGINS).
 #
 # 26-08-11 실측: 이 채굴원은 열린 이래 산출이 0건이었고, `corrections.jsonl` 이 만들어진 적도
 # 없다. 원인은 상한도 배선도 아니었다 — 실제 오딘 발화 12건에 3건만 걸렸다. 패턴이 **문형이
@@ -201,9 +212,12 @@ _CORRECTION_PATTERNS = (
     # 쓰인 "그건 아니다" 는 바로 위 지시대명사 패턴이 이미 잡는다.
     re.compile(r"아니(야|라니까|네|었|야지)"),
     re.compile(r"아닌\s*(것|거|듯)\s*같"),
-    # `-지 마/말` 금지. 앞 동사는 무엇이든 온다 — 하지·쓰지·붙이지·지우지·넣지. `마` 홑글자는
-    # 절 끝에서만 센다(`이모지 마스크` 는 정정이 아니다). `말고` 갈래는 여기 없다 — 위 주석 참조.
-    re.compile(r"[가-힣]지\s*(는\s*)?(마(세요|십시오|요)|마" + _BARE_END + r"|말(라고|아라|아\s*줘|자))"),
+    # `-지 마/말` 금지. 앞 동사는 무엇이든 온다 — 하지·쓰지·붙이지·지우지·넣지. `마`·`마라` 는
+    # 절 끝에서만 센다(`이모지 마스크`·`하지 마라톤` 은 정정이 아니다 — 뒤에 음절이 더 붙으므로
+    # 절 끝이 안 선다). `말아라` 는 아래 `말(…)` 갈래가 잡는데 그 축약형 `마라` 가 빠져 있었다
+    # (26-08-12 실측: 표본 10개 중 `삭제하지 마라` 하나가 이 구멍으로 샜다).
+    # `말고` 갈래는 여기 없다 — 위 주석 참조.
+    re.compile(r"[가-힣]지\s*(는\s*)?(마(세요|십시오|요)|마라?" + _BARE_END + r"|말(라고|아라|아\s*줘|자))"),
     # `-면 안 되` 는 평서형 종결만. 관형형·연결형은 질문과 글자가 같다. 해요체·명사형까지 세는
     # 이유는 이 저장소 터미널 정본이 해요체라서다. 긴 형태를 먼저 적는다 — `돼` 가 먼저 맞으면
     # 뒤의 `요` 에서 절 경계가 안 서서 `안 돼요` 가 통째로 미탐이 된다.
@@ -411,21 +425,44 @@ def _slug(text: str, fallback: str) -> str:
     return s or fallback
 
 
+def _more(rows: object, shown: int) -> str:
+    """상한에 걸려 빠진 개수 — 잘랐다는 사실을 카드가 스스로 말한다 (빈 문자열 = 전부 들어갔다)."""
+    total = len(rows) if isinstance(rows, (list, tuple)) else 0
+    return f" 외 {total - shown}개" if total > shown else ""
+
+
 def _draft(sig: dict) -> tuple[str, str]:
     """신호 → (스킬명, SKILL.md 초안). 증거 카드 — 실측 데이터만 서술, 추측 금지."""
     cid_seed = sig["signal"]
     name = "learned-" + _slug(sig["failure_sig"] or (sig["subtasks"][0] if sig["subtasks"] else ""), "quest")
     trig_src = " ".join([sig["failure_sig"]] + sig["subtasks"] + sig["criteria"])
     triggers = _triggers(sig["failure_sig"], trig_src, sig["changed_files"])
-    desc_src = sig["subtasks"][0] if sig["subtasks"] else (sig["criteria"][0] if sig["criteria"] else sig["signal"])
     esc = " (ESCALATE 경유)" if sig["escalated"] else ""
     # 설명 첫 자리에 실패 서명을 둔다 — 카탈로그에서 이 한 줄만 읽고 스킬을 부를지 정하므로,
     # 잘려 나간 기준 문장보다 "무엇에 막혔던 자리인가"가 먼저 서야 한다.
     where = sig["failure_sig"] or sig["signal"]
+    # 두 번째 자리는 **어느 파일에서였는가**다. 종전에는 퀘스트 부제를 그대로 적었는데, 부제는
+    # 그 퀘스트가 스스로를 부른 이름이라(`… 등급 + 큐레이터 호출자 + 정정 뿌리 통일 + 마라 탐지`)
+    # 다음 사람이 자기 작업과 맞춰 볼 것이 없다 (26-08-12 실측: 워커가 카드에서 쓸모를 찾은 것은
+    # 함정 한 줄뿐이었다). 파일 이름은 다음에 같은 자리를 열 때 화면에 그대로 다시 뜬다.
+    #
+    # 자르는 축은 글자 수가 아니라 이름 개수다. 글자 수로 자르면 마지막 이름이 중간에서 끊겨
+    # (`skill_`) 찾을 수 없는 이름이 설명에 남는다.
+    #
+    # 남은 개수는 **같은 이름끼리 묶은 뒤** 센다. 원본 목록으로 세면 `cli/evolve.py` 와
+    # `commands/evolve.py` 처럼 이름이 겹치는 자리에서 실제보다 많이 남았다고 적힌다
+    # (26-08-12 실측: 열 파일·아홉 이름인 퀘스트가 `외 6개`라고 했는데 남은 것은 다섯이었다).
+    unique = list(dict.fromkeys(os.path.basename(str(f)) for f in sig["changed_files"]))
+    area = ", ".join(unique[:_DESC_FILES]) + _more(unique, _DESC_FILES)
+    fallback = sig["subtasks"][0] if sig["subtasks"] else (sig["criteria"][0] if sig["criteria"] else "")
+    desc_src = area or _CONTRACT_TAIL_RE.split(str(fallback), 1)[0].strip()[:80]
+    # 셋 다 비면 자리를 말할 것이 없다. 그때 `— 에서 겪고 고친 자리` 를 그대로 두면 명사 없는
+    # 조사와 빈칸 둘이 남으므로 절을 통째로 뺀다.
+    at = f" — {desc_src}에서 겪고 고친 자리" if desc_src else ""
     body = [
         "---",
         f"name: {name}",
-        f"description: {where}에서 막혔던 자리 — {desc_src[:120]} (FAIL {sig['fail_count']}회{esc} 뒤 PASS)",
+        f"description: {where}{at} (FAIL {sig['fail_count']}회{esc} 뒤 PASS)",
         f"triggers: {', '.join(triggers)}",
         "agent: worker",
         "origin: retrospective",
@@ -439,16 +476,24 @@ def _draft(sig: dict) -> tuple[str, str]:
         *(f"- {w}" for w in (sig["fail_whys"] or ["(failure_sig 미기록 — 퀘스트 로그 참조)"])),
         f"- 무슨 일이었는지는 `.asgard/quest/{sig['quest_id']}.jsonl` 의 verify 이벤트에 있다.",
         "",
+        # 아래 셋은 전부 상한이 있다. 상한이 없던 26-08-12 의 첫 카드는 기준 6줄·파일 10개·명령
+        # 6줄이었고, 그것을 받은 워커가 "쓸모 있던 것은 함정 한 줄뿐이고 나머지는 그 퀘스트의
+        # 장부였다"고 보고했다. 장부는 퀘스트 로그가 이미 갖고 있으므로 카드는 다음 사람이 옮겨
+        # 쓸 수 있는 만큼만 진다. 기준 줄의 `| verify: …` 꼬리는 하네스 서식이라 여기서 자른다.
         "## 전략 (결국 통과한 접근)",
-        *(f"- criteria: {c}" for c in sig["criteria"]),
-        *([f"- 대상 파일: {', '.join(sig['changed_files'])}"] if sig["changed_files"] else []),
+        *(f"- criteria: {_CONTRACT_TAIL_RE.split(str(c), 1)[0].strip()}" for c in sig["criteria"][:2]),
+        *(
+            [f"- 대상 파일: {', '.join(sig['changed_files'][:4])}{_more(sig['changed_files'], 4)}"]
+            if sig["changed_files"]
+            else []
+        ),
         "",
         "## 검증 (성공을 입증한 명령)",
-        *(f"- `{c}`" for c in (sig["pass_commands"] or ["(명령 미기록)"])),
+        *(f"- `{c}`" for c in (sig["pass_commands"][:3] or ["(명령 미기록)"])),
         "",
         "## 근거",
         f"- quest: {sig['quest_id']} — FAIL {sig['fail_count']}회 → PASS ({sig['task_class'] or 'unknown'})",
-        "- 이 카드는 결정론 증거 초안이다 — 승인 전에 전략·함정 서술을 다듬어라 (특히 triggers).",
+        "- 이 카드는 결정론 증거 초안이다 — 트리거와 전략 서술은 언제든 다듬어도 된다.",
         "",
     ]
     _ = cid_seed
@@ -580,9 +625,9 @@ AUTOSCAN_ENV = "ASGARD_EVOLVE_AUTOSCAN"
 def autoscan_enabled() -> bool:
     """퀘스트가 닫힐 때 스스로 채굴하는가 — env > 글로벌 `evolution.autoscan`, 기본 on.
 
-    채굴은 **능력을 바꾸지 않는다**: 결과는 pending 인박스의 초안 파일이고, 라우팅에 서려면
-    여전히 사람의 `approve`가 필요하다. 그래서 여기는 norn과 같은 경계에 선다 — 순수 추가·완전
-    가역은 자율, 형태를 바꾸는 것은 동의 (norn.partition_ops와 같은 규율).
+    채굴 자체는 **능력을 바꾸지 않는다**: 결과는 pending 인박스의 초안 파일이다. 그 초안이
+    라우팅에 서느냐는 별개의 손잡이가 정한다 (`autonomy_mode`) — 이 스위치를 꺼도 저 등급이
+    켜져 있으면 채굴이 없어 설치도 없고, 이 스위치만 켜면 초안까지만 생긴다.
 
     왜 기본을 켜는가. 넛지만 두었더니 신호가 **실제로 채굴되지 않았다** (26-07-31 실측: 이
     저장소에 hard-won 신호 2건이 닷새째 남아 있었고 인박스는 한 번도 만들어진 적이 없다).
@@ -608,6 +653,73 @@ def autoscan(root: str) -> list[dict]:
         return mine(root)
     except Exception:
         return []
+
+
+AUTONOMY_ENV = "ASGARD_EVOLVE_AUTONOMY"
+AUTONOMY_MODES = ("off", "safe", "full")
+# 어느 채굴원까지 스스로 설치해도 되는가. 등급은 채굴원의 증거 무게로 가른다 (pattern 의
+# explicit/deductive 경계와 같은 물음이다).
+#
+# retrospective = 퀘스트 하나가 실제로 FAIL 을 내고 그 다음에 PASS 한 기록이다. 실패 서명도
+# 통과 명령도 하네스가 관측한 값이라 사람이 다시 확인할 것이 적다.
+#
+# correction = 오딘의 발화 한 줄이다. 그 한 줄이 검증된 수정인지 그때의 기분인지 문장만으로는
+# 안 갈리고, 정정은 대개 취향을 담으므로 잘못 설치하면 그 취향이 다음 배차마다 되풀이된다.
+# 그래서 safe 에서는 초안으로만 남기고 사람이 읽고 넘긴다.
+_AUTONOMY_ORIGINS = {
+    "off": frozenset(),
+    "safe": frozenset({"retrospective"}),
+    "full": frozenset({"retrospective", "correction"}),
+}
+
+
+def autonomy_mode() -> str:
+    """자율 성장 등급 — env `ASGARD_EVOLVE_AUTONOMY` > 글로벌 `evolution.autonomy`, 기본 safe.
+
+    off 는 종전 계약 그대로다: 채굴은 하고 설치는 사람만 한다. safe·full 은 그 승인 관문을
+    없애는 것이 아니라 **대신 눌러 준다** — `approve` 를 그대로 지나므로 약한 트리거 거부와
+    이름 충돌 거부가 한 자리도 빠지지 않고 선다. 금지 서명 필터는 그보다 앞선 채굴 단계에
+    있어서(`_quest_signal`) 자동 설치분도 애초에 후보가 안 된다.
+
+    기본을 켜는 근거는 autoscan 과 같다. 26-08-12 실측: 이 저장소에 초안 7건이 대기 중이고
+    설치된 학습 스킬은 0건이었다 — 사람 손 하나에 레인 전체가 걸려 있으면 그 레인은 안 돈다.
+    자율의 상한은 '가역'에 둔다: 자동 설치분은 영수증에 표식을 남기고 `evolve archive` 한 줄로
+    물러난다. 판정 표면(Verifier·loki)에는 어느 등급에서도 안 들어간다 (skill_bank 헌법)."""
+    value = str(os.environ.get(AUTONOMY_ENV) or "").strip().lower()
+    if value in AUTONOMY_MODES:
+        return value
+    try:
+        from .settings import load_global
+
+        setting = str((load_global().get("evolution") or {}).get("autonomy", "safe")).strip().lower()
+    except Exception:
+        return "safe"
+    return setting if setting in AUTONOMY_MODES else "safe"
+
+
+def autoapprove(root: str, mined: list[dict]) -> list[dict]:
+    """방금 캔 초안 중 등급 자격분을 스스로 설치한다 — 반환 = 실제로 설치된 후보 메타.
+
+    **이번 스캔이 캔 것만** 본다. 인박스에 이미 있던 초안은 사람이 읽고 그대로 둔 것일 수
+    있고, 그것을 뒤늦게 설치하면 "설치하지 않는다"는 판단을 정책이 뒤집는다. 자율은 새로
+    자라는 자리에만 서고 사람이 손댄 자리는 사람의 것으로 남긴다.
+
+    설치 실패(약한 트리거·이름 충돌)는 조용히 넘긴다 — 초안은 pending 에 그대로 있고 사람이
+    `evolve list` 에서 같은 것을 본다."""
+    allowed = _AUTONOMY_ORIGINS.get(autonomy_mode(), frozenset())
+    if not allowed or not mined:
+        return []
+    installed: list[dict] = []
+    for meta in mined:
+        if str(meta.get("origin") or "") not in allowed:
+            continue
+        try:
+            ok, _msg = approve(root, str(meta.get("id") or ""), auto=True)
+        except Exception:
+            continue  # 성장 실패가 턴을 막지 않는다
+        if ok:
+            installed.append(meta)
+    return installed
 
 
 def _latched(root: str, digest: str, count: int) -> bool:
@@ -641,9 +753,15 @@ def nudge_line(root: str) -> str | None:
 
     한 줄이 말해야 하는 것 셋: 기다리는 것이 무엇인가(스킬 초안), 어디서 나왔는가(어느 퀘스트의
     어떤 실패), 승인하면 무엇이 되는가(다음 워커 배차부터 자동으로 쓰인다). 셋 중 하나라도 빠지면
-    읽는 사람은 "학습 후보"가 무엇을 가리키는 말인지부터 되물어야 한다 (26-08-11 오딘 지적)."""
+    읽는 사람은 "학습 후보"가 무엇을 가리키는 말인지부터 되물어야 한다 (26-08-11 오딘 지적).
+
+    자율 등급이 켜져 있으면(`autonomy_mode`) 자격분은 여기서 바로 설치되고, 그 턴의 한 줄은
+    대기 안내가 아니라 **무엇이 늘었는지**를 말한다."""
     mined = autoscan(root)
+    installed = autoapprove(root, mined)
     items = pending_list(root)
+    if installed:
+        return _installed_line(installed, len(items))
     if items:
         ids = sorted(str(item.get("id") or "") for item in items)
         digest = hashlib.sha1("\0".join(ids).encode()).hexdigest()
@@ -677,6 +795,18 @@ def nudge_line(root: str) -> str | None:
 _INBOX_TAIL = "승인하면 그 뒤 워커 배차부터 자동으로 쓰이고, 안 하면 아무 데도 안 쓰인다 — `asgard evolve list`"
 
 
+def _installed_line(installed: list[dict], waiting: int) -> str:
+    """스스로 설치한 스킬을 알리는 한 줄. latch 를 안 건다 — 설치는 능력이 늘어난 사건이라
+    사람이 못 보고 지나가면 안 되고, 같은 스킬이 두 번 설치되는 경로도 없다."""
+    names = ", ".join(str(m.get("name") or "?") for m in installed[:2])
+    more = f" 외 {len(installed) - 2}건" if len(installed) > 2 else ""
+    tail = f" 초안 {waiting}건은 그대로 승인을 기다린다 — `asgard evolve list`." if waiting else ""
+    return (
+        f"진화 — 학습 스킬 {len(installed)}건을 스스로 설치했다 ({names}{more}). 다음 워커 배차부터 쓰이고, "
+        f"물리려면 `asgard evolve archive <이름>` (등급 {autonomy_mode()} — 설정 `evolution.autonomy`).{tail}"
+    )
+
+
 def _fresh(mined: list[dict]) -> str:
     """방금 뜬 초안이 어느 퀘스트의 무엇에서 나왔는지. 없으면 빈 문자열."""
     if not mined:
@@ -706,10 +836,12 @@ def show(root: str, cid: str) -> str | None:
     return io_files.read_text(_evo_dir(root, PENDING, cid, SKILL_FILE)) or None
 
 
-def approve(root: str, cid: str) -> tuple[bool, str]:
+def approve(root: str, cid: str, *, auto: bool = False) -> tuple[bool, str]:
     """승인 — dry-run 검증 통과 시 learned 스킬 뱅크로 설치. (성공, 메시지) 반환.
 
-    이곳이 pending → 활성의 유일한 관문이다 (자동 활성화 경로 없음, CUS-251 헌법)."""
+    이곳이 pending → 활성의 유일한 관문이다. `auto=True` 는 그 관문을 여는 손이 사람이
+    아니라 정책이었다는 표식일 뿐이고(`autonomy_mode`), 아래 검사는 한 자리도 안 건너뛴다.
+    누가 눌렀는지는 영수증과 seen 기록에 남아 나중에 되짚을 수 있다."""
     text = show(root, cid)
     if text is None:
         return False, f"후보 없음: {cid} (asgard evolve list로 확인)"
@@ -739,6 +871,7 @@ def approve(root: str, cid: str) -> tuple[bool, str]:
         create_key=True,
         approved_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         candidate_id=cid,
+        approved_by="policy" if auto else "user",
     )
     io_files.write_json(os.path.join(dst, APPROVAL_FILE), approval, indent=None, sort_keys=True)
     src = _evo_dir(root, PENDING, cid)
@@ -748,10 +881,19 @@ def approve(root: str, cid: str) -> tuple[bool, str]:
         "status": "approved",
         "id": cid,
         "name": name,
+        "by": "policy" if auto else "user",
         "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
     _save_seen(root, seen)
     shutil.rmtree(src, ignore_errors=True)
+    # 클라이언트 서브에이전트는 스킬 명단을 자기 파일에서 읽는다. 그 파일은 설치 시점에 구워지므로
+    # 여기서 다시 그리지 않으면 방금 깐 스킬이 다음 `asgard sync` 까지 배차에 안 보인다
+    # (26-08-12 실측: 워커 둘 다 이 스킬을 못 받았고 명단에도 없었다). 실패는 삼킨다 — 명단이
+    # 낡는 것과 설치가 안 되는 것 중에는 앞이 낫다.
+    with contextlib.suppress(Exception):
+        from .commands.setup import refresh_role_agents
+
+        refresh_role_agents(root)
     return True, f"설치됨: .asgard/skills/{name}/ — 다음 디스패치부터 자동 라우팅 (재시작 불필요)"
 
 

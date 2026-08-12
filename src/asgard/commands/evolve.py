@@ -1,7 +1,8 @@
 """`asgard evolve` — 진화 인박스 (자가발전 C2, CUS-254).
 
 scan(채굴) → list/show(검토) → approve/reject(처분) → archive(노화 보관).
-승인만이 learned 스킬을 활성화하는 유일한 경로 — 자동 활성화는 없다 (CUS-251 헌법).
+learned 스킬을 활성화하는 함수는 `evolution.approve` 하나이고, 그 하나를 사람이 누르는지
+자율 등급이 누르는지가 `evolution.autonomy` 다 — 관문은 어느 쪽에서도 안 비켜난다.
 
 `--json`은 이 실행의 성질이다: stdout이 기계의 것이 되고, 실패도 `{"error": {...}}`로 나간다.
 그래서 실패는 `return 1`이 아니라 예외로 던진다 — `cli.main`이 두 표면을 한 자리에서 그린다.
