@@ -125,11 +125,35 @@ def siege_add(
     dep: list[str] = typer.Option(None, "--dep", help="a task id in this same run that must finish first"),
     unit: str = typer.Option("", "--unit", help="the assignment-unit id this task carries"),
     parent: str = typer.Option("", "--parent", help="the task this one was split out of"),
+    agent: str = typer.Option("", "--agent", help="which agent this task is for — bound before it is dispatched"),
+    verify: bool = typer.Option(False, "--verify", help="pair it with a verify task that waits on this one alone"),
     json_: bool = typer.Option(False, "--json"),
 ) -> None:
     from ..commands.siege_act import run_add
 
-    raise typer.Exit(run_add(run_id, spec, deps=list(dep or []), unit_id=unit, parent=parent, json_out=json_))
+    raise typer.Exit(
+        run_add(
+            run_id,
+            spec,
+            deps=list(dep or []),
+            unit_id=unit,
+            parent=parent,
+            agent=agent,
+            verify=verify,
+            json_out=json_,
+        )
+    )
+
+
+@siege_app.command("plan", help="lay the whole graph in one call — units with deps by index, and their verify pairs")
+def siege_plan(
+    run_id: str = typer.Argument(..., metavar="<run_id>"),
+    units: str = typer.Argument(..., metavar="<units_json>", help='[{"spec":…,"agent":…,"deps":[0],"verify":true}]'),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from ..commands.siege_act import run_plan
+
+    raise typer.Exit(run_plan(run_id, units, json_out=json_))
 
 
 @siege_app.command("ready", help="the tasks you can dispatch right now — everything they waited on is done")
@@ -418,8 +442,10 @@ def siege_unnote(
     agent: str = typer.Argument(..., metavar="<agent>"),
     quest: str = typer.Option(..., "--quest"),
     summary: str = typer.Option("", "--summary"),
+    spec: str = typer.Option("", "--spec"),
+    heal: bool = typer.Option(False, "--heal"),
     json_: bool = typer.Option(False, "--json"),
 ) -> None:
     from ..commands.siege_act import run_unnote
 
-    raise typer.Exit(run_unnote(quest, agent, summary=summary, json_out=json_))
+    raise typer.Exit(run_unnote(quest, agent, summary=summary, spec=spec, heal=heal, json_out=json_))

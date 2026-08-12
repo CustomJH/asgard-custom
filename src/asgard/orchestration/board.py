@@ -222,8 +222,17 @@ def task_create(
     deps: list[str] | None = None,
     unit_id: str = "",
     parent: str = "",
+    agent: str = "",
+    kind: str = "work",
 ) -> dict:
     """일감을 만든다. deps 는 같은 Run 안의 task id 여야 한다.
+
+    Args:
+        agent: 이 일감을 맡을 에이전트 이름. 배차 **전에** 정해져 장부에 적히므로,
+            `task_ready` 를 읽는 코디네이터는 누구를 띄울지 다시 고르지 않는다. 사다리
+            적법성은 여기서 안 본다 — 판정은 `hooks/subagent_gate.py` 한 자리다.
+        kind: `work` 또는 `verify`. 검증 일감은 자기가 검증할 일감 하나에만 의존해서,
+            단위 A 의 검증이 단위 B 의 작업과 같은 물결에 뜬다.
 
     Raises:
         OrchestrationError: Run 이 없거나 이미 닫혔을 때, deps 가 이 Run 밖의 id 를 가리킬 때,
@@ -254,9 +263,21 @@ def task_create(
         status = "ready" if not deps else "pending"
         try:
             conn.execute(
-                "INSERT INTO tasks(id, run_id, parent_id, unit_id, spec, deps, status, created_at, updated_at)"
-                " VALUES(?,?,?,?,?,?,?,?,?)",
-                (task_id, run_id, parent or None, unit_id, spec, json.dumps(deps), status, now, now),
+                "INSERT INTO tasks(id, run_id, parent_id, unit_id, spec, deps, agent, kind,"
+                " status, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    task_id,
+                    run_id,
+                    parent or None,
+                    unit_id,
+                    spec,
+                    json.dumps(deps),
+                    agent,
+                    kind,
+                    status,
+                    now,
+                    now,
+                ),
             )
         except sqlite3.IntegrityError as exc:
             raise OrchestrationError(f"이 Run에 이미 있는 배정 단위예요: {unit_id}") from exc

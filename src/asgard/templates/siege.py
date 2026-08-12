@@ -8,6 +8,17 @@
 본문이 시그니처를 통째로 지는 이유가 여기 있다. 스킬이 이름만 대면 드리프트가 조용히 자라고,
 `tests/test_siege_skill.py` 가 본문의 동사·플래그를 CLI 와 한자리에서 대조해 그것을 막는다.
 
+표면이 다 있어도 그래프는 저절로 안 돈다. 26-08-12 이전의 본문은 동사 25종을 정확히 적었지만
+**무엇을 먼저 하라는 말이 없어서**, 부르는 쪽이 매번 다시 정했다 — 그래서 같은 장부 위에서
+어떤 세션은 wave 를 띄우고 어떤 세션은 일감을 하나씩 줄 세웠다. 지금 본문 앞에 선 다섯 단계가
+그 자리다: 그래프를 먼저 적고, 에이전트를 계획 시점에 묶고, 한 물결을 한 메시지에서 띄우고,
+받은 에이전트가 자기 전문가를 다시 부르고, 검증은 단위마다 따로 돈다.
+
+`plan` 과 검증 짝(`--verify`)이 그 계약을 실제로 쥔다. `add` 를 여러 번 쳐도 결과는 같지만,
+그쪽은 id 를 받아 다음 호출로 옮기는 품이 들어서 의존이 자주 생략됐다 — 남는 것은 그래프가
+아니라 평평한 목록이었다. 검증 짝은 자기 단위 하나에만 걸린다: 그래야 A 의 검증이 B 의 작업과
+같은 물결에 뜬다.
+
 배정은 Worker 와 Thor 편대장 둘이다. 배차를 실제로 여는 쪽이 그 둘이고, Verifier·loki 는
 resolve 단계에서 이미 빠진다 (advisory 를 판정 표면에 안 넣는 규율)."""
 
@@ -29,6 +40,42 @@ verb is `asgard siege …`, and every verb takes `--json` — the reader here is
 **A siege is not the quest log.** The quest log records what was *verified* and is canonical; the
 siege records what was *attempted* and is derived. When the two disagree the quest log wins, and a
 ledger entry is never completion evidence and never a verification criterion.
+
+## Drive the graph — the sequence, not a suggestion
+
+Coordination fails the same way every time. The coordinator keeps the decomposition in its head,
+launches one agent, waits for it, launches the next, and calls the result a graph. It is a queue
+with extra bookkeeping: nothing ran beside anything else, and no wave ever existed. These five
+steps are what separate the two, and they are the reason this skill is loaded.
+
+1. **Write the graph down before you launch anything.** `siege plan` takes the whole decomposition
+   in one call — every unit, who it is for, what it waits on, whether it gets its own verifier. A
+   unit that was never written down cannot be handed out, retried, reclaimed, or verified, and no
+   later step recovers it. Decompose to the point where two units touch different files; stop
+   before units get so small that the handoff costs more than the work.
+2. **Bind the agent when you plan, not when you launch.** `agent` on a unit is the dispatch
+   decision, made once and recorded. `siege ready` then answers *who to launch*, not merely *what
+   is unblocked*, so the choice is not re-argued every round and a resumed run picks up the same
+   assignment the plan made.
+3. **Launch a whole wave in one assistant message.** Every task `siege ready` hands back becomes
+   its own Agent call, and all of them go in the same message. Splitting them across messages
+   serialises the graph you just built — the tool that runs them concurrently is the host, and it
+   only does so for calls that arrive together. Six ready tasks mean six calls in one message.
+4. **A launched agent dispatches its own specialists.** The agent you launch is not a leaf. It
+   opens its own dispatches down the delegation ladder for the surfaces it does not own, and those
+   sub-calls follow the same one-message rule. Two invariants decide every pair — a role never
+   calls its own rung or above, and a read-only caller reaches only read-only agents — and the
+   `subagent-gate` hook is the one place that enforces them. Do not restate the ladder here or
+   pre-filter it yourself; name the agent you want and let the gate answer.
+5. **Verification runs per unit, beside the work.** A unit planned with `verify` gets a verify task
+   that waits on **that unit alone**. So the moment unit A settles, its verifier is dispatchable —
+   while unit B is still being written. Verification stops being a stage at the end of the run and
+   becomes another lane of the same graph. One verifier at the end is the single most common way a
+   parallel run loses its parallelism.
+
+The verify task is a dispatch-axis record — that a verifier was put on that unit, and what it
+reported. **It is not the verdict.** The PASS that closes the quest is the Trinity Verifier's
+event in the quest log, and nothing here substitutes for it.
 
 ## Three layers
 
@@ -138,12 +185,29 @@ means alive, not done.
 `--quest` binds the run to a quest and reuses the run that quest already has, so re-running is
 idempotent. `--why` is read back in `show`.
 
-    asgard siege add <run_id> "<spec>" [--dep <task_id>]… [--unit <unit_id>] [--parent <task_id>]
-        [--json]
+    asgard siege plan <run_id> '<units_json>' [--json]
 
-`--dep` names a task in the same run that must finish first; with no `--dep` the task is ready at
-once. `--unit` carries the assignment-unit id so the ledger and the quest log name the same work.
-A dependency cycle is refused.
+Lays the whole graph in one call — **start here** on any run with more than one unit. The argument
+is a JSON array, and `deps` are indices into that same array, so no unit waits on an id you have
+not been handed yet:
+
+    [{"spec": "the API surface",  "agent": "asgard-thor",   "verify": true},
+     {"spec": "the CLI surface",  "agent": "asgard-thor",   "verify": true},
+     {"spec": "docs over both",   "agent": "asgard-worker", "deps": [0, 1], "verify": true}]
+
+`agent` binds who takes the unit, `verify` pairs it with a verifier that waits on that unit alone,
+and `unit` carries the assignment-unit id. A dep pointing at itself or at a later index is refused
+before anything is written, so a bad graph never leaves half its tasks behind. The reply carries
+the tasks and the wave layout — the first wave is what you launch, in one message.
+
+    asgard siege add <run_id> "<spec>" [--dep <task_id>]… [--unit <unit_id>] [--parent <task_id>]
+        [--agent <agent>] [--verify] [--json]
+
+One task, for grafting onto a graph that already exists — a unit the plan did not foresee, or a
+retry surface found mid-run. `--dep` names a task in the same run that must finish first; with no
+`--dep` the task is ready at once. `--unit` carries the assignment-unit id so the ledger and the
+quest log name the same work. `--agent` binds who takes it, `--verify` pairs it with a verifier
+that waits on this task alone. A dependency cycle is refused.
 
     asgard siege open <task_id> [--worker <who>] [--role <trinity_role>] [--agent <agent>]
         [--model <model>] [--retry-of <dispatch_id>] [--json]
@@ -183,21 +247,33 @@ survives, because the ledger is derived.
 
 ## Coordinator loop
 
-1. `siege show <run>` — see where the graph stands.
-2. `siege ready <run>` (or `waves`) — take a whole batch and launch all of it in one message.
+0. `siege plan <run> '<units>'` — lay the graph. Everything below reads what this wrote.
+1. `siege ready <run> --json` — the tasks that are dispatchable now. Each row carries `agent`,
+   `kind`, and `spec`: that is a launch order, not a reading.
+2. **Launch every row in one message.** One Agent call per row, `agent` deciding which agent, `spec`
+   the assignment, and the task id passed through so the worker can report against it. Work rows
+   (`kind: work`) and verify rows (`kind: verify`) go out together — a verifier for a finished unit
+   belongs in the same wave as work on an unfinished one.
 3. `siege check <run> --type worker_done --type escalation --type question --wait-ms <n> --json`.
 4. Handle every message in the delivery: `question` → `siege answer`, `escalation` → decide or put
    it to the user, `worker_done` → move on.
 5. `siege check <run> --ack <delivery_id> --wait-ms <n>` — acknowledge and keep waiting in one call.
-6. When the batch settles, `siege ready` again for the next wave. `siege close <run>` at the end.
+6. Back to step 1 as soon as **anything** settles. Do not wait for the wave to drain: one finished
+   unit unblocks its own verifier and any unit that was waiting only on it, and those launch now.
+   `siege close <run>` at the end.
+
+`siege waves <run>` shows the same graph as batches, for reading the shape. `ready` is what you
+dispatch from — it accounts for what has actually settled, and `waves` does not.
 
 ## Worker turn
 
 1. You were handed a task id, and a dispatch id if the spine is yours to open.
-2. Blocked on something only the coordinator can answer:
+2. Your unit is yours to decompose further. Surfaces you do not own go to the specialist that does,
+   dispatched down the ladder, and several of them go out in one message like any other wave.
+3. Blocked on something only the coordinator can answer:
    `siege ask <run> "<q>" --sender <you> --task <task> --wait-ms <n>`.
-3. Working a long stretch: `siege heartbeat <run> <task> <dispatch> --phase "<what you are doing>"`.
-4. Finished: `siege done <dispatch> succeeded|failed --subject "<headline>" --file <each path>`.
+4. Working a long stretch: `siege heartbeat <run> <task> <dispatch> --phase "<what you are doing>"`.
+5. Finished: `siege done <dispatch> succeeded|failed --subject "<headline>" --file <each path>`.
 
 ## Invariants
 
@@ -205,6 +281,11 @@ survives, because the ledger is derived.
 - The ledger is derived — never completion evidence, never a verification criterion.
 - One live Dispatch per Task; a resolved Task does not reopen.
 - Do not hand-write what the lifecycle already writes for you.
+- A wave launches in one message. Ready tasks sent one per message did not run in parallel.
+- A verify task waits on its own unit and nothing else. Widening it to the whole graph puts
+  verification back at the end of the run.
+- Verification independence holds here too: a verify task goes to `asgard-verifier`, never to an
+  agent that can edit the diff it is judging.
 """
 
 SIEGE_SKILLS: list[tuple[str, str]] = [("asgard-siege", SIEGE_SKILL_MD)]

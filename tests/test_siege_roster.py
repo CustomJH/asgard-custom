@@ -103,6 +103,26 @@ class TestOneCallIsOneRow(RosterBase):
         with self.assertRaises(orc.OrchestrationError):
             orc.close_agent(self.root, "q-1", "asgard-freyja")
 
+    def test_healing_stands_up_a_role_whose_opening_record_was_lost(self):
+        """여는 기록은 답을 안 기다리는 자식 프로세스가 적고 그 실패는 조용하다.
+
+        26-08-12 에 Thinker 의 여는 기록이 그렇게 사라져 그 역할이 장부에 아예 안 남았다.
+        종료에 닿았다는 것은 그 에이전트가 실제로 돌았다는 뜻이라, 여기서 세우고 접는다."""
+        from asgard.commands.siege_act import run_unnote
+
+        self.assertEqual(run_unnote("q-1", "asgard-thinker", spec="계획", heal=True, json_out=True), 0)
+        run = orc.run_list(self.root)[0]
+        tasks = orc.task_list(self.root, run["id"])
+        self.assertEqual([t["spec"] for t in tasks], ["계획"])
+        self.assertEqual(tasks[0]["status"], "completed")
+
+    def test_without_healing_a_lost_opening_stays_lost(self):
+        """복구는 부르는 쪽이 켜는 갈래다 — 단위 티켓이 쥔 수명에서 세우면 한 Task 를 둘이 연다."""
+        from asgard.commands.siege_act import run_unnote
+
+        self.assertEqual(run_unnote("q-1", "asgard-worker", heal=False, json_out=True), 2)
+        self.assertEqual(orc.run_list(self.root), [])
+
     def test_closing_never_takes_a_unit_ticket(self):
         """단위 티켓의 수명은 ticket-finish 가 쥔다. 이름만으로 고르면 훅의 종료가 그 시도를
         먼저 접고, 뒤따르는 ticket-finish 는 정산할 것을 잃는다."""

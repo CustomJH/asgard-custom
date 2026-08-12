@@ -29,6 +29,12 @@ from .. import ui
 from .health import _project_root
 
 _SPEC_HEAD = 60  # 목록 한 줄이 드는 만큼. `commands/siege.py` 와 같은 값이라 두 표면이 같은 폭으로 자른다.
+# 검증 짝을 맡는 에이전트. 판정을 쓰기 가능한 손에게 주면 자기 diff 를 자기가 판정하므로,
+# 이 자리는 Trinity 판정자로 고정한다 (AGENTS.md 의 검증 독립성).
+_VERIFY_AGENT = "asgard-verifier"
+# 한 번에 깔 수 있는 단위 수. 넘으면 그래프가 아니라 목록이고, 그만큼의 에이전트를 동시에
+# 띄우면 호스트의 동시 실행 상한에 걸려 뒤쪽이 조용히 줄을 선다.
+_PLAN_MAX_UNITS = 32
 
 
 def _root() -> str:
@@ -132,6 +138,8 @@ def run_add(
     deps: list[str] | None = None,
     unit_id: str = "",
     parent: str = "",
+    agent: str = "",
+    verify: bool = False,
     json_out: bool = False,
 ) -> int:
     """일감 하나를 DAG 에 넣는다. `deps` 가 있으면 pending, 없으면 곧장 ready 로 난다.
@@ -139,20 +147,175 @@ def run_add(
     의존은 **같은 Run 안의 task id** 여야 한다. 배정 단위 이름(`--unit`)으로는 못 건다 —
     도메인이 id 로만 검사하므로, 단위 이름을 넣으면 "이 Run에 없는 의존" 으로 거절된다.
 
+    `verify` 는 이 일감 하나에만 의존하는 검증 일감을 짝으로 세운다. 의존을 하나로 묶는 것이
+    요점이다 — 단위 A 의 검증은 A 가 끝나는 순간 ready 가 되고, 단위 B 가 아직 도는 중이어도
+    기다리지 않는다. 검증을 맨 끝에 하나로 두면 그 병렬이 사라진다.
+
     Returns:
         0 이면 만들었고, 2 면 도메인이 거절했다(닫힌 Run·없는 의존·중복 단위).
     """
     ui.set_quiet(json_out)
     try:
-        task = orc.task_create(_root(), run_id, spec, deps=list(deps or []), unit_id=unit_id, parent=parent)
+        task = orc.task_create(
+            _root(), run_id, spec, deps=list(deps or []), unit_id=unit_id, parent=parent, agent=agent
+        )
+        checker = _verify_task(run_id, task) if verify else None
     except orc.OrchestrationError as exc:
         return _fail(exc)
     if json_out:
-        _dump(task, True)
+        # 만든 일감을 그대로 최상위에 둔다. 검증 짝은 열쇠 하나로 얹을 뿐이라, `--verify` 를
+        # 안 쓰던 호출자가 읽던 `["id"]` 자리가 그대로 남는다.
+        _dump({**task, "verify": checker}, True)
         return 0
-    ui.ok(f"일감을 만들었어요 — {task['id']} ({task['status']})")
+    ui.ok(f"일감을 만들었어요 — {task['id']} ({task['status']}){_agent_suffix(agent)}")
     ui.step(ui.dim(f"    {ui.oneline(spec, _SPEC_HEAD)}"))
+    if checker is not None:
+        ui.step(ui.dim(f"    검증 짝 {checker['id']} — {task['id']} 만 기다려요"))
     return 0
+
+
+def _agent_suffix(agent: str) -> str:
+    return f" → {agent}" if agent else ""
+
+
+def _verify_task(run_id: str, task: dict) -> dict:
+    """일감 하나를 판정할 검증 Task 를 그 일감에만 걸어 세운다."""
+    return orc.task_create(
+        _root(),
+        run_id,
+        f"verify: {task['spec']}",
+        deps=[task["id"]],
+        agent=_VERIFY_AGENT,
+        kind="verify",
+    )
+
+
+def run_plan(run_id: str, units_json: str, json_out: bool = False) -> int:
+    """단위 목록 하나로 그래프 전체를 깐다 — 배차 전에 모양을 적게 하는 자리.
+
+    `add` 를 여러 번 치는 것과 결과는 같지만 값이 다르다. 손으로 치면 id 를 받아 다음 호출의
+    `--dep` 에 옮겨야 해서, 의존을 적는 일이 귀찮은 만큼 자주 생략된다 — 그러면 남는 것은
+    그래프가 아니라 평평한 목록이고, 무엇이 무엇을 기다리는지는 부르는 쪽 머릿속에만 있다.
+    여기서는 의존을 **배열 색인**으로 적으므로 id 를 기다릴 일이 없다.
+
+    단위 하나의 모양::
+
+        {"spec": "무엇을", "agent": "asgard-thor", "deps": [0], "verify": true, "unit": "u1"}
+
+    `deps` 는 같은 배열의 앞선 항목을 가리키는 색인이다. 뒤나 자기를 가리키면 순환이므로
+    거절한다 — 도메인의 순환 검사보다 여기서 먼저 잡는 이유는, 절반만 만들어진 그래프를
+    남기지 않기 위해서다.
+
+    Returns:
+        0 이면 깔았고, 2 면 JSON 이 틀렸거나 도메인이 거절했다.
+    """
+    ui.set_quiet(json_out)
+    root = _root()
+    try:
+        units = _parse_units(units_json)
+    except ValueError as exc:
+        ui.fail(str(exc))
+        return 2
+    if orc.run_show(root, run_id) is None:
+        ui.fail(f"그런 Run이 없어요: {run_id}")
+        return 2
+
+    created: list[dict] = []
+    checkers: list[dict] = []
+    try:
+        for unit in units:
+            deps = [created[d]["id"] for d in unit["deps"]]
+            task = orc.task_create(
+                root,
+                run_id,
+                unit["spec"],
+                deps=deps,
+                unit_id=unit["unit"],
+                agent=unit["agent"],
+            )
+            created.append(task)
+            if unit["verify"]:
+                checkers.append(_verify_task(run_id, task))
+    except orc.OrchestrationError as exc:
+        return _fail(exc)
+
+    tasks = created + checkers
+    if json_out:
+        _dump({"tasks": tasks, "waves": _wave_view(root, run_id)}, True)
+        return 0
+    ui.ok(f"그래프를 깔았어요 — 일감 {len(created)}개, 검증 {len(checkers)}개")
+    for task in tasks:
+        waiting = f"  ({len(task['deps'])}개 기다림)" if task["deps"] else ""
+        ui.step(f"  ○ {task['id']}{_agent_suffix(task['agent'])}{waiting}")
+        ui.step(ui.dim(f"      {ui.oneline(task['spec'], _SPEC_HEAD)}"))
+    return 0
+
+
+def _parse_units(units_json: str) -> list[dict]:
+    """단위 배열을 읽고 정규화한다. 틀린 모양은 ValueError 로 돌려 절반짜리 그래프를 막는다."""
+    try:
+        raw = json.loads(units_json)
+    except ValueError as exc:
+        raise ValueError(f"단위 목록이 JSON 이 아니에요: {exc}") from exc
+    if not isinstance(raw, list) or not raw:
+        raise ValueError("단위 목록은 비어 있지 않은 JSON 배열이어야 해요.")
+    if len(raw) > _PLAN_MAX_UNITS:
+        raise ValueError(f"한 번에 깔 수 있는 단위는 {_PLAN_MAX_UNITS}개까지예요: {len(raw)}개")
+
+    units: list[dict] = []
+    for index, item in enumerate(raw):
+        if not isinstance(item, dict):
+            raise ValueError(f"{index}번 단위가 객체가 아니에요.")
+        spec = str(item.get("spec") or "").strip()
+        if not spec:
+            raise ValueError(f"{index}번 단위에 spec 이 없어요 — 무엇을 할 일감인지가 비면 띄울 수 없어요.")
+        deps = item.get("deps") or []
+        if not isinstance(deps, list):
+            raise ValueError(f"{index}번 단위의 deps 는 색인 배열이어야 해요.")
+        parsed_deps: list[int] = []
+        for dep in deps:
+            if not isinstance(dep, int) or isinstance(dep, bool) or not 0 <= dep < index:
+                raise ValueError(f"{index}번 단위의 의존 {dep!r} 은 자기보다 앞선 단위의 색인이어야 해요.")
+            parsed_deps.append(dep)
+        units.append(
+            {
+                "spec": spec,
+                "agent": str(item.get("agent") or "").strip(),
+                "unit": str(item.get("unit") or "").strip(),
+                "deps": parsed_deps,
+                "verify": bool(item.get("verify")),
+            }
+        )
+    return units
+
+
+def _wave_view(root: str, run_id: str) -> list[list[dict]]:
+    """그래프를 동시에 뜰 수 있는 묶음으로 편다 — 각 항목은 그대로 배차 지시다."""
+    tasks = orc.task_list(root, run_id)
+    by_id = {task["id"]: task for task in tasks}
+    try:
+        waves = orc.topo_waves([t["id"] for t in tasks], {t["id"]: t["deps"] for t in tasks})
+    except orc.OrchestrationError:
+        return []
+    return [[_launch_row(by_id[tid]) for tid in wave] for wave in waves]
+
+
+def _launch_row(task: dict) -> dict:
+    """일감 한 줄을 배차에 필요한 것만으로 줄인다 — 읽는 쪽이 다시 고를 것이 없게.
+
+    `label` 은 사람이 읽는 짧은 이름이고 나머지가 배차 지시다. 둘을 한 줄에 두는 이유는 이
+    모양을 `waves` 와 `plan` 이 같이 쓰기 때문이다 — 한쪽은 그림을, 한쪽은 띄울 것을 읽는다.
+    """
+    return {
+        "id": task["id"],
+        "label": task.get("unit_id") or task["id"][-6:],
+        "agent": task.get("agent") or "",
+        "kind": task.get("kind") or "work",
+        "spec": task.get("spec") or "",
+        "unit_id": task.get("unit_id") or "",
+        "status": task.get("status") or "",
+        "deps": task.get("deps") or [],
+    }
 
 
 def run_ready(run_id: str, json_out: bool = False) -> int:
@@ -179,7 +342,10 @@ def run_ready(run_id: str, json_out: bool = False) -> int:
         ui.step(ui.dim("지금 배차할 수 있는 일감이 없어요."))
         return 0
     for task in tasks:
-        ui.step(f"  ○ {task['id']}  {ui.dim(ui.oneline(task['spec'], _SPEC_HEAD))}")
+        mark = "◇" if task.get("kind") == "verify" else "○"
+        ui.step(f"  {mark} {task['id']}{_agent_suffix(task.get('agent') or '')}")
+        ui.step(ui.dim(f"      {ui.oneline(task['spec'], _SPEC_HEAD)}"))
+    ui.step(ui.dim(f"  이 {len(tasks)}개를 한 메시지에서 같이 띄워요 — 한 번에 하나씩은 그래프가 아니에요."))
     return 0
 
 
@@ -198,20 +364,26 @@ def run_waves(run_id: str, json_out: bool = False) -> int:
         ui.fail(f"그런 Run이 없어요: {run_id}")
         return 2
     tasks = orc.task_list(root, run_id)
-    label = {task["id"]: (task.get("unit_id") or task["id"][-6:]) for task in tasks}
+    rows = {task["id"]: _launch_row(task) for task in tasks}
     try:
         waves = orc.topo_waves([task["id"] for task in tasks], {task["id"]: task["deps"] for task in tasks})
     except orc.OrchestrationError as exc:
         return _fail(exc)
     if json_out:
-        _dump([[{"id": tid, "label": label[tid]} for tid in wave] for wave in waves], True)
+        _dump([[rows[tid] for tid in wave] for wave in waves], True)
         return 0
     if not waves:
         ui.step(ui.dim("펼 일감이 없어요."))
         return 0
     for index, wave in enumerate(waves, start=1):
-        ui.step(f"  {index}차  {' · '.join(label[tid] for tid in wave)}")
+        ui.step(f"  {index}차  {' · '.join(_wave_label(rows[tid]) for tid in wave)}")
     return 0
+
+
+def _wave_label(row: dict) -> str:
+    """묶음 한 칸 — 맡을 에이전트가 정해져 있으면 그것까지 보인다."""
+    agent = row["agent"]
+    return f"{row['label']}→{agent.removeprefix('asgard-')}" if agent else row["label"]
 
 
 def run_refresh(run_id: str, json_out: bool = False) -> int:
@@ -609,20 +781,35 @@ def run_note(
     return _emit(dispatch, json_out, f"장부에 세웠어요 — {agent} ({dispatch['id']})")
 
 
-def run_unnote(quest_id: str, agent: str, *, summary: str = "", json_out: bool = False) -> int:
+def run_unnote(
+    quest_id: str, agent: str, *, summary: str = "", spec: str = "", heal: bool = False, json_out: bool = False
+) -> int:
     """그 에이전트의 살아 있는 시도를 접는다 — 디스패치 훅이 종료에서 부르는 문.
 
     결과는 언제나 `succeeded` 다. 이 자리가 아는 것은 호출이 답을 들고 돌아왔다는 사실뿐이고,
     판정의 옳고 그름은 다른 축이다 — 판정자의 FAIL 은 `summary` 로 간다.
 
+    `heal` 은 **여는 쪽이 유실됐을 때** 종료에서 그 자리를 메운다. 장부 쓰기는 디스패치를
+    붙잡지 않으려고 답을 안 기다리는 자식 프로세스로 나가고 그 실패는 조용하다 — 26-08-12 에
+    Thinker 의 여는 기록이 그렇게 사라져 그 역할이 장부에 아예 안 남았다. 종료에 닿았다는 것은
+    그 에이전트가 실제로 돌았다는 뜻이라, 세우고 곧바로 접으면 장부가 사실과 다시 맞는다.
+    부르는 쪽은 단위 티켓이 쥔 수명에는 이 갈래를 켜지 않는다 — 거기서 세우면 한 Task 를 둘이 연다.
+
     Returns:
         0 이면 접었고, 2 면 접을 시도가 없었다(장부를 안 거친 디스패치의 종료 — 정상이다).
     """
     ui.set_quiet(json_out)
+    root = _root()
     try:
-        settled = orc.close_agent(_root(), quest_id, agent, "succeeded", summary=summary)
+        settled = orc.close_agent(root, quest_id, agent, "succeeded", summary=summary)
     except orc.OrchestrationError as exc:
-        return _fail(exc)
+        if not heal:
+            return _fail(exc)
+        try:
+            orc.note_agent(root, quest_id, agent, spec=spec, objective=quest_id)
+            settled = orc.close_agent(root, quest_id, agent, "succeeded", summary=summary)
+        except orc.OrchestrationError as healing:
+            return _fail(healing)
     return _emit(settled, json_out, f"시도를 접었어요 — {agent}")
 
 

@@ -165,6 +165,80 @@ class TestOneSiegeByCommandAlone(ActBase):
         self.assertIn(f"{orc.MAX_ATTEMPTS}회", message, "몇 번째 시도까지 갔는지가 안 보인다")
 
 
+class TestThePlanLaysTheWholeGraph(ActBase):
+    """`plan` 한 번이 그래프를 세운다 — 색인 의존, 에이전트 결속, 단위별 검증 레인."""
+
+    def plan(self, run_id: str, units: list[dict]) -> dict:
+        return self.json_of(lambda: siege_act.run_plan(run_id, json.dumps(units), json_out=True))
+
+    def test_dependencies_are_written_by_index_so_no_id_round_trip_is_needed(self):
+        run_id = self.start_run(shape="graph")
+        laid = self.plan(
+            run_id,
+            [
+                {"spec": "스키마", "unit": "u-schema"},
+                {"spec": "API", "unit": "u-api", "deps": [0]},
+            ],
+        )
+        schema, api = laid["tasks"]
+        self.assertEqual(api["deps"], [schema["id"]], "색인 의존이 id 로 안 풀렸다")
+        self.assertEqual(schema["status"], "ready")
+        self.assertEqual(api["status"], "pending")
+
+    def test_the_agent_is_bound_before_anything_is_dispatched(self):
+        run_id = self.start_run()
+        laid = self.plan(run_id, [{"spec": "API 손보기", "agent": "asgard-thor"}])
+        (task,) = laid["tasks"]
+        self.assertEqual(self.task_of(task["id"])["agent"], "asgard-thor")
+
+        ready = self.json_of(lambda: siege_act.run_ready(run_id, json_out=True))
+        self.assertEqual(ready[0]["agent"], "asgard-thor", "배차 후보가 누구를 띄울지 안 말한다")
+
+    def test_a_verify_pair_waits_on_its_own_unit_and_not_on_the_rest_of_the_graph(self):
+        """이 시험이 병렬 검증의 전부다 — A 의 검증이 B 의 작업과 같은 물결에 떠야 한다."""
+        run_id = self.start_run(shape="graph")
+        laid = self.plan(
+            run_id,
+            [
+                {"spec": "백엔드", "agent": "asgard-thor", "verify": True},
+                {"spec": "CLI", "agent": "asgard-thor", "verify": True},
+            ],
+        )
+        backend, cli_task = laid["tasks"][:2]
+        checker = next(t for t in laid["tasks"] if t["deps"] == [backend["id"]])
+        self.assertEqual(checker["kind"], "verify")
+        self.assertEqual(checker["agent"], "asgard-verifier", "판정을 쓰기 가능한 손에게 줬다")
+
+        dispatch = self.json_of(lambda: siege_act.run_open(backend["id"], worker="w-1", json_out=True))
+        self.quiet(lambda: siege_act.run_done(dispatch["id"], "succeeded", json_out=True))
+
+        ready = {task["id"] for task in self.json_of(lambda: siege_act.run_ready(run_id, json_out=True))}
+        self.assertIn(checker["id"], ready, "앞 단위가 끝났는데 그 검증이 안 풀렸다")
+        self.assertIn(cli_task["id"], ready, "검증이 다른 단위의 작업을 붙들고 있다")
+
+    def test_a_dependency_pointing_forward_leaves_no_half_built_graph(self):
+        run_id = self.start_run()
+        code = self.quiet(
+            lambda: siege_act.run_plan(run_id, json.dumps([{"spec": "먼저", "deps": [1]}, {"spec": "나중"}]))
+        )
+        self.assertEqual(code, 2)
+        self.assertEqual(orc.task_list(self.root, run_id), [], "거절한 그래프의 일감이 남았다")
+
+    def test_a_unit_without_a_spec_is_refused(self):
+        run_id = self.start_run()
+        self.assertEqual(self.quiet(lambda: siege_act.run_plan(run_id, json.dumps([{"agent": "asgard-thor"}]))), 2)
+        self.assertEqual(self.quiet(lambda: siege_act.run_plan(run_id, "그냥 글자")), 2)
+
+    def test_add_grafts_one_unit_with_its_own_verifier(self):
+        run_id = self.start_run()
+        grafted = self.json_of(
+            lambda: siege_act.run_add(run_id, "빠뜨린 단위", agent="asgard-eitri", verify=True, json_out=True)
+        )
+        self.assertEqual(grafted["agent"], "asgard-eitri")
+        self.assertEqual(grafted["verify"]["deps"], [grafted["id"]])
+        self.assertEqual(grafted["verify"]["kind"], "verify")
+
+
 class TestTheDomainRefusalsSurviveTheCommandLayer(ActBase):
     """도메인이 지키는 계약을 표면이 무르게 만들지 않는다. 전부 종료 코드 2 다."""
 

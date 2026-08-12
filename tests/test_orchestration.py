@@ -26,7 +26,7 @@ from typing import Any
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from asgard import orchestration as orc  # noqa: E402
-from asgard.orchestration import model, strategy  # noqa: E402
+from asgard.orchestration import model, store, strategy  # noqa: E402
 from asgard.orchestration.store import connect  # noqa: E402
 
 
@@ -372,7 +372,7 @@ class TestSchemaMigration(OrchestrationBase):
             index = conn.execute(
                 "SELECT 1 FROM sqlite_master WHERE type='index' AND name='dispatches_one_ready_per_task'"
             ).fetchone()
-        self.assertEqual(version, 2)
+        self.assertEqual(version, store.SCHEMA_VERSION)
         self.assertIsNotNone(index)
 
     def test_version_one_database_with_duplicates_still_opens(self):
@@ -391,7 +391,23 @@ class TestSchemaMigration(OrchestrationBase):
 
         self.assertEqual(len(orc.dispatch_history(self.root, task["id"])), 2)
         with sqlite3.connect(orc.db_path(self.root)) as conn:
-            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 2)
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], store.SCHEMA_VERSION)
+
+    def test_a_table_that_already_exists_still_gains_the_new_columns(self):
+        """`CREATE TABLE IF NOT EXISTS` 는 표가 있으면 통째로 건너뛴다 — 열은 ALTER 로만 온다.
+
+        이 시험이 없으면 새로 만든 장부에서만 통과하고, 쓰던 장부에서는 `plan` 이 없는 열에
+        적으려다 죽는다. 재는 것은 판 번호가 아니라 열의 존재다.
+        """
+        with sqlite3.connect(orc.db_path(self.root)) as conn:
+            conn.execute("ALTER TABLE tasks DROP COLUMN agent")
+            conn.execute("ALTER TABLE tasks DROP COLUMN kind")
+            conn.execute("PRAGMA user_version=2")
+
+        task = orc.task_create(self.root, self.run_row["id"], "옛 장부 위의 일감", agent="asgard-thor", kind="work")
+
+        self.assertEqual(task["agent"], "asgard-thor")
+        self.assertEqual(task["kind"], "work")
 
 
 class TestStaleReports(OrchestrationBase):

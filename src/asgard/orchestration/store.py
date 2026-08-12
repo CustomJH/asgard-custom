@@ -25,7 +25,7 @@ import sqlite3
 import threading
 from collections.abc import Iterator
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 DB_DIR = ".asgard"
 DB_FILE = "orchestration.db"
 STATE_ENV = "ASGARD_ORCHESTRATION_DB"  # 시험이 사용자의 배차 장부를 안 건드리게 하는 문
@@ -73,6 +73,8 @@ _SCHEMA = (
         unit_id      TEXT NOT NULL DEFAULT '',
         spec         TEXT NOT NULL DEFAULT '',
         deps         TEXT NOT NULL DEFAULT '[]',
+        agent        TEXT NOT NULL DEFAULT '',
+        kind         TEXT NOT NULL DEFAULT 'work',
         status       TEXT NOT NULL DEFAULT 'pending',
         result       TEXT,
         attempts     INTEGER NOT NULL DEFAULT 0,
@@ -187,6 +189,14 @@ _UNIQUE_INDEXES = (
     """,
 )
 
+# 이미 만들어진 표에 열을 더하는 자리. `CREATE TABLE IF NOT EXISTS` 는 표가 있으면 통째로
+# 건너뛰므로 새 열이 옛 파일에는 영영 안 생긴다 — 판을 올릴 때마다 여기에 한 줄씩 적는다.
+# 열이 이미 있으면 sqlite 가 OperationalError 를 내고, 그것이 곧 "이 판은 이미 적용됐다" 다.
+_ADDED_COLUMNS = (
+    "ALTER TABLE tasks ADD COLUMN agent TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE tasks ADD COLUMN kind TEXT NOT NULL DEFAULT 'work'",
+)
+
 
 def db_path(root: str) -> str:
     """이 저장소의 배차 장부 자리. 환경변수가 있으면 그쪽이 우선한다."""
@@ -289,6 +299,9 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         return
     for statement in _SCHEMA:
         conn.execute(statement)
+    for statement in _ADDED_COLUMNS:
+        with contextlib.suppress(sqlite3.OperationalError):
+            conn.execute(statement)
     for statement in _UNIQUE_INDEXES:
         try:
             conn.execute(statement)

@@ -69,7 +69,9 @@ def note_agent(
         raise OrchestrationError("장부에 세울 에이전트 이름이 없어요")
     run = run_bind(root, quest_id, str(objective or quest_id)[:_SPEC_CAP], coordinator="heimdall")
     parent = _live_task(root, run["id"], caller) if caller else ""
-    task = task_create(root, run["id"], (str(spec).strip() or agent)[:_SPEC_CAP], parent=parent)
+    # 일감에도 에이전트를 적는다. 훅이 세운 Task 는 이미 그 에이전트의 것이므로, 비워 두면
+    # `siege ready` 가 계획된 일감에 대해서만 "누가 맡나" 에 답하고 이쪽에는 못 답한다.
+    task = task_create(root, run["id"], (str(spec).strip() or agent)[:_SPEC_CAP], parent=parent, agent=agent)
     try:
         return open_dispatch(
             root,
