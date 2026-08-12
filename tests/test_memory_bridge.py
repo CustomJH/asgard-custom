@@ -494,13 +494,22 @@ class TestConfigInheritance(BridgeBase):
 
 
 class TestInjectTimeout(unittest.TestCase):
-    """자동 회수 한 번이 기다리는 초 — 기본 5, 설정으로 올리되 천장이 있다."""
+    """자동 회수 한 번이 기다리는 초 — 설정으로 올리되 천장이 있다."""
 
     def test_default_when_unset_or_unreadable(self):
         from asgard.memory_context import INJECT_TIMEOUT_DEFAULT, inject_timeout
 
         for cfg in ({}, {"inject_timeout": None}, {"inject_timeout": "느리게"}):
             self.assertEqual(inject_timeout(cfg), INJECT_TIMEOUT_DEFAULT)
+
+    def test_the_default_clears_the_measured_recall_spread(self):
+        """상한이 실측 분포 한가운데 있으면 주입 여부가 그날의 부하로 갈리고, 떨어질 때 조용하다.
+
+        후보 상한을 적용한 뒤의 관측치는 3.1초(helios-asgard 26-08-12)와 6.5초(26-08-11 다른
+        뱅크) 사이에 있다. 기본값이 그 위에 있어야 느린 backend 와 죽은 backend 가 구별된다."""
+        from asgard.memory_context import INJECT_TIMEOUT_DEFAULT
+
+        self.assertGreaterEqual(INJECT_TIMEOUT_DEFAULT, 7)
 
     def test_setting_raises_the_wait_up_to_the_ceiling(self):
         from asgard.memory_context import INJECT_TIMEOUT_CEILING, inject_timeout

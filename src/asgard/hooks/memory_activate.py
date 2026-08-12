@@ -289,7 +289,12 @@ def main():
             cmd = [exe, "memory", "recall", "--provider", mode, "--", prompt]
         else:
             cmd = [exe, "memory", "snapshot", "--provider", mode]
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=10, encoding="utf-8", errors="replace")
+        # 바깥 상한은 한 레인이 아니라 **여섯 레인 전부**를 덮는다 (memory_context 의 조립기가 개인·
+        # 프로젝트·문서·에피소드·요약을 한 프로세스 안에서 차례로 돈다). 그래서 프로젝트 레인 하나의
+        # 상한(`INJECT_TIMEOUT_DEFAULT`)과 같은 값이면 그 레인이 자기 몫을 다 쓰는 순간 바깥이 먼저
+        # 터지고, 아래 except 가 **주입 전체를** 조용히 버린다 — 프로젝트만 빠지는 것이 아니다.
+        # 형제 호출인 `memory tick` 과 같은 20 으로 둬서 나머지 다섯 레인의 자리를 남긴다.
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=20, encoding="utf-8", errors="replace")
         note = (r.stdout or "").strip()
         if r.returncode == 0 and note:
             emit_context(mode, note, event)
