@@ -27,6 +27,8 @@ Worker 가 asgard-thor 를 서로 다른 두 표면에 부르면 그것은 일�
 
 from __future__ import annotations
 
+import json
+
 from .board import run_bind, task_create, task_update
 from .dispatch import open_dispatch
 from .dispatch import settle as dispatch_settle
@@ -39,6 +41,9 @@ _SUMMARY_CAP = 2000
 # 네이티브 역할 턴(`role='WORKER'` 등)이 섞여 있어서, 이름만으로 고르면 `close_agent` 가 남의
 # 수명을 접는다 — 단위 티켓을 대신 접으면 뒤따르는 ticket-finish 가 정산할 것을 잃는다.
 _ROLE = "agent"
+# 완료 보고 메일에 남기는 표식 — 이 보고가 종료 훅의 heal 한 번을 이미 가렸다는 뜻이다
+# (`consume_self_report`). 메일 payload 에 두는 이유는 그것이 그 보고에 딸린 유일한 자유 칸이라서다.
+_HEAL_SKIPPED = "heal_skipped"
 
 
 def note_agent(
@@ -98,6 +103,66 @@ def close_agent(root: str, quest_id: str, agent: str, outcome: str = "succeeded"
     if not live:
         raise OrchestrationError(f"접을 시도가 없어요: {agent}")
     return dispatch_settle(root, live, outcome, summary=str(summary)[:_SUMMARY_CAP])
+
+
+def live_dispatch(root: str, quest_id: str, agent: str) -> str:
+    """이 퀘스트에서 그 에이전트가 든 살아 있는 시도의 id — 손잡이를 못 받은 쪽이 묻는 문.
+
+    호스트 모드에서 배차받은 에이전트는 자기 dispatch id 를 모른다. 장부에 세우는 호출은 답을
+    안 기다리는 자식 프로세스라(`asgard_hooklib.siege.ledger_call`) 그 id 가 돌아오는 자리가
+    없고, SubagentStart 페이로드에도 없다. 그래서 완료를 보고하려는 쪽은 자기가 아는 두 가지,
+    퀘스트와 자기 이름으로 묻는다.
+
+    `close_agent` 와 같은 조회를 쓴다 — 이 조합이 연 시도(`role='agent'`)만 본다. 배정 단위
+    티켓이 연 시도는 `ticket-finish` 가 정산하므로, 여기서 함께 잡으면 티켓이 정산할 것을 잃는다.
+
+    Raises:
+        OrchestrationError: 이 퀘스트에 열린 Run 이 없을 때.
+    """
+    return _live_dispatch(root, _open_run(root, quest_id), agent)
+
+
+def consume_self_report(root: str, quest_id: str, agent: str) -> bool:
+    """이 종료가 접을 것을 못 찾은 이유가 **에이전트의 자기 완료 보고**인가 — 한 보고에 한 번만.
+
+    종료 훅이 접을 것을 못 찾는 경우는 둘이고, 둘의 처방이 정반대다. 여는 기록이 유실됐으면
+    세우고 접어야 장부가 사실과 맞고(`heal`), 에이전트가 스스로 보고했으면 아무것도 하면 안 된다 —
+    거기서 세우면 방금 `failed` 로 접힌 시도 옆에 `succeeded` 시도가 새로 생기고, 코디네이터가
+    읽는 마지막 줄이 그 성공이 된다.
+
+    가르는 표식은 완료 메일이다. `mail.worker_done` 은 정산과 메일을 한 트랜잭션에 넣으므로,
+    그 시도에 `worker_done` 메일이 달려 있다는 것은 정산을 부른 쪽이 에이전트 자신이었다는 뜻이다.
+    훅이 부른 `unnote` 는 메일을 안 남긴다.
+
+    쓰는 조회인 이유는 **한 보고가 가리는 종료가 하나**이기 때문이다. 이름만 보고 판정하면, 한 번
+    자기 보고를 한 에이전트는 그 뒤로 여는 기록이 진짜 유실돼도 영영 안 메워진다 — 같은 이름의
+    재시도가 장부에서 통째로 빠진다. 그래서 쓴 보고에 표식을 남기고, 다음 종료는 다시 heal 로 간다.
+    """
+    try:
+        run_id = _open_run(root, quest_id)
+    except OrchestrationError:
+        return False
+    with connect(root, write=True) as conn:
+        rows = conn.execute(
+            "SELECT m.id, m.payload FROM messages m JOIN dispatches d ON d.id=m.dispatch_id"
+            " WHERE d.run_id=? AND d.agent=? AND d.role=? AND m.type='worker_done'"
+            " ORDER BY m.created_at DESC",
+            (run_id, agent, _ROLE),
+        ).fetchall()
+        for row in rows:
+            try:
+                payload = json.loads(row["payload"] or "{}")
+            except ValueError:
+                payload = {}
+            if not isinstance(payload, dict) or payload.get(_HEAL_SKIPPED):
+                continue
+            payload[_HEAL_SKIPPED] = True
+            conn.execute(
+                "UPDATE messages SET payload=? WHERE id=?",
+                (json.dumps(payload, ensure_ascii=False), row["id"]),
+            )
+            return True
+    return False
 
 
 def live_agents(root: str, run_id: str) -> list[dict]:

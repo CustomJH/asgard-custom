@@ -33,6 +33,18 @@ def siege_show(
     raise typer.Exit(run_show(run_id, json_out=json_))
 
 
+@siege_app.command("watch", help="the same view, redrawn while the run is still going — stops when it settles")
+def siege_watch(
+    run_id: str = typer.Argument(..., metavar="<run_id>"),
+    interval: float = typer.Option(2.0, "--interval", help="seconds between redraws"),
+    limit_seconds: float = typer.Option(1800.0, "--for", help="give up after this many seconds"),
+    json_: bool = typer.Option(False, "--json", help="one JSON frame per round instead of a redrawn screen"),
+) -> None:
+    from ..commands.siege import run_watch
+
+    raise typer.Exit(run_watch(run_id, interval=interval, limit_seconds=limit_seconds, json_out=json_))
+
+
 @siege_app.command("inbox", help="the messages one run sent and received — reading them leaves the mail unread")
 def siege_inbox(
     run_id: str = typer.Argument(..., metavar="<run_id>"),
@@ -195,8 +207,11 @@ def siege_open(
 
 @siege_app.command("done", help="report an attempt finished — the mail and the settlement land together")
 def siege_done(
-    dispatch_id: str = typer.Argument(..., metavar="<dispatch_id>"),
-    outcome: str = typer.Argument(..., metavar="succeeded|failed"),
+    dispatch_id: str = typer.Argument("", metavar="[<dispatch_id>]"),
+    outcome_arg: str = typer.Argument("", metavar="[succeeded|failed]"),
+    outcome_opt: str = typer.Option("", "--outcome", help="succeeded | failed — same as the positional form"),
+    quest: str = typer.Option("", "--quest", help="find your own attempt by quest, when you were given no id"),
+    agent: str = typer.Option("", "--agent", help="your agent name — goes with --quest"),
     run_id: str = typer.Option("", "--run", help="check the dispatch really belongs to this run"),
     task_id: str = typer.Option("", "--task", help="check the dispatch really belongs to this task"),
     subject: str = typer.Option("", "--subject", help="the one-line headline of the report"),
@@ -210,9 +225,11 @@ def siege_done(
     raise typer.Exit(
         run_done(
             dispatch_id,
-            outcome,
+            outcome_arg or outcome_opt,
             run_id=run_id,
             task_id=task_id,
+            quest_id=quest,
+            agent=agent or sender,
             subject=subject,
             body=body,
             files=list(file or []),
@@ -252,6 +269,7 @@ def siege_ask(
     question: str = typer.Argument(..., metavar="<question>"),
     option: list[str] = typer.Option(None, "--option", help="one answer the asker will accept"),
     sender: str = typer.Option("", "--sender", help="who is asking"),
+    recipient: str = typer.Option("", "--recipient", help="ask one named participant — a `serve` process, say"),
     task_id: str = typer.Option("", "--task", help="the task this question came out of"),
     dispatch_id: str = typer.Option("", "--dispatch", help="the attempt this question came out of"),
     wait_ms: int = typer.Option(0, "--wait-ms", help="wait this long for an answer — 0 returns straight away"),
@@ -265,6 +283,7 @@ def siege_ask(
             question,
             options=list(option or []),
             sender=sender,
+            recipient=recipient,
             task_id=task_id,
             dispatch_id=dispatch_id,
             wait_ms=wait_ms,
@@ -311,11 +330,47 @@ def siege_check(
     type_: list[str] = typer.Option(None, "--type", help="a message type worth waking for"),
     peek: bool = typer.Option(False, "--peek", help="look without taking — the replay contract stays untouched"),
     wait_ms: int = typer.Option(0, "--wait-ms", help="wait this long for mail to arrive"),
+    as_: str = typer.Option("", "--as", help="your name — take only the mail addressed to you"),
     json_: bool = typer.Option(False, "--json"),
 ) -> None:
     from ..commands.siege_act import run_check
 
-    raise typer.Exit(run_check(run_id, ack=ack, types=list(type_ or []), peek=peek, wait_ms=wait_ms, json_out=json_))
+    raise typer.Exit(
+        run_check(
+            run_id,
+            ack=ack,
+            types=list(type_ or []),
+            peek=peek,
+            wait_ms=wait_ms,
+            recipient=as_,
+            json_out=json_,
+        )
+    )
+
+
+@siege_app.command("serve", help="stand at the mailbox as <name> and let a model answer what arrives for it")
+def siege_serve(
+    run_id: str = typer.Argument(..., metavar="<run_id>"),
+    as_: str = typer.Option(..., "--as", help="the name this process answers to"),
+    provider: str = typer.Option("", "--provider", help="which provider answers — omit for this project's default"),
+    model: str = typer.Option("", "--model", help="which model answers — omit for the provider's default"),
+    once: bool = typer.Option(False, "--once", help="serve one batch, then stop — pair with --idle-timeout to wait"),
+    idle_timeout: int = typer.Option(0, "--idle-timeout", help="stop after this many quiet seconds — 0 stands"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from ..commands.siege_serve import run_serve
+
+    raise typer.Exit(
+        run_serve(
+            run_id,
+            who=as_,
+            provider=provider,
+            model=model,
+            once=once,
+            idle_timeout=idle_timeout,
+            json_out=json_,
+        )
+    )
 
 
 @siege_app.command("escalate", help="say the coordinator has to step in — for when there is no question to ask yet")
@@ -444,8 +499,9 @@ def siege_unnote(
     summary: str = typer.Option("", "--summary"),
     spec: str = typer.Option("", "--spec"),
     heal: bool = typer.Option(False, "--heal"),
+    outcome: str = typer.Option("succeeded", "--outcome"),
     json_: bool = typer.Option(False, "--json"),
 ) -> None:
     from ..commands.siege_act import run_unnote
 
-    raise typer.Exit(run_unnote(quest, agent, summary=summary, spec=spec, heal=heal, json_out=json_))
+    raise typer.Exit(run_unnote(quest, agent, summary=summary, spec=spec, heal=heal, outcome=outcome, json_out=json_))

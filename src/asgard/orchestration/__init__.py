@@ -67,7 +67,7 @@ from .model import (
     task_status_for,
     topo_waves,
 )
-from .roster import close_agent, live_agents, note_agent
+from .roster import close_agent, consume_self_report, live_agents, live_dispatch, note_agent
 from .store import META_MAX_ATTEMPTS, db_path, exists, reset, reset_messages, reset_tasks, set_meta
 from .strategy import SHAPES
 from .strategy import choose as choose_shape
@@ -88,6 +88,7 @@ __all__ = [
     "check",
     "circuit_broken",
     "close_agent",
+    "consume_self_report",
     "db_path",
     "dispatch_history",
     "dispatch_mark",
@@ -101,6 +102,7 @@ __all__ = [
     "heartbeat",
     "inbox",
     "live_agents",
+    "live_dispatch",
     "note_agent",
     "open_dispatch",
     "pending_questions",

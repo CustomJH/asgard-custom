@@ -1016,5 +1016,79 @@ class TestGateAndQuestionAreDistinct(OrchestrationBase):
             orc.gate_create(self.root, self.run_row["id"], "닫힌 Run 의 게이트")
 
 
+class TestAddressedDelivery(OrchestrationBase):
+    """주소를 적은 메일은 그 이름을 댄 쪽만 가져간다 — 참가자 여럿이 한 우편함을 쓰는 조건."""
+
+    def send_to(self, who: str, subject: str) -> dict:
+        return orc.send(self.root, self.run_row["id"], "status", subject=subject, sender="coord", recipient=who)
+
+    def test_a_named_caller_takes_only_its_own_mail(self):
+        self.send_to("session-a", "for-a")
+        self.send_to("session-b", "for-b")
+        batch = orc.check(self.root, self.run_row["id"], recipient="session-a")
+        self.assertEqual([m["subject"] for m in batch["messages"]], ["for-a"])
+
+    def test_unaddressed_mail_stays_for_the_coordinator(self):
+        """이름을 댄 쪽은 주인 없는 메일을 안 집는다 — 그 메일의 수신자는 코디네이터다."""
+        orc.send(self.root, self.run_row["id"], "status", subject="누구에게랄 것 없이")
+        self.assertEqual(orc.check(self.root, self.run_row["id"], recipient="session-a")["count"], 0)
+        self.assertEqual(orc.check(self.root, self.run_row["id"])["count"], 1)
+
+    def test_an_unnamed_caller_still_sees_everything(self):
+        """뒤호환 — 이름을 안 대면 오늘처럼 우편함 전체다. 네이티브 코디네이터가 이 자리다."""
+        self.send_to("session-a", "for-a")
+        orc.send(self.root, self.run_row["id"], "status", subject="주인 없음")
+        self.assertEqual(orc.check(self.root, self.run_row["id"])["count"], 2)
+
+    def test_replay_is_scoped_to_the_name_that_claimed_it(self):
+        """A 가 처리하다 만 묶음을 B 가 받으면, B 의 ack 가 A 의 메일을 A 없이 접는다."""
+        self.send_to("session-a", "for-a")
+        first = orc.check(self.root, self.run_row["id"], recipient="session-a")
+        self.assertEqual(first["count"], 1)
+        self.assertEqual(orc.check(self.root, self.run_row["id"], recipient="session-b")["count"], 0)
+        again = orc.check(self.root, self.run_row["id"], recipient="session-a")
+        self.assertEqual(again["delivery_id"], first["delivery_id"])
+
+    def test_the_wake_filter_uses_the_same_name(self):
+        """남 앞으로 온 메일이 대기를 깨우면, 깨어난 쪽은 빈 묶음만 받고 다시 잔다."""
+        self.send_to("session-b", "for-b")
+        started = time.monotonic()
+        batch = orc.check(
+            self.root, self.run_row["id"], recipient="session-a", types=("status",), wait=True, timeout_ms=300
+        )
+        self.assertEqual(batch["count"], 0)
+        self.assertGreaterEqual(time.monotonic() - started, 0.25)
+
+    def test_ask_can_address_one_participant(self):
+        """`ask --recipient` + `serve` 가 한 모델과의 왕복이다 — 코디네이터는 그 질문을 안 잡는다."""
+        question = orc.ask(self.root, self.run_row["id"], "어느 모델이 답하나", recipient="codex-1")
+        self.assertEqual(orc.check(self.root, self.run_row["id"], recipient="codex-1")["count"], 1)
+        orc.reply(self.root, question["id"], "gpt")
+        self.assertEqual(orc.wait_answer(self.root, question["id"], timeout_ms=0)["answer"], "gpt")
+
+    def test_one_name_acking_a_shared_batch_does_not_fold_another_name_s_mail(self):
+        """묶음은 이름보다 먼저 생긴다 — 무명 코디네이터가 둘 앞의 메일을 한 묶음으로 잡을 수 있다.
+
+        그 상태에서 alice 가 자기 이름으로 재생해 ack 할 때 조건이 배달 id 하나뿐이면 bob 의
+        메일이 읽히지도 않고 접힌다 (판정자가 재현한 자리).
+        """
+        self.send_to("alice", "for-alice")
+        self.send_to("bob", "for-bob")
+        shared = orc.check(self.root, self.run_row["id"])  # 코디네이터가 둘을 한 묶음으로 잡는다
+        self.assertEqual(shared["count"], 2)
+        replayed = orc.check(self.root, self.run_row["id"], recipient="alice")
+        self.assertEqual(replayed["delivery_id"], shared["delivery_id"])
+        orc.check(self.root, self.run_row["id"], ack=replayed["delivery_id"], recipient="alice")
+        self.assertEqual(
+            [m["subject"] for m in orc.check(self.root, self.run_row["id"], recipient="bob")["messages"]], ["for-bob"]
+        )
+
+    def test_peek_is_scoped_too(self):
+        self.send_to("session-a", "for-a")
+        self.send_to("session-b", "for-b")
+        peeked = orc.check(self.root, self.run_row["id"], recipient="session-b", peek=True)
+        self.assertEqual([m["subject"] for m in peeked["messages"]], ["for-b"])
+
+
 if __name__ == "__main__":
     unittest.main()

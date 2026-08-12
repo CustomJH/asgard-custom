@@ -220,5 +220,42 @@ class TestGates(SiegeBase):
         self.assertEqual([row["id"] for row in every], [gate["id"]])
 
 
+class TestWatch(SiegeBase):
+    """지켜보기 — `show` 와 같은 것을 그리되, 팬아웃이 끝나기 전에 그린다.
+
+    한 번 찍은 화면은 전부 돌아온 뒤에야 읽히는데, 병렬 배차에서 알고 싶은 것은 지금 무엇이
+    답을 못 돌려주고 있는가다. 여기서 재는 것은 멈추는 조건이다 — 안 멈추면 백그라운드로 띄운
+    화면을 죽이는 일이 사람 몫이 된다.
+    """
+
+    def setUp(self) -> None:
+        super().setUp()
+        os.chdir(self.root)
+        self.run_id = orc.run_create(self.root, "지켜볼 Run", quest_id="q-watch")["id"]
+
+    def test_an_unknown_run_is_refused(self):
+        self.assertEqual(siege.run_watch("run_nope"), 2)
+
+    def test_a_settled_run_draws_once_and_stops(self):
+        task = orc.task_create(self.root, self.run_id, "끝난 일감")
+        dispatch = orc.open_dispatch(self.root, task["id"], worker="w-1")
+        orc.dispatch_settle(self.root, dispatch["id"], "succeeded")
+        screen = self.capture(lambda: self.assertEqual(siege.run_watch(self.run_id, interval=0.01), 0))
+        self.assertIn("끝났어요", screen)
+        self.assertEqual(screen.count("끝난 일감"), 1, "멈춰야 할 자리에서 다시 그렸다")
+
+    def test_a_live_attempt_holds_the_screen_open(self):
+        """Task 만 보면 안 된다 — 단위 티켓이 쥔 수명은 ticket-finish 가 올 때까지 `ready` 다."""
+        task = orc.task_create(self.root, self.run_id, "도는 일감")
+        orc.open_dispatch(self.root, task["id"], worker="w-1")
+        self.assertFalse(siege._run_settled(self.root, self.run_id))
+        screen = self.capture(lambda: self.assertEqual(siege.run_watch(self.run_id, interval=0.01, limit_seconds=0), 0))
+        self.assertIn("지켜보기 상한", screen)
+
+    def test_an_empty_run_is_not_read_as_finished(self):
+        """일감이 아직 안 선 Run 을 끝난 것으로 읽으면 그래프를 다 적기 전에 화면이 닫힌다."""
+        self.assertFalse(siege._run_settled(self.root, self.run_id))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -26,6 +26,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 from typing import Any
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -288,6 +289,110 @@ class TestTheDomainRefusalsSurviveTheCommandLayer(ActBase):
         self.assertEqual(orc.run_list(self.root), [], "거절한 명령이 Run 을 남겼다")
 
 
+class TestAnAgentWithNoHandleStillReports(ActBase):
+    """손잡이를 못 받은 배차가 자기 실패를 적을 수 있는가.
+
+    호스트 모드에서 배차받은 에이전트에게 dispatch id 가 오는 길은 없다 — 장부에 세우는 호출은
+    답을 안 기다리는 자식 프로세스라 그 id 가 돌아올 자리가 없다. 그래서 자기가 아는 둘,
+    퀘스트와 이름으로 자기 시도를 찾는다. 이 갈래가 막히면 실패한 배차가 전부 성공으로 접힌다.
+    """
+
+    def test_quest_and_agent_settle_the_attempt_the_hook_opened(self):
+        orc.note_agent(self.root, "q-boot", "asgard-thor", spec="백엔드 표면")
+        code = self.quiet(
+            lambda: siege_act.run_done("", "failed", quest_id="q-boot", agent="asgard-thor", body="스키마가 없어요")
+        )
+        self.assertEqual(code, 0)
+        run_id = orc.run_list(self.root)[0]["id"]
+        self.assertEqual(orc.live_agents(self.root, run_id), [], "보고한 시도가 아직 도는 중이다")
+        history = [d for task in orc.task_list(self.root, run_id) for d in orc.dispatch_history(self.root, task["id"])]
+        self.assertEqual([d["outcome"] for d in history], ["failed"])
+
+    def test_a_report_with_neither_a_handle_nor_a_name_is_refused(self):
+        self.assertEqual(self.quiet(lambda: siege_act.run_done("", "failed")), 2)
+        self.assertEqual(self.quiet(lambda: siege_act.run_done("", "failed", quest_id="q-boot")), 2)
+
+    def test_a_quest_with_no_live_attempt_is_refused_rather_than_invented(self):
+        orc.note_agent(self.root, "q-boot", "asgard-thor", spec="백엔드 표면")
+        self.assertEqual(
+            self.quiet(lambda: siege_act.run_done("", "failed", quest_id="q-boot", agent="asgard-freyja")), 2
+        )
+
+    def test_the_stop_hook_does_not_reopen_what_the_agent_already_reported(self):
+        """자기 보고 뒤에 오는 종료의 heal 은 아무것도 세우면 안 된다.
+
+        접을 것이 없는 이유가 둘이고 처방이 정반대다. 유실이면 세우고 접어야 장부가 사실과 맞고,
+        자기 보고면 그대로 두어야 한다 — 세우면 방금 `failed` 로 접힌 시도 옆에 `succeeded` 가
+        새로 서고, 코디네이터가 읽는 마지막 줄이 그 성공이 된다.
+        """
+        orc.note_agent(self.root, "q-boot", "asgard-thor", spec="백엔드 표면")
+        self.quiet(lambda: siege_act.run_done("", "failed", quest_id="q-boot", agent="asgard-thor", body="막혔어요"))
+        self.assertEqual(self.quiet(lambda: siege_act.run_unnote("q-boot", "asgard-thor", heal=True)), 0)
+        run_id = orc.run_list(self.root)[0]["id"]
+        history = [d for task in orc.task_list(self.root, run_id) for d in orc.dispatch_history(self.root, task["id"])]
+        self.assertEqual([d["outcome"] for d in history], ["failed"], "종료의 heal 이 성공 시도를 새로 세웠다")
+
+    def test_a_genuinely_lost_opening_is_still_healed(self):
+        """자기 보고가 없으면 heal 은 하던 대로 세우고 접는다 — 좁힌 것은 그 한 경우뿐이다."""
+        self.assertEqual(self.quiet(lambda: siege_act.run_unnote("q-lost", "asgard-thinker", heal=True)), 0)
+        run_id = orc.run_list(self.root)[0]["id"]
+        history = [d for task in orc.task_list(self.root, run_id) for d in orc.dispatch_history(self.root, task["id"])]
+        self.assertEqual([d["outcome"] for d in history], ["succeeded"], "유실된 여는 기록을 아무도 안 메웠다")
+
+    def test_one_self_report_hides_exactly_one_stop(self):
+        """한 보고가 가리는 종료는 하나다 — 이름만 보고 판정하면 그 뒤의 진짜 유실이 영영 안 메워진다.
+
+        같은 에이전트를 두 번 부르는 것은 재시도가 아니라 일감 둘이다(`roster` 모듈 설명). 첫
+        배차가 실패를 스스로 보고하고 둘째 배차의 여는 기록이 유실되면, 그 둘째가 장부에서 통째로
+        빠진다 — 코디네이터에게는 돌지 않은 것으로 보인다.
+        """
+        orc.note_agent(self.root, "q-boot", "asgard-thor", spec="첫 표면")
+        self.quiet(lambda: siege_act.run_done("", "failed", quest_id="q-boot", agent="asgard-thor", body="막혔어요"))
+        self.assertEqual(self.quiet(lambda: siege_act.run_unnote("q-boot", "asgard-thor", heal=True)), 0)
+        # 둘째 배차 — 여는 기록이 유실된 채 종료만 닿는다.
+        self.assertEqual(self.quiet(lambda: siege_act.run_unnote("q-boot", "asgard-thor", heal=True)), 0)
+        run_id = orc.run_list(self.root)[0]["id"]
+        history = [d for task in orc.task_list(self.root, run_id) for d in orc.dispatch_history(self.root, task["id"])]
+        self.assertEqual(
+            sorted(d["outcome"] for d in history), ["failed", "succeeded"], "두 번째 배차가 장부에서 빠졌다"
+        )
+
+    def test_the_stop_hook_carries_a_failure_the_role_recorded(self):
+        """훅이 접을 때도 결과는 넘어간다 — 기본은 succeeded 이고, 그것만이 아니어야 한다."""
+        orc.note_agent(self.root, "q-boot", "asgard-worker", spec="단위 하나")
+        self.assertEqual(
+            self.quiet(
+                lambda: siege_act.run_unnote("q-boot", "asgard-worker", outcome="failed", summary="못 닿았어요")
+            ),
+            0,
+        )
+        run_id = orc.run_list(self.root)[0]["id"]
+        history = [d for task in orc.task_list(self.root, run_id) for d in orc.dispatch_history(self.root, task["id"])]
+        self.assertEqual([d["outcome"] for d in history], ["failed"])
+
+
+class TestTheAckHintCarriesTheName(ActBase):
+    """안내문은 사람이 그대로 복사한다 — 이름이 빠지면 그 복사가 남의 메일까지 접는다."""
+
+    def hint(self, run_id: str, **kwargs) -> str:
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            siege_act.run_check(run_id, **kwargs)
+        return buffer.getvalue()
+
+    def test_a_named_check_is_told_to_ack_with_that_name(self):
+        run_id = self.start_run()
+        orc.send(self.root, run_id, "status", subject="앨리스 앞", recipient="alice")
+        self.assertIn("--as alice --ack", self.hint(run_id, recipient="alice"))
+
+    def test_an_unnamed_check_is_told_the_plain_form(self):
+        run_id = self.start_run()
+        orc.send(self.root, run_id, "status", subject="주인 없음")
+        shown = self.hint(run_id)
+        self.assertIn("--ack", shown)
+        self.assertNotIn("--as", shown)
+
+
 class TestRootResolution(ActBase):
     """모는 절반도 읽는 절반과 같은 뿌리를 본다 — 갈리면 하위 디렉터리의 배차가 다른 장부로 간다."""
 
@@ -319,16 +424,34 @@ class TestTheHostModesFillTheLedgerOnTheirOwn(ActBase):
         subprocess.run(["git", "commit", "-q", "--allow-empty", "-m", "seed"], cwd=self.root, check=True)
         # 티켓 전이는 장부를 임포트가 아니라 CLI 프로세스로 적는다 — 배포 인터프리터에
         # asgard 가 없기 때문이다. PATH 의 `asgard` 를 이 저장소의 코드로 세운다.
-        previous = os.environ.get("PATH", "")
-        os.environ["PATH"] = deploy_cli(os.path.join(self.root, "bin")).rsplit(os.sep, 1)[0] + os.pathsep + previous
-        self.addCleanup(os.environ.__setitem__, "PATH", previous)
+        # 그 조회(`asgard_hooklib.siege.ledger_call` 의 `shutil.which`)가 이 프로세스 안에서
+        # 일어나므로 하위 프로세스에 env= 로 넘길 수가 없다. 대신 범위가 닫히는 patch.dict 로
+        # 이 시험이 도는 동안만 바꾼다 — 예외로 빠져나가도 원래 값이 그대로 돌아온다.
+        bin_dir = os.path.dirname(deploy_cli(os.path.join(self.root, "bin")))
+        patched = mock.patch.dict(os.environ, {"PATH": bin_dir + os.pathsep + os.environ.get("PATH", "")})
+        patched.start()
+        self.addCleanup(patched.stop)
 
-    def mirrored(self, expect: int = 1) -> str:
-        """장부가 채워질 때까지 기다린 뒤 그 Run id — 기록은 떼어 낸 프로세스가 적는다."""
+    def mirrored(self, unit: str) -> str:
+        """claim 의 장부 옮김이 **끝날 때까지** 기다린 뒤 그 Run id.
+
+        `siege_act.run_mirror` 는 Run 열기 → 단위 Task 세우기 → 시도 열기를 이 순서로 하고
+        셋을 각각 따로 커밋한다. 그 전부를 떼어 낸 프로세스가 적는다. 그래서 Task 개수만 보고
+        돌아오면 마지막 걸음(`open_dispatch`)이 아직 안 끝난 장부를 단언에 넘긴다 — 26-08-12
+        실측으로 12회 중 3회가 그 창에 떨어졌고, 창의 폭은 1~3ms 다. 기계가 바쁘면 그 창이
+        넓어져 100ms 간격의 폴링이 안쪽을 집는다. 그래서 마지막 걸음을 기다린다.
+
+        `until` 의 상한은 이 결함과 무관하다 — 창이 밀리초 단위이므로 상한을 올려도 중간
+        상태를 집는 것은 그대로다. 그 상한을 30초에서 120초로 올린 것은 별개의 결함 때문이다
+        (`hookscaffold.until` 의 독스트링에 그 실측이 적혀 있다).
+        """
         until(lambda: bool(orc.run_list(self.root)))
         runs = orc.run_list(self.root)
         self.assertEqual(len(runs), 1, "티켓 전이가 배차 장부에 Run 을 안 열었다")
-        until(lambda: len(orc.task_list(self.root, runs[0]["id"])) >= expect)
+        self.assertTrue(
+            until(lambda: (orc.task_for_unit(self.root, runs[0]["id"], unit) or {}).get("status") == "dispatched"),
+            f"claim 의 장부 옮김이 시도를 안 열었다 — {unit}",
+        )
         return runs[0]["id"]
 
     def tool(self, *args: str, stdin: str = "") -> dict:
@@ -377,7 +500,7 @@ class TestTheHostModesFillTheLedgerOnTheirOwn(ActBase):
         code, claimed = self.ticket(qid, "ticket-claim", unit="u-schema", worker="w-1")
         self.assertEqual(code, 0, claimed)
 
-        run_id = self.mirrored(2)
+        run_id = self.mirrored("u-schema")
         self.assertEqual(orc.run_list(self.root)[0]["quest_id"], qid, "Run 이 퀘스트에 안 묶였다")
 
         schema = self.unit_of(run_id, "u-schema")
@@ -403,7 +526,7 @@ class TestTheHostModesFillTheLedgerOnTheirOwn(ActBase):
         self.open_quest(qid, request="결제 모듈 손보기")
         self.declare_units(qid, [{"unit": "u-1", "subtask": "하나"}])
         self.ticket(qid, "ticket-claim", unit="u-1", worker="w-1")
-        self.mirrored()
+        self.mirrored("u-1")
         self.assertEqual(orc.run_list(self.root)[0]["objective"], "결제 모듈 손보기")
 
     def test_a_failed_unit_comes_back_ready_for_the_next_attempt(self):
@@ -411,9 +534,8 @@ class TestTheHostModesFillTheLedgerOnTheirOwn(ActBase):
         self.open_quest(qid)
         self.declare_units(qid, [{"unit": "u-1", "subtask": "붙지 않는 일감"}])
         _, claimed = self.ticket(qid, "ticket-claim", unit="u-1", worker="w-1")
-        self.mirrored()
+        run_id = self.mirrored("u-1")
         self.ticket(qid, "ticket-finish", unit="u-1", claim_token=claimed["claim_token"], status="failed")
-        run_id = orc.run_list(self.root)[0]["id"]
         until(lambda: self.unit_of(run_id, "u-1")["status"] == "ready")
         task = self.unit_of(run_id, "u-1")
         self.assertEqual(task["status"], "ready", "실패한 시도가 재배차를 못 받는다")

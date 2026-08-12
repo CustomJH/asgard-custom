@@ -582,6 +582,7 @@ def run_check(
     types: list[str] | None = None,
     peek: bool = False,
     wait_ms: int = 0,
+    recipient: str = "",
     json_out: bool = False,
 ) -> int:
     """코디네이터가 우편함에서 가장 오래된 미확인 묶음을 가져온다.
@@ -592,6 +593,9 @@ def run_check(
 
     빈 묶음은 실패가 아니라 확인 시점이다. 종료 코드 0 으로 돌려준다 — 2 로 돌리면 폴링하는
     코디네이터 고리가 매번 실패를 읽는다.
+
+    `recipient`(`--as`)를 주면 그 이름 앞으로 온 메일만 잡는다. 안 주면 오늘처럼 우편함 전체를
+    본다 — 주인 없이 온 메일을 받는 자리가 코디네이터이기 때문이다.
 
     Returns:
         0 이면 확인했고, 2 면 그런 Run 이 없다.
@@ -610,6 +614,7 @@ def run_check(
             peek=peek,
             wait=wait_ms > 0,
             timeout_ms=wait_ms,
+            recipient=recipient,
         )
     except orc.OrchestrationError as exc:
         return _fail(exc)
@@ -623,7 +628,11 @@ def run_check(
     ui.ok(f"메일 {found['count']}건 — 배달 {found['delivery_id']}")
     for message in found["messages"]:
         ui.step(f"  {message['type']:<12} {ui.dim(ui.oneline(message.get('subject') or '', _SPEC_HEAD))}")
-    ui.step(ui.dim(f"    확인 처리: `asgard siege check {run_id} --ack {found['delivery_id']}`"))
+    # 이름을 대고 받았으면 안내문에도 그 이름을 넣는다. 빼고 안내하면 그것을 복사한 사람이
+    # 무명으로 ack 하게 되고, 무명 ack 는 그 묶음 전체를 접는다 — 같은 묶음에 남 앞으로 온
+    # 메일이 섞여 있으면 그 사람은 읽지도 않은 메일을 접는다 (`mail._ack`).
+    as_flag = f" --as {recipient}" if recipient else ""
+    ui.step(ui.dim(f"    확인 처리: `asgard siege check {run_id}{as_flag} --ack {found['delivery_id']}`"))
     return 0
 
 
@@ -633,6 +642,7 @@ def run_ask(
     *,
     options: list[str] | None = None,
     sender: str = "",
+    recipient: str = "",
     task_id: str = "",
     dispatch_id: str = "",
     wait_ms: int = 0,
@@ -643,6 +653,9 @@ def run_ask(
     `--wait-ms` 를 안 주면 질문만 만들고 바로 돌아온다. 코디네이터와 워커가 같은 스레드에서
     도는 경로에서 기다리면 교착이기 때문이다. 시간이 다 되어도 질문은 취소되지 않으므로,
     같은 질문을 다시 만들지 말고 `siege blocked` 로 찾아 이어 받는다.
+
+    `--recipient` 로 이름을 대면 그 이름을 지키는 쪽에게만 간다. `siege serve` 가 그 이름으로
+    서 있으면 답은 모델이 달고, `--wait-ms` 를 준 이 호출의 반환값으로 돌아온다.
 
     Returns:
         0 이면 물었고, 2 면 도메인이 거절했다(없는 Run).
@@ -655,6 +668,7 @@ def run_ask(
             question,
             options=list(options or []),
             sender=sender,
+            recipient=recipient,
             task_id=task_id,
             dispatch_id=dispatch_id,
             timeout_ms=wait_ms,
@@ -679,6 +693,8 @@ def run_done(
     *,
     run_id: str = "",
     task_id: str = "",
+    quest_id: str = "",
+    agent: str = "",
     subject: str = "",
     body: str = "",
     files: list[str] | None = None,
@@ -691,10 +707,24 @@ def run_done(
     받아 주면 죽은 재시도의 뒤늦은 완료가 다른 Task 를 끝난 것으로 만든다. 안 주면 대조를
     건너뛰므로, 워커가 자기 신원을 아는 자리에서는 주는 편이 낫다.
 
+    `--quest`·`--agent` 는 손잡이를 못 받은 쪽이 쓰는 갈래다. 호스트 모드(Claude Code·Cursor·
+    Codex)에서 배차받은 에이전트에게는 dispatch id 가 오는 길이 없어(`roster.live_dispatch`
+    도크스트링), 자기가 아는 퀘스트와 이름으로 자기 시도를 찾는다. 둘 다 준 경우 dispatch id 가
+    우선한다 — 명시한 손잡이를 조회 결과로 덮으면 보고가 다른 시도에 붙는다.
+
     Returns:
         0 이면 보고했고, 2 면 도메인이 거절했다(없는 Dispatch·신원 불일치·이미 끝남·틀린 outcome).
     """
     ui.set_quiet(json_out)
+    if not dispatch_id:
+        if not (quest_id and agent):
+            return _fail(orc.OrchestrationError("dispatch id 나 --quest 와 --agent 가 함께 필요해요"))
+        try:
+            dispatch_id = orc.live_dispatch(_root(), quest_id, agent)
+        except orc.OrchestrationError as exc:
+            return _fail(exc)
+        if not dispatch_id:
+            return _fail(orc.OrchestrationError(f"이 퀘스트에서 {agent} 가 든 살아 있는 시도가 없어요: {quest_id}"))
     try:
         reported = orc.worker_done(
             _root(),
@@ -782,12 +812,22 @@ def run_note(
 
 
 def run_unnote(
-    quest_id: str, agent: str, *, summary: str = "", spec: str = "", heal: bool = False, json_out: bool = False
+    quest_id: str,
+    agent: str,
+    *,
+    summary: str = "",
+    spec: str = "",
+    heal: bool = False,
+    outcome: str = "succeeded",
+    json_out: bool = False,
 ) -> int:
     """그 에이전트의 살아 있는 시도를 접는다 — 디스패치 훅이 종료에서 부르는 문.
 
-    결과는 언제나 `succeeded` 다. 이 자리가 아는 것은 호출이 답을 들고 돌아왔다는 사실뿐이고,
-    판정의 옳고 그름은 다른 축이다 — 판정자의 FAIL 은 `summary` 로 간다.
+    기본 결과는 `succeeded` 다. 이 자리가 스스로 아는 것은 호출이 답을 들고 돌아왔다는 사실뿐이고,
+    판정의 옳고 그름은 다른 축이다 — 판정자의 FAIL 은 `summary` 로 간다. `--outcome failed` 는
+    돌아온 역할이 자기 이벤트에 실패를 적었을 때만 부르는 쪽이 넘긴다
+    (`hooks/subagent_gate._role_outcome`): 그때는 배차가 답을 들고 왔다는 것과 그 답이 목표에
+    닿았다는 것이 서로 다른 사실이다.
 
     `heal` 은 **여는 쪽이 유실됐을 때** 종료에서 그 자리를 메운다. 장부 쓰기는 디스패치를
     붙잡지 않으려고 답을 안 기다리는 자식 프로세스로 나가고 그 실패는 조용하다 — 26-08-12 에
@@ -801,16 +841,22 @@ def run_unnote(
     ui.set_quiet(json_out)
     root = _root()
     try:
-        settled = orc.close_agent(root, quest_id, agent, "succeeded", summary=summary)
+        settled = orc.close_agent(root, quest_id, agent, outcome, summary=summary)
     except orc.OrchestrationError as exc:
         if not heal:
             return _fail(exc)
+        if orc.consume_self_report(root, quest_id, agent):
+            # 접을 것이 없는 이유가 유실이 아니라 **에이전트가 스스로 보고했기** 때문이다. 여기서
+            # 세우면 방금 접힌 시도 옆에 succeeded 시도가 새로 서고, 장부의 마지막 줄이 그 성공이
+            # 된다 — 실패를 적으라고 알려 준 자리가 그 실패를 지우는 셈이다.
+            ui.step(ui.dim(f"이미 스스로 보고했어요 — {agent}"))
+            return 0
         try:
             orc.note_agent(root, quest_id, agent, spec=spec, objective=quest_id)
-            settled = orc.close_agent(root, quest_id, agent, "succeeded", summary=summary)
+            settled = orc.close_agent(root, quest_id, agent, outcome, summary=summary)
         except orc.OrchestrationError as healing:
             return _fail(healing)
-    return _emit(settled, json_out, f"시도를 접었어요 — {agent}")
+    return _emit(settled, json_out, f"시도를 접었어요 — {agent} ({outcome})")
 
 
 def run_mirror(quest_id: str, cmd: str, unit: str, payload_json: str = "{}", json_out: bool = False) -> int:

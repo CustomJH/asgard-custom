@@ -128,6 +128,10 @@ Look before you write:
     asgard siege gates [<run_id>] [--all] [--json]        decisions still waiting on a person
     asgard siege ready <run_id> [--json]                  tasks you can dispatch right now
     asgard siege waves <run_id> [--json]                  the DAG as batches; one batch runs at once
+    asgard siege watch <run_id> [--interval <s>] [--for <s>]
+        the `show` view redrawn while the run is going, so a fan-out is visible before it ends. It
+        stops on its own when no attempt is live and no task is unfinished, or at `--for` (1800s).
+        Hand this line to the person waiting: their terminal can watch what yours cannot show.
 
 ## Coordination — the half you always drive
 
@@ -166,7 +170,7 @@ Free-form mail. Types: `status` `dispatch` `worker_done` `merge_ready` `escalati
 `question` `decision_gate` `heartbeat`. A finished report goes through `done`, never through `send`.
 
     asgard siege check <run_id> [--ack <delivery_id>] [--type <type>]… [--peek] [--wait-ms <n>]
-        [--json]
+        [--as <who>] [--json]
 
 Takes the oldest unacknowledged batch of mail and replays that same batch until you `--ack` it.
 Process every message in the batch before acknowledging. `--type` decides what wakes a wait, not
@@ -176,6 +180,30 @@ heartbeat does not wake you for nothing. `--peek` looks without taking. A batch 
 **An empty batch or an expired `--wait-ms` is a checkpoint, not a dead worker.** Keep waiting in
 rolling calls. Do not stop, replace, or relaunch a worker because it has been quiet; a heartbeat
 means alive, not done.
+
+## Addressed mail — talking to one participant, and to a model
+
+One run has one mailbox, and `--recipient` divides it. Mail sent with a recipient is claimed only
+by a `check --as <that name>`; mail sent without one still belongs to the coordinator, which is the
+`check` that names nobody. So a caller that gives `--as` never takes work another participant is
+waiting on, and never takes the coordinator's mail either.
+
+    asgard siege serve <run_id> --as <who> [--provider <p>] [--model <m>] [--once]
+        [--idle-timeout <seconds>] [--json]
+
+Stands at the mailbox under that name and hands whatever arrives for it to a model, then puts the
+answer back: a `question` is answered on that message, anything else comes back as fresh mail to
+its sender. The model is whatever `providers` resolves — anthropic, an OpenAI-compatible endpoint,
+a local ollama — so the pair below is one round trip with a model of your choosing, from any host:
+
+    asgard siege serve <run_id> --as codex-1 --provider openai &
+    asgard siege ask <run_id> "does this migration need a backfill?" --recipient codex-1 --wait-ms 60000
+
+The asking call blocks and returns the answer, so a host that has no cross-session messaging of its
+own still gets one. Two limits are worth knowing before you lean on it. A model that cannot be
+called leaves an `escalation` in the mailbox instead of an invented answer — the asker times out
+with no answer, and the reason is in `siege inbox`. And a `serve` process holds no conversation:
+each message is answered on its own, with the run objective as the only shared context.
 
 ## The spine — only when it is yours
 
@@ -271,9 +299,15 @@ dispatch from — it accounts for what has actually settled, and `waves` does no
 2. Your unit is yours to decompose further. Surfaces you do not own go to the specialist that does,
    dispatched down the ladder, and several of them go out in one message like any other wave.
 3. Blocked on something only the coordinator can answer:
-   `siege ask <run> "<q>" --sender <you> --task <task> --wait-ms <n>`.
+   `siege ask <run> "<q>" --sender <you> --task <task> --wait-ms <n>`. On a host (Claude Code,
+   Cursor, Codex) drop `--wait-ms`: the coordinator is inside its own turn until you return, so
+   waiting there buys a timeout. Leave the question, state the assumption, carry on (Canon 8).
 4. Working a long stretch: `siege heartbeat <run> <task> <dispatch> --phase "<what you are doing>"`.
 5. Finished: `siege done <dispatch> succeeded|failed --subject "<headline>" --file <each path>`.
+   Given no dispatch id — every host-mode dispatch — name yourself instead:
+   `siege done --quest <quest> --agent <you> --outcome failed --body "<what stopped you>"`. Report
+   only a failure; an attempt that returns without a word is settled as succeeded, which is right
+   for a success and invisible for anything else.
 
 ## Invariants
 

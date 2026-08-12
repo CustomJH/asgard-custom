@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import json
 import os
+import sys
+import time
 
 from .. import orchestration as orc
 from .. import ui
@@ -142,6 +144,76 @@ def run_show(run_id: str, json_out: bool = False) -> int:
     if gates:
         ui.step(ui.dim(f"열린 결정 게이트 {len(gates)}건"))
     return 0
+
+
+def _run_settled(root: str, run_id: str) -> bool:
+    """이 Run 에 더 볼 것이 남았는가 — 도는 시도도, 아직 안 끝난 Task 도 없으면 끝난 것이다.
+
+    Task 만 보면 안 된다. 훅이 세운 시도는 Task 를 완료로 옮기지만, 배정 단위 티켓이 쥔 수명은
+    `ticket-finish` 가 올 때까지 `ready` 로 남는다 — 그 사이를 끝난 것으로 읽으면 화면이 팬아웃
+    한가운데서 멈춘다.
+    """
+    if orc.live_agents(root, run_id):
+        return False
+    tasks = orc.task_list(root, run_id)
+    return bool(tasks) and all(task["status"] in ("completed", "failed", "blocked") for task in tasks)
+
+
+def _watch_frame(root: str, run_id: str) -> dict:
+    """한 라운드가 내는 한 줄 — `show --json` 과 같은 모양에 지금 도는 시도를 얹는다.
+
+    `settled` 를 함께 싣는 이유는 스트림의 끝을 소비자가 알아야 하기 때문이다. 마지막 줄이
+    어느 것인지 표시가 없으면 받는 쪽이 프로세스 종료를 기다려야 한다.
+    """
+    tasks = orc.task_list(root, run_id)
+    return {
+        "run": orc.run_show(root, run_id),
+        "tasks": [{**task, "attempts_detail": orc.dispatch_history(root, task["id"])} for task in tasks],
+        "gates": orc.gate_list(root, run_id=run_id, status="open"),
+        "live": orc.live_agents(root, run_id),
+        "settled": _run_settled(root, run_id),
+    }
+
+
+def run_watch(run_id: str, *, interval: float = 2.0, limit_seconds: float = 1800.0, json_out: bool = False) -> int:
+    """Run 이 도는 동안 같은 화면을 다시 그린다 — 팬아웃을 지켜보는 자리.
+
+    `show` 와 같은 것을 그린다. 다른 것은 시점뿐이다: 한 번 찍은 화면은 팬아웃이 끝난 뒤에야
+    읽히고, 병렬 배차에서 알고 싶은 것은 지금 무엇이 답을 못 돌려주고 있는가다.
+
+    `--json` 은 라운드마다 `show --json` 한 덩이를 한 줄로 낸다. 소비자가 사람이 아니라 프로그램일
+    때 화면 제어 문자와 갱신 사이의 경계가 없으면 그 스트림을 못 자르기 때문이다.
+
+    스스로 멈추는 조건 둘. Run 에 도는 시도도 안 끝난 Task 도 없으면 마지막 화면을 그리고 끝내고,
+    `limit_seconds` 를 넘기면 그냥 끝낸다 — 백그라운드로 띄운 화면이 세션보다 오래 살면 그것을
+    죽이는 일이 사람 몫이 된다.
+
+    Returns:
+        0 이면 Run 이 끝나서 멈췄거나 상한에 닿았고, 2 면 그런 Run 이 없다.
+    """
+    ui.set_quiet(json_out)
+    root = _root()
+    if orc.run_show(root, run_id) is None:
+        ui.fail(f"그런 Run이 없어요: {run_id}")
+        return 2
+    # 파이프로 받는 쪽에는 화면 제어 문자가 기록을 더럽힌다. `--json` 은 그 자체가 파이프용이다.
+    clear = sys.stdout.isatty() and not json_out
+    deadline = time.monotonic() + max(0.0, limit_seconds)
+    while True:
+        if clear:
+            sys.stdout.write("\x1b[2J\x1b[H")
+        if json_out:
+            print(json.dumps(_watch_frame(root, run_id), ensure_ascii=False, default=str))
+        else:
+            run_show(run_id)
+        done = _run_settled(root, run_id)
+        if done or time.monotonic() >= deadline:
+            ui.step(ui.dim("끝났어요 — 이 Run 에 도는 시도가 없어요." if done else "지켜보기 상한에 닿아 멈췄어요."))
+            return 0
+        try:
+            time.sleep(max(0.2, interval))
+        except KeyboardInterrupt:
+            return 0
 
 
 def run_inbox(run_id: str, json_out: bool = False, limit: int = 50) -> int:

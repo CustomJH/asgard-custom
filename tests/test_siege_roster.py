@@ -303,6 +303,10 @@ class TestTheHostHookRecordsTheCall(RosterBase):
         run = orc.run_list(self.root)[0]
         until(lambda: orc.task_for_unit(self.root, run["id"], "u-1") is not None)
         task = _shown(orc.task_for_unit(self.root, run["id"], "u-1"))
+        # Task 가 섰다고 시도까지 선 것은 아니다 — `run_mirror` 는 Run·Task·Dispatch 를 각각 따로
+        # 커밋하고, 그 전부를 떼어 낸 프로세스가 적는다(`mirrored` 도크스트링의 실측). 기계가
+        # 바쁘면 그 사이 창이 넓어져 폴링 없는 단언이 안쪽을 집는다.
+        until(lambda: orc.dispatch_show(self.root, task_id=task["id"]) is not None)
         self.assertEqual(_shown(orc.dispatch_show(self.root, task_id=task["id"]))["agent"], "asgard-worker")
 
     def test_a_dispatch_outside_a_quest_records_nothing(self):

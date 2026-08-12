@@ -16,6 +16,13 @@ worker_done 이 왔을 때 깨어나지만, 돌려받는 묶음에는 그 사이
 그 문으로 넣으면 메일만 생기고 배차 정산이 없어서, 코디네이터는 완료를 읽는데 Task 는
 `dispatched` 로 남는다.
 
+**우편함은 Run 하나에 하나이고, 주소가 그 안을 가른다.** `send(recipient=...)` 로 받는 쪽을
+적으면 `check(recipient=...)` 로 같은 이름을 댄 호출자만 그 메일을 잡는다. 이름을 안 댄 호출은
+여전히 우편함 전체를 본다 — 네이티브 코디네이터가 그 자리이고, 주인 없는 메일이 아무에게도
+안 잡힌 채 남으면 안 되기 때문이다. 대신 이름을 댄 참가자와 코디네이터가 같은 Run 을 동시에
+훑으면 코디네이터가 남의 메일을 먼저 잡을 수 있다. 둘을 같이 돌릴 거면 참가자끼리만 쓰는 Run
+을 따로 열어라.
+
 `ask` 와 `reply` 가 유일한 왕복이다. 나머지는 단방향이며, 답을 기다리지 않는다.
 """
 
@@ -113,6 +120,7 @@ def check(
     peek: bool = False,
     wait: bool = False,
     timeout_ms: int = 0,
+    recipient: str = "",
 ) -> dict:
     """우편함에서 가장 오래된 미확인 배달 묶음을 가져온다.
 
@@ -122,65 +130,93 @@ def check(
         types: 대기를 깨울 종류. 묶음의 내용은 거르지 않는다.
         peek: 묶지 않고 들여다보기만 한다 — 이력 확인용이며 재생 계약을 건드리지 않는다.
         wait: 묶을 메일이 없으면 `timeout_ms` 까지 기다린다.
+        recipient: 자기 이름. 주면 그 앞으로 온 메일만 본다 — 재생 묶음도, 대기를 깨우는
+            판정도 같은 이름으로 갈린다. 빈 값은 우편함 전체(코디네이터 자리)다.
 
     Returns:
         `{"delivery_id": str|None, "messages": [...], "count": int}`. 빈 묶음은 실패가
         아니라 확인 시점이다 — 워커가 죽었다는 뜻으로 읽으면 안 된다.
     """
     if ack:
-        _ack(root, run_id, ack)
+        _ack(root, run_id, ack, recipient)
     deadline = time.monotonic() + (timeout_ms / 1000 if wait else 0)
     while True:
-        found = _peek(root, run_id) if peek else _claim(root, run_id, types)
+        found = _peek(root, run_id, recipient) if peek else _claim(root, run_id, types, recipient)
         if found["count"] or not wait or time.monotonic() >= deadline:
             return found
         time.sleep(min(_POLL_SECONDS, max(0.0, deadline - time.monotonic())))
 
 
-def _ack(root: str, run_id: str, delivery_id: str) -> int:
-    """이 Run 의 배달만 확인한다.
+def _ack(root: str, run_id: str, delivery_id: str, recipient: str = "") -> int:
+    """이 Run 의 배달만 확인한다 — 이름을 댄 호출자는 그중 자기 앞으로 온 것만.
 
     다른 Run 의 id 는 오류로 올린다. 조용히 넘기면 호출자는 소비됐다고 믿는데 원래 묶음은 계속
     재생되어 권한 실수를 찾기 어렵다. 같은 Run 의 중복 ack 는 전송 재시도를 위해 no-op 이다.
+
+    수신자 조건이 여기 필요한 이유는 묶음이 이름보다 먼저 생기기 때문이다. 무명 코디네이터가
+    alice·bob 앞 메일을 한 묶음으로 잡아 두면 그 묶음의 `delivery_id` 는 둘 모두에 붙는다.
+    그 뒤 alice 가 `--as alice` 로 재생해 ack 할 때 조건이 배달 id 하나뿐이면 bob 의 메일까지
+    접혀 사라진다. 이름을 댄 ack 는 자기 몫만 접고, 남은 것은 코디네이터에게 다시 재생된다.
     """
     now = time.time()
+    where, args = _addressed(recipient)
     with connect(root, write=True) as conn:
         owner = conn.execute("SELECT run_id FROM messages WHERE delivery_id=? LIMIT 1", (delivery_id,)).fetchone()
         if owner is not None and owner["run_id"] != run_id:
             raise OrchestrationError(f"다른 Run의 배달은 ack 할 수 없어요: {delivery_id}")
         cur = conn.execute(
-            "UPDATE messages SET acked_at=? WHERE run_id=? AND delivery_id=? AND acked_at IS NULL",
-            (now, run_id, delivery_id),
+            f"UPDATE messages SET acked_at=? WHERE run_id=? AND delivery_id=?{where} AND acked_at IS NULL",
+            (now, run_id, delivery_id, *args),
         )
         return cur.rowcount
 
 
-def _peek(root: str, run_id: str) -> dict:
+def _addressed(recipient: str) -> tuple[str, tuple[str, ...]]:
+    """수신자 필터의 SQL 조각과 그 인자 — 이름이 비면 조건을 안 건다(우편함 전체).
+
+    주소를 안 적고 보낸 메일은 `recipient` 칸이 빈 문자열이라(`send` 가 그대로 넣는다) 이름을
+    댄 호출자에게는 안 잡힌다. 그 메일의 수신자는 코디네이터, 즉 이름을 안 댄 호출자다.
+    """
+    return (" AND recipient=?", (recipient,)) if recipient else ("", ())
+
+
+def _peek(root: str, run_id: str, recipient: str = "") -> dict:
+    where, args = _addressed(recipient)
     with connect(root) as conn:
         rows = conn.execute(
-            "SELECT * FROM messages WHERE run_id=? AND acked_at IS NULL ORDER BY created_at LIMIT ?",
-            (run_id, DELIVERY_CAP),
+            f"SELECT * FROM messages WHERE run_id=? AND acked_at IS NULL{where} ORDER BY created_at LIMIT ?",
+            (run_id, *args, DELIVERY_CAP),
         ).fetchall()
     return {"delivery_id": None, "messages": [_message_dict(row) for row in rows], "count": len(rows)}
 
 
-def _has_type(conn: sqlite3.Connection, run_id: str, types: tuple[str, ...]) -> bool:
-    """묶지 않은 메일 중 이 종류가 하나라도 있는가 — 배달 상한과 무관하게 우편함 전체를 본다."""
+def _has_type(conn: sqlite3.Connection, run_id: str, types: tuple[str, ...], recipient: str = "") -> bool:
+    """묶지 않은 메일 중 이 종류가 하나라도 있는가 — 배달 상한과 무관하게 우편함 전체를 본다.
+
+    수신자 필터를 여기에도 건다. 안 걸면 남 앞으로 온 메일이 대기를 깨우는데 `_claim` 은 그
+    메일을 안 잡아서, 기다리는 쪽이 빈 묶음을 받고 다시 자는 왕복만 늘어난다.
+    """
+    where, args = _addressed(recipient)
     row = conn.execute(
         "SELECT 1 FROM messages WHERE run_id=? AND delivery_id IS NULL AND acked_at IS NULL"
-        f" AND type IN ({','.join('?' * len(types))}) LIMIT 1",
-        (run_id, *types),
+        f"{where} AND type IN ({','.join('?' * len(types))}) LIMIT 1",
+        (run_id, *args, *types),
     ).fetchone()
     return row is not None
 
 
-def _claim(root: str, run_id: str, types: tuple[str, ...] | None) -> dict:
-    """미확인 묶음을 잡는다 — 이미 열린 묶음이 있으면 그것을 그대로 재생한다."""
+def _claim(root: str, run_id: str, types: tuple[str, ...] | None, recipient: str = "") -> dict:
+    """미확인 묶음을 잡는다 — 이미 열린 묶음이 있으면 그것을 그대로 재생한다.
+
+    `recipient` 를 준 호출자에게는 재생도 자기 앞으로 온 것만 돌려준다. 재생을 안 가르면 A 가
+    처리하다 만 묶음을 B 가 다시 받고, B 가 ack 하면 A 의 메일이 A 를 안 거치고 접힌다.
+    """
+    where, args = _addressed(recipient)
     with connect(root, write=True) as conn:
         open_rows = conn.execute(
             "SELECT * FROM messages WHERE run_id=? AND delivery_id IS NOT NULL AND acked_at IS NULL"
-            " ORDER BY created_at",
-            (run_id,),
+            f"{where} ORDER BY created_at",
+            (run_id, *args),
         ).fetchall()
         if open_rows:
             # 열린 묶음이 둘이면 가장 오래된 것만 돌려준다. 전부 돌려주면 반환한 delivery_id 가
@@ -198,12 +234,12 @@ def _claim(root: str, run_id: str, types: tuple[str, ...] | None) -> dict:
         # 판정을 **묶음보다 먼저** 한다. 앞 50건을 잡은 뒤에 그 안에서 종류를 찾으면, heartbeat
         # 가 50건 쌓인 우편함에서는 51번째 worker_done 이 영영 안 보인다. 안 묶으니 ack 도 안
         # 되어 우편함이 스스로 풀리지 않고, 완료 보고를 받고도 코디네이터가 안 깨어난다.
-        if types and not _has_type(conn, run_id, types):
+        if types and not _has_type(conn, run_id, types, recipient):
             return {"delivery_id": None, "messages": [], "count": 0}
         fresh = conn.execute(
             "SELECT * FROM messages WHERE run_id=? AND delivery_id IS NULL AND acked_at IS NULL"
-            " ORDER BY created_at LIMIT ?",
-            (run_id, DELIVERY_CAP),
+            f"{where} ORDER BY created_at LIMIT ?",
+            (run_id, *args, DELIVERY_CAP),
         ).fetchall()
         if not fresh:
             return {"delivery_id": None, "messages": [], "count": 0}
@@ -239,6 +275,7 @@ def ask(
     *,
     options: list[str] | None = None,
     sender: str = "",
+    recipient: str = "",
     task_id: str = "",
     dispatch_id: str = "",
     timeout_ms: int = 0,
@@ -251,6 +288,9 @@ def ask(
     시간이 다 되어도 질문은 **취소되지 않는다** — 답이 늦게 올 수 있으므로 남겨 두고,
     나중에 같은 message id 로 `wait_answer` 하면 이어 받는다. 같은 질문을 다시 만들면
     코디네이터의 우편함에 같은 물음이 둘 생긴다.
+
+    `recipient` 를 주면 그 이름을 지키는 쪽(`siege serve`)에게만 간다. 그 조합이 모델 하나를
+    상대로 하는 왕복이다 — 묻고 `timeout_ms` 만큼 기다리면 답이 반환값으로 돌아온다.
     """
     message = send(
         root,
@@ -259,6 +299,7 @@ def ask(
         subject=question[:200],
         body=question,
         sender=sender,
+        recipient=recipient,
         task_id=task_id,
         dispatch_id=dispatch_id,
         payload={"options": list(options or [])},
