@@ -213,6 +213,98 @@ class TestPythonExtractor(Base):
         self.assertEqual(found["model"][0].confidence, "candidate")
 
 
+class TestDelegatedSummaries(Base):
+    """역할 문장을 번역 표에 맡긴 선언 — 26-08-12 에 명령 22개가 이 자리에서 통째로 사라졌다.
+
+    `help=t("hc_tk_board")` 는 리터럴이 아니라 호출이라 추출기가 빈 요약을 냈고, 프로젝션은 요약
+    없는 명령을 카탈로그에서 뺀다. 결과는 `asgard ticket *` 이 주입면에서 후보로도 못 서는 것이었고,
+    map-shortcut 벤치의 상위3 적중이 92%에서 69%로 내려앉아 게이트가 빨간불이 됐다.
+    """
+
+    _CLI = (
+        "import typer\n"
+        "from .i18n import t\n"
+        "app = typer.Typer()\n"
+        "ticket_app = typer.Typer()\n"
+        'app.add_typer(ticket_app, name="ticket")\n'
+        '@ticket_app.command("board", help=t("hc_tk_board"))\n'
+        "def ticket_board():\n"
+        "    pass\n"
+        '@ticket_app.command("orphan", help=t("hc_missing_key"))\n'
+        "def ticket_orphan():\n"
+        "    pass\n"
+    )
+    _TABLE = (
+        "_M: dict[str, tuple[str, str]] = {\n"
+        '    "hc_tk_board": ("the board as it stands, in status columns", "지금 보드를 상태 칸으로"),\n'
+        "}\n"
+        'PLAIN = {"hc_plain": "one sentence"}\n'
+        'COMPUTED = {"hc_computed": "a" + "b"}\n'
+    )
+
+    def commands(self, source: str) -> dict:
+        from asgard.map_graph.extract_python import extract_python
+
+        return {item.name: item for item in extract_python("src/app/cli.py", source) if item.kind == "command"}
+
+    def test_call_valued_help_records_the_key_instead_of_dropping_it(self):
+        board = self.commands(self._CLI)["ticket board"]
+        self.assertEqual(board.summary, "")
+        self.assertEqual(board.summary_key, "hc_tk_board")
+
+    def test_literal_help_and_docstring_still_win_over_the_key(self):
+        source = (
+            "import typer\n"
+            "app = typer.Typer()\n"
+            '@app.command("lit", help="a literal wins")\n'
+            "def lit():\n"
+            "    pass\n"
+            '@app.command("doc", help=t("hc_ignored"))\n'
+            "def doc():\n"
+            '    """a docstring beats the key."""\n'
+            "    pass\n"
+        )
+        found = self.commands(source)
+        self.assertEqual((found["lit"].summary, found["lit"].summary_key), ("a literal wins", ""))
+        self.assertEqual((found["doc"].summary, found["doc"].summary_key), ("a docstring beats the key.", ""))
+
+    def test_string_table_reads_annotated_tuple_and_plain_values_only(self):
+        from asgard.map_graph.extract_python import extract_string_table
+
+        table = extract_string_table(self._TABLE)
+        self.assertEqual(table["hc_tk_board"], "the board as it stands, in status columns")
+        self.assertEqual(table["hc_plain"], "one sentence")
+        # 계산된 값은 소스만 읽어서 결과를 알 수 없다 — 반쪽을 적느니 비운다.
+        self.assertNotIn("hc_computed", table)
+
+    def test_resolution_fills_known_keys_and_leaves_unknown_ones_empty(self):
+        from asgard.map_graph.extract_python import extract_python, extract_string_table, resolve_summaries
+
+        resolved = {
+            item.name: item
+            for item in resolve_summaries(extract_python("cli.py", self._CLI), extract_string_table(self._TABLE))
+            if item.kind == "command"
+        }
+        self.assertEqual(resolved["ticket board"].summary, "the board as it stands, in status columns")
+        self.assertEqual(resolved["ticket board"].summary_key, "")
+        # 표에 없는 열쇠는 열쇠 이름을 역할 문장으로 승격시키지 않는다.
+        self.assertEqual(resolved["ticket orphan"].summary, "")
+
+    def test_scan_puts_a_table_declared_command_into_the_routing_catalog(self):
+        from asgard.map_graph import scan_graph
+
+        self.seed()
+        self.write("src/app/cli.py", self._CLI)
+        self.write("src/app/i18n.py", self._TABLE)
+        with open(scan_graph(self.root).graph_md_path, encoding="utf-8") as stream:
+            body = stream.read()
+        # 라우팅되는 것은 `## Commands` 절뿐이다 — 파일별 관계나 시드에 이름이 있는 것은 라우팅이 아니다.
+        catalog = body.split("## Commands", 1)[1].split("\n## ", 1)[0]
+        self.assertIn("- `ticket board` — the board as it stands, in status columns", catalog)
+        # 역할을 못 밝힌 명령은 여전히 카탈로그 밖이다 — 이 수리가 문턱을 내린 것은 아니다.
+        self.assertNotIn("ticket orphan", catalog)
+
+
 class TestTsJsExtractor(Base):
     def test_express_routes_calls_services_and_prisma_models(self):
         from asgard.map_graph.extract_tsjs import extract_tsjs
@@ -1956,7 +2048,7 @@ class TestCli(Base):
             self.assertEqual(traced.stderr, "")
             hops = json.loads(traced.stdout)["hops"]
             self.assertTrue(hops)
-            # 홉마다 대표 앵커(file:line)와 절단 표식이 실린다 — 원문 확인 없는 단정을 막는 계약
+            # 홉마다 대표 앵커(file:line)와 절단 표식이 들어간다 — 원문 확인 없는 단정을 막는 계약
             self.assertTrue(all({"file", "line", "line_end", "truncated"} <= set(hop) for hop in hops))
         finally:
             os.chdir(cwd)

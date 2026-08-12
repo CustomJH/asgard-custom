@@ -27,7 +27,7 @@ from ..code_map import (
 )
 from .evidence import Evidence
 from .extract_java import extract_java, extract_mapper_xml, extract_proc, extract_sql, strip_java_comments
-from .extract_python import extract_python
+from .extract_python import extract_python, extract_string_table, resolve_summaries
 from .extract_tsjs import extract_api_bases, extract_store_aliases, extract_tsjs, resolve_fe_usage
 from .projection import GRAPH_MARKER as _GRAPH_MARKER
 from .projection import console_script as _console_script
@@ -204,6 +204,8 @@ def _collect(
     base_sources: dict[str, dict[str, set[str]]] = defaultdict(lambda: defaultdict(set))
     alias_table: dict[str, set[str]] = defaultdict(set)
     alias_sources: dict[str, set[str]] = defaultdict(set)
+    # 번역·상수 표에 위임된 역할 문장 — 선언과 표가 다른 파일에 살아서 루프가 끝나야 합쳐진다.
+    string_table: dict[str, str] = {}
     jvm_modules: list[JavaModule] = []
     digest = hashlib.sha256()
     stat_digest = hashlib.sha256()
@@ -269,6 +271,9 @@ def _collect(
         elif suffix == ".java":
             # 주석 제거본으로 색인한다 — extract_java와 같은 기준이라 줄 번호가 일치한다.
             jvm_modules.append(index_java(rel.as_posix(), strip_java_comments(source)))
+        elif suffix == ".py":
+            for key, sentence in extract_string_table(source).items():
+                string_table.setdefault(key, sentence)
         collected.extend(_EXTRACTORS[suffix](rel.as_posix(), source))
     limits: list[dict] = []
     if excluded_tests:
@@ -351,7 +356,7 @@ def _collect(
     store_aliases = {accessor: next(iter(ids)) for accessor, ids in alias_table.items() if len(ids) == 1}
     return (
         scanned,
-        resolve_fe_usage(props.promote(collected), store_aliases),
+        resolve_fe_usage(resolve_summaries(props.promote(collected), string_table), store_aliases),
         "source-sha256:" + digest.hexdigest(),
         api_bases,
         "source-stat-sha256:" + stat_digest.hexdigest(),

@@ -67,6 +67,10 @@ class Evidence:
     # 선언이 스스로 밝힌 한 줄 역할 — `help=`/`summary=`/독스트링 첫 줄만이다.
     # 이름을 풀어써 지어내지 않는다. 없으면 빈 값으로 남기고, 카탈로그는 빈 값을 건너뛴다.
     summary: str = ""
+    # 역할 문장을 상수 표에 위임한 선언의 열쇠 — `help=t("hc_tk_board")` 의 `hc_tk_board`.
+    # 파일 하나만 읽어서는 그 열쇠가 무슨 문장인지 알 수 없으므로 여기 담아 두고, 저장소 전체를
+    # 훑은 뒤 `resolve_summaries`가 표에서 찾아 `summary`를 채운다. 표에 없으면 빈 채로 남는다.
+    summary_key: str = ""
 
     def __post_init__(self) -> None:
         if self.kind not in EVIDENCE_KINDS:

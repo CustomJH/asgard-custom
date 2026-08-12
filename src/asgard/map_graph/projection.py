@@ -15,7 +15,12 @@ _MAX_SEEDS_PER_KIND = 40
 # `## Commands` 절의 상한. 다른 절보다 후한 이유는 이것이 GRAPH.md 에서 유일하게 **라우팅**
 # 되는 재고이기 때문이다 — 잘린 명령은 주입면에서 후보로도 못 선다. 통째 열람은 어차피 금지고
 # (Navigation contract) `map context` 가 질의별로 셋만 뽑아 간다.
-_MAX_COMMAND_ROWS = 200
+# 200이던 값을 올린 자리다 (26-08-13). 번역 표로 도움말을 선언한 명령 22개를 다시 읽게 되자
+# 카탈로그가 180행에서 202행이 되어 상한에 닿았고, 가나다 끝의 두 줄(`yggdrasil sync`·`tick`)이
+# 밀려났다. 밀려난 줄은 그 22개가 겪던 것과 같은 증상 — 실재하는 명령이 후보로도 못 서는 것 —
+# 이라 상한을 명령 수보다 앞세워 둔다. 근거와 그날 203행이 된 경위는
+# `benchmarks/map-shortcut/REPORT.md` 의 "게이트가 한 번 빨간불이 됐다" 절에 있다.
+_MAX_COMMAND_ROWS = 400
 # 허브 절 — 개념 노드가 이만큼은 있어야 "상위"라는 말이 뜻을 갖는다.
 _MIN_HUB_POPULATION = 12
 _MIN_HUB_ROWS = 3

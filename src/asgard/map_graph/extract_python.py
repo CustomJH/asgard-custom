@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import ast
+from dataclasses import replace
 
 from .evidence import Evidence, safe_summary, safe_url
 
@@ -99,18 +100,46 @@ def _kwarg_str(call: ast.Call | None, keyword: str) -> str:
     return ""
 
 
-def _declared_summary(call: ast.Call | None, node: ast.FunctionDef | ast.AsyncFunctionDef, *keywords: str) -> str:
-    """선언이 스스로 밝힌 한 줄 역할 — 명시 인자가 먼저, 없으면 독스트링 첫 줄.
+def _kwarg_lookup_key(call: ast.Call | None, keyword: str) -> str:
+    """상수 표를 한 번 거치는 역할 선언의 열쇠 — `help=t("hc_tk_board")` 의 `hc_tk_board`.
 
-    둘 다 없으면 빈 값이다. 함수 이름을 문장처럼 풀어 역할을 지어내지 않는다 — 이 값은
+    번역 표를 쓰는 코드베이스에서 역할 문장은 선언 자리에 없고 표에 있다. 인자 하나짜리 호출에
+    문자열 리터럴 하나만 들어간 꼴로 좁힌다: `t(key)` · `_(key)` · `gettext(key)` 가 다 이 모양이고,
+    계산해서 만든 인자는 소스만 읽어서 값을 알 수 없으므로 받지 않는다.
+    """
+    if call is None:
+        return ""
+    for entry in call.keywords:
+        value = entry.value
+        if entry.arg != keyword or not isinstance(value, ast.Call) or value.keywords or len(value.args) != 1:
+            continue
+        first = value.args[0]
+        if isinstance(first, ast.Constant) and isinstance(first.value, str) and first.value.strip():
+            return first.value
+    return ""
+
+
+def _declared_summary(
+    call: ast.Call | None, node: ast.FunctionDef | ast.AsyncFunctionDef, *keywords: str
+) -> tuple[str, str]:
+    """선언이 스스로 밝힌 한 줄 역할 — (역할 문장, 상수 표 열쇠).
+
+    찾는 순서는 명시 인자 → 독스트링 첫 줄이고, 문장을 바로 못 얻었을 때만 열쇠를 남긴다.
+    셋 다 없으면 둘 다 빈 값이다. 함수 이름을 문장처럼 풀어 역할을 지어내지 않는다 — 이 값은
     "이 명령이 무엇을 하나"의 근거로 주입면까지 가므로, 근거가 없으면 없는 채로 둔다.
     """
     for keyword in keywords:
         declared = _kwarg_str(call, keyword)
         if declared:
-            return safe_summary(declared)
+            return safe_summary(declared), ""
     doc = (ast.get_docstring(node) or "").strip()
-    return safe_summary(doc.splitlines()[0]) if doc else ""
+    if doc:
+        return safe_summary(doc.splitlines()[0]), ""
+    for keyword in keywords:
+        key = _kwarg_lookup_key(call, keyword)
+        if key:
+            return "", key
+    return "", ""
 
 
 def _typer_groups(tree: ast.Module) -> tuple[dict[str, str], dict[str, str]]:
@@ -228,6 +257,7 @@ def extract_python(path: str, source: str) -> list[Evidence]:
                         method = "ANY" if attr in {"route", "api_route"} else attr.upper()
                         receiver = _dotted_root(call.func.value) if isinstance(call.func, ast.Attribute) else ""
                         confidence = "confirmed" if receivers.get(receiver) == "route" else "candidate"
+                        summary, summary_key = _declared_summary(call, node, "summary", "description")
                         evidence.append(
                             Evidence(
                                 "route",
@@ -237,7 +267,8 @@ def extract_python(path: str, source: str) -> list[Evidence]:
                                 confidence,
                                 node.name,
                                 scope_end=span_end,
-                                summary=_declared_summary(call, node, "summary", "description"),
+                                summary=summary,
+                                summary_key=summary_key,
                             )
                         )
                 elif attr == "command":
@@ -248,6 +279,7 @@ def extract_python(path: str, source: str) -> list[Evidence]:
                         else ""
                     )
                     confidence = "confirmed" if receivers.get(receiver) == "command" else "candidate"
+                    summary, summary_key = _declared_summary(call, node, "help")
                     evidence.append(
                         Evidence(
                             "command",
@@ -257,7 +289,8 @@ def extract_python(path: str, source: str) -> list[Evidence]:
                             confidence,
                             node.name,
                             scope_end=span_end,
-                            summary=_declared_summary(call, node, "help"),
+                            summary=summary,
+                            summary_key=summary_key,
                         )
                     )
                 elif attr in _JOB_ATTRS:
@@ -297,3 +330,45 @@ def extract_python(path: str, source: str) -> list[Evidence]:
                 topic = _first_str(node)
                 evidence.append(Evidence("event", topic or f"{root}.{attr}", path, node.lineno, "candidate", attr))
     return evidence
+
+
+def extract_string_table(source: str) -> dict[str, str]:
+    """모듈 수준 딕셔너리 리터럴이 담은 열쇠 → 문장 — 번역 표를 읽는 자리.
+
+    값이 묶음(`("영문", "한글")`)이면 첫 항목을 쓴다. 언어를 고르는 것이 아니라, 표를 쓰는
+    코드베이스가 첫 자리에 기준 표기를 두는 관례를 따르는 것이다. 계산이 들어간 값은 소스만
+    읽어서 결과를 알 수 없으므로 건너뛴다.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError, ValueError:
+        return {}
+    table: dict[str, str] = {}
+    for node in tree.body:
+        value = node.value if isinstance(node, (ast.Assign, ast.AnnAssign)) else None
+        if not isinstance(value, ast.Dict):
+            continue
+        for key, entry in zip(value.keys, value.values):
+            if not (isinstance(key, ast.Constant) and isinstance(key.value, str) and key.value.strip()):
+                continue
+            first = entry.elts[0] if isinstance(entry, (ast.Tuple, ast.List)) and entry.elts else entry
+            if isinstance(first, ast.Constant) and isinstance(first.value, str) and first.value.strip():
+                # 열쇠가 두 표에서 갈리면 어느 쪽이 맞는지 소스가 안 말해 준다 — 먼저 본 것을 지킨다.
+                table.setdefault(key.value, first.value)
+    return table
+
+
+def resolve_summaries(collected: list[Evidence], table: dict[str, str]) -> list[Evidence]:
+    """상수 표에 위임된 역할 문장을 채운다 — 저장소를 다 훑은 뒤에만 할 수 있는 일.
+
+    표에 없는 열쇠는 채우지 않는다. 열쇠 자체를 역할 문장으로 적으면 `hc_tk_board` 같은 내부
+    이름이 주입면에 실리고, 그건 근거 없는 한 줄을 지어내는 것과 같다.
+    """
+    if not table:
+        return collected
+    return [
+        replace(item, summary=safe_summary(table[item.summary_key]), summary_key="")
+        if item.summary_key and not item.summary and table.get(item.summary_key, "").strip()
+        else item
+        for item in collected
+    ]
