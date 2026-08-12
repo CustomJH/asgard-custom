@@ -4,7 +4,7 @@
 > Asgard managed relation catalog. Regenerate with `asgard map scan`; do not hand-edit.
 > `?` marks candidate evidence — verify at the cited source before asserting.
 
-- Evidence summary: commands 201 · db 2 · calls 6 · uses 2
+- Evidence summary: commands 201 · db 3 · calls 6 · uses 2
 
 ## Coverage boundaries
 
@@ -236,6 +236,8 @@
 - `src/asgard/io_sqlite.py` — db: conn.execute?×3
 - `src/asgard/openai_codex.py` — calls: httpx.get?, httpx.post? · uses: openai
 - `src/asgard/agent/session.py` — uses: anthropic, openai
+- `benchmarks/dispatch-parity/collect.py` — db: conn.execute?
+- `benchmarks/dispatch-parity/overlap_probe.py` — db: con.execute?
 - `benchmarks/shortcut-recall/harness.py` — db: conn.execute?
 
 ## Trace seeds

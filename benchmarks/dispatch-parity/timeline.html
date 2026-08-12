@@ -1,0 +1,956 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dispatch timeline</title>
+
+<!--
+  Records go in the block below, as a JSON array of:
+    {"dispatch": str, "task": str, "run": str, "agent": str,
+     "role": str, "state": str, "start": float, "end": float|null}
+  start/end are unix epoch seconds; end null means the dispatch is still running.
+  Leave the block empty and the page draws the embedded example slice instead.
+-->
+<script id="records" type="application/json"></script>
+
+<style>
+:root {
+  color-scheme: light dark;
+
+  /* 8px base with a 4px half-step (feel §Spacing). */
+  --s1: 4px;  --s2: 8px;  --s3: 12px; --s4: 16px;
+  --s5: 24px; --s6: 32px; --s7: 48px;
+
+  /* Concentric radius: outer = inner + padding. */
+  --r-bar: 3px;
+  --r-panel: 10px;
+
+  /* Ordinary UI transitions sit in the 150-300ms band, quantized to 50ms. */
+  --t-fast: 150ms;
+  --t-base: 200ms;
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+
+  --gutter: 172px;
+  --row-h: 26px;      /* one lane */
+  --row-gap: 4px;
+
+  /* Light theme. Every fill below carries white bar text at >= 4.5:1. */
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --surface-2: #eef1f6;
+  --ink: #10141a;
+  --ink-2: #47505f;
+  --ink-3: #6b7688;
+  --line: #d8dee8;
+  --line-soft: #e7ecf3;
+  --grid: #e3e8f0;
+  --grid-strong: #c9d2e0;
+  --focus: #1a4fd6;
+
+  --st-settled: #2f5fc0;
+  --st-running: #9c5c00;
+  --st-failed:  #b3312b;
+  --st-unknown: #565e6d;
+  --bar-ink: #ffffff;
+
+  --accent: #2f5fc0;
+  --strip-1: #93a6c8;
+  --strip-n: #2f5fc0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Depth comes from lighter surfaces, not shadows (feel §Shadow). */
+    --bg: #0c0f13;
+    --surface: #14191f;
+    --surface-2: #1b222b;
+    --ink: #e8edf4;
+    --ink-2: #a9b4c3;
+    --ink-3: #838f9f;
+    --line: #2a323d;
+    --line-soft: #212932;
+    --grid: #222a34;
+    --grid-strong: #333d4a;
+    --focus: #7aa2ff;
+
+    /* Dark theme flips the bar: light fill, dark text. */
+    --st-settled: #6f9bf0;
+    --st-running: #e3a53d;
+    --st-failed:  #f0736a;
+    --st-unknown: #8d99aa;
+    --bar-ink: #0b0e12;
+
+    --accent: #6f9bf0;
+    --strip-1: #4d5b70;
+    --strip-n: #6f9bf0;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  padding: var(--s5) var(--s5) var(--s7);
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 14px/1.5 ui-sans-serif, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  scrollbar-gutter: stable;
+}
+
+.wrap { max-width: 1240px; margin: 0 auto; }
+
+/* ---- header ---- */
+
+header { margin-bottom: var(--s5); }
+
+h1 {
+  margin: 0 0 var(--s2);
+  font-size: 20px;          /* ~1.25 scale off 16px */
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
+.sub {
+  margin: 0;
+  color: var(--ink-2);
+  max-width: 66ch;
+  text-wrap: pretty;
+}
+
+.source {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  margin-top: var(--s3);
+  padding: var(--s1) var(--s3) var(--s1) var(--s2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 12px;
+}
+.source .dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--accent);
+}
+.source[data-kind="example"] { border-style: dashed; }
+.source[data-kind="example"] .dot { background: var(--st-unknown); }
+.source[data-kind="error"] { border-color: var(--st-failed); color: var(--st-failed); }
+.source[data-kind="error"] .dot { background: var(--st-failed); }
+
+/* ---- stats ---- */
+
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2) var(--s6);
+  margin: var(--s5) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.stats div { display: flex; flex-direction: column; gap: 2px; }
+.stats dt { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); }
+.stats dd {
+  margin: 0;
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.stats dd span { font-size: 12px; color: var(--ink-3); margin-left: 2px; }
+
+/* ---- panel ---- */
+
+.panel {
+  margin-top: var(--s5);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-panel);
+  overflow: hidden;
+}
+
+.scroller {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;   /* no scroll chaining out of the chart */
+}
+.chart { min-width: 720px; padding: var(--s4) var(--s4) var(--s2); }
+
+/* ---- axis ---- */
+
+.axis {
+  position: relative;
+  height: 22px;
+  margin-left: var(--gutter);
+  border-bottom: 1px solid var(--line);
+}
+.axis .tick {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.axis .tick.edge { transform: none; }
+.axis .tick.edge-right { transform: translateX(-100%); }
+
+.axis-note {
+  margin: var(--s1) 0 0 var(--gutter);
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+/* ---- concurrency strip ---- */
+
+.strip-row {
+  display: grid;
+  grid-template-columns: var(--gutter) 1fr;
+  align-items: end;
+  margin-top: var(--s3);
+}
+.strip-label {
+  padding-right: var(--s3);
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--ink-3);
+  text-align: right;
+}
+.strip-label b {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+/* No container fill: an empty box the width of the chart reads as a bar that
+   never ends. Only the counts carry ink. */
+.strip {
+  position: relative;
+  height: 46px;
+  border-bottom: 1px solid var(--line);
+  overflow: hidden;
+}
+.strip .seg {
+  position: absolute;
+  bottom: 0;
+  background: var(--strip-1);
+}
+.strip .seg[data-over="1"] { background: var(--strip-n); }
+.strip .baseline {
+  position: absolute;
+  left: 0; right: 0;
+  height: 0;
+  border-top: 1px dashed var(--grid-strong);
+}
+.strip .baseline span {
+  position: absolute;
+  right: var(--s1);
+  top: -14px;
+  font-size: 10px;
+  color: var(--ink-3);
+  background: var(--surface);
+  padding: 0 3px;
+}
+
+/* ---- rows ---- */
+
+.rows-wrap { position: relative; margin-top: var(--s4); }
+
+.gridlines {
+  position: absolute;
+  top: 0; bottom: 0;
+  left: var(--gutter);
+  right: 0;
+  pointer-events: none;
+}
+.gridlines i {
+  position: absolute;
+  top: 0; bottom: 0;
+  width: 1px;
+  background: var(--grid);
+}
+
+.row {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--gutter) 1fr;
+  align-items: start;
+  padding: var(--s1) 0;
+  border-top: 1px solid var(--line-soft);
+}
+.row:first-child { border-top: 0; }
+
+.row-label {
+  padding: 3px var(--s3) 0 0;
+  text-align: right;
+  min-width: 0;
+}
+.row-label b {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.row-label small {
+  font-size: 11px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.lanes { position: relative; }
+.lane { position: relative; height: var(--row-h); margin-bottom: var(--row-gap); }
+.lane:last-child { margin-bottom: 0; }
+
+/* ---- bars ---- */
+
+.bar {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  min-width: 4px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--r-bar);
+  background: var(--st-unknown);
+  color: var(--bar-ink);
+  font: inherit;
+  font-size: 11.5px;
+  line-height: var(--row-h);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+  transition: filter var(--t-fast) var(--ease-out),
+              transform var(--t-fast) var(--ease-out);
+}
+.bar[data-state="settled"] { background: var(--st-settled); }
+.bar[data-state="running"] { background: var(--st-running); }
+.bar[data-state="failed"]  { background: var(--st-failed); }
+.bar[data-unknown="1"] {
+  background: var(--st-unknown);
+  box-shadow: inset 0 0 0 1px var(--surface), inset 0 0 0 2px var(--st-unknown);
+}
+
+@media (hover: hover) {
+  .bar:hover { filter: brightness(1.12); transform: translateY(-1px); }
+}
+.bar:active { transform: scale(0.985); }
+.bar:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  z-index: 3;
+}
+
+/* A running dispatch: hatched body, fading open right edge, live tip. */
+.bar[data-running="1"] {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(255, 255, 255, 0.26) 0 5px,
+    rgba(255, 255, 255, 0) 5px 10px
+  );
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 26px), rgba(0, 0, 0, 0.25) 100%);
+  mask-image: linear-gradient(to right, #000 calc(100% - 26px), rgba(0, 0, 0, 0.25) 100%);
+}
+.bar .tip {
+  position: absolute;
+  top: 0; right: 0;
+  width: 3px;
+  height: 100%;
+  background: var(--bar-ink);
+  opacity: 0.85;
+  animation: tip 1600ms var(--ease-out) infinite;
+}
+@keyframes tip {
+  0%, 100% { opacity: 0.9; }
+  50%      { opacity: 0.25; }
+}
+
+/* ---- legend ---- */
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2) var(--s5);
+  align-items: center;
+  padding: var(--s3) var(--s4);
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.legend span { display: inline-flex; align-items: center; gap: var(--s2); }
+.legend i {
+  width: 22px; height: 11px;
+  border-radius: 2px;
+  background: var(--st-unknown);
+}
+.legend i[data-state="settled"] { background: var(--st-settled); }
+.legend i[data-state="running"] {
+  background: var(--st-running);
+  background-image: repeating-linear-gradient(-45deg,
+    rgba(255,255,255,0.3) 0 4px, rgba(255,255,255,0) 4px 8px);
+}
+.legend i[data-state="failed"] { background: var(--st-failed); }
+/* two short bars, one above the other — the key draws what it names */
+.legend i.stack {
+  height: 13px;
+  border-radius: 0;
+  background: linear-gradient(
+    var(--strip-n) 0 5px,
+    transparent 5px 8px,
+    var(--accent) 8px 13px
+  );
+}
+
+/* ---- tooltip ---- */
+
+.tooltip {
+  position: fixed;
+  z-index: 1700;
+  max-width: 320px;
+  padding: var(--s3);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.45;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity var(--t-fast) var(--ease-out), transform var(--t-fast) var(--ease-out);
+}
+.tooltip[data-open="1"] { opacity: 1; transform: translateY(0); }
+.tooltip dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 2px var(--s3); }
+.tooltip dt { color: var(--ink-3); }
+.tooltip dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  word-break: break-all;
+}
+.tooltip .head {
+  margin: 0 0 var(--s2);
+  padding-bottom: var(--s2);
+  border-bottom: 1px solid var(--line-soft);
+  font-weight: 600;
+}
+.tooltip .head em {
+  font-style: normal;
+  font-weight: 400;
+  color: var(--ink-3);
+}
+
+/* ---- empty / error ---- */
+
+.notice {
+  padding: var(--s7) var(--s4);
+  text-align: center;
+  color: var(--ink-2);
+}
+.notice b { display: block; color: var(--ink); margin-bottom: var(--s2); }
+
+footer {
+  margin-top: var(--s4);
+  color: var(--ink-3);
+  font-size: 12px;
+  max-width: 66ch;
+}
+
+@media (max-width: 720px) {
+  :root { --gutter: 116px; }
+  body { padding: var(--s4) var(--s3) var(--s6); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar, .tooltip { transition-duration: 1ms; }
+  .bar:hover { transform: none; }
+  .bar .tip { animation: none; opacity: 0.9; }
+  .tooltip { transform: none; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Dispatch timeline</h1>
+  <p class="sub">One row per agent, one bar per dispatch, time left to right. Bars that share
+  an agent and a moment are stacked, never drawn on top of each other, and the strip above the
+  rows counts how many dispatches were in flight at once.</p>
+  <p id="source" class="source" data-kind="example"><span class="dot" aria-hidden="true"></span><span id="source-text">example data</span></p>
+</header>
+
+<dl class="stats" id="stats"></dl>
+
+<main class="panel">
+  <div class="scroller">
+    <div class="chart" id="chart"></div>
+  </div>
+  <div class="legend" id="legend" hidden></div>
+</main>
+
+<footer id="footnote"></footer>
+
+</div>
+
+<div class="tooltip" id="tooltip" role="presentation" aria-hidden="true"></div>
+
+<script>
+"use strict";
+
+/* Captured from .asgard/orchestration.db on 2026-08-12: three runs, eleven dispatches.
+   Used only when the #records block above is empty or unreadable. */
+const EXAMPLE = [
+ {"dispatch":"disp_ad5f94deafc1","task":"task_75cf95963f6a","run":"run_9ab4c24258f5","agent":"asgard-verifier","role":"agent","state":"settled","start":1786520411.61,"end":1786520740.27},
+ {"dispatch":"disp_9d8fdc1d4b19","task":"task_49b1247999c8","run":"run_9ab4c24258f5","agent":"asgard-verifier","role":"agent","state":"settled","start":1786520809.66,"end":1786521071.75},
+ {"dispatch":"disp_1b62c5eea3fc","task":"task_95f96f95b1e1","run":"run_fa905c31957a","agent":"asgard-verifier","role":"agent","state":"settled","start":1786523033.32,"end":1786523666.87},
+ {"dispatch":"disp_1c75e833c5ba","task":"task_b85ecdba60f6","run":"run_fa905c31957a","agent":"asgard-verifier","role":"agent","state":"settled","start":1786531120.73,"end":1786531849.55},
+ {"dispatch":"disp_b84b354294a0","task":"task_6d768d08598f","run":"run_fa905c31957a","agent":"asgard-verifier","role":"agent","state":"settled","start":1786531927.07,"end":1786533054.04},
+ {"dispatch":"disp_c21ed8b0f755","task":"task_8048645dfe5a","run":"run_fa905c31957a","agent":"asgard-verifier","role":"agent","state":"settled","start":1786532684.23,"end":1786532778.60},
+ {"dispatch":"disp_3975b3397e5a","task":"task_1d6315aec850","run":"run_fa905c31957a","agent":"asgard-verifier","role":"agent","state":"settled","start":1786533223.22,"end":1786533815.29},
+ {"dispatch":"disp_6c052f0d3ab5","task":"task_65b38034e28b","run":"run_fa905c31957a","agent":"asgard-verifier","role":"agent","state":"ready","start":1786533969.11,"end":null},
+ {"dispatch":"disp_5937bad4696e","task":"task_90f0d909b32f","run":"run_cad075ffb0cc","agent":"asgard-worker","role":"agent","state":"ready","start":1786534163.21,"end":null},
+ {"dispatch":"disp_8e94b8c3cb90","task":"task_06b78e15a15a","run":"run_cad075ffb0cc","agent":"asgard-thor","role":"agent","state":"ready","start":1786534195.03,"end":null},
+ {"dispatch":"disp_d45296a2174a","task":"task_4a65bc7599ce","run":"run_cad075ffb0cc","agent":"asgard-freyja","role":"agent","state":"ready","start":1786534207.46,"end":null}
+];
+
+/* States this repository writes. Anything else falls through to the neutral style. */
+const KNOWN = {
+  settled: {cls: "settled", label: "settled"},
+  failed:  {cls: "failed",  label: "failed"},
+  ready:   {cls: "running", label: "ready"}
+};
+
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls) => { const n = document.createElement(tag); if (cls) n.className = cls; return n; };
+
+/* ---------- load ---------- */
+
+function load() {
+  const node = $("records");
+  const raw = node ? node.textContent.trim() : "";
+  if (!raw) return {records: EXAMPLE, kind: "example", note: ""};
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    return {records: EXAMPLE, kind: "error", note: "records block is not valid JSON (" + err.message + ")"};
+  }
+  if (!Array.isArray(parsed)) {
+    return {records: EXAMPLE, kind: "error", note: "records block is not a JSON array"};
+  }
+  if (parsed.length === 0) return {records: EXAMPLE, kind: "example", note: ""};
+  return {records: parsed, kind: "live", note: ""};
+}
+
+function clean(records) {
+  const ok = [];
+  let dropped = 0;
+  for (const r of records) {
+    const start = Number(r && r.start);
+    if (!r || !isFinite(start)) { dropped++; continue; }
+    const rawEnd = r.end === null || r.end === undefined ? null : Number(r.end);
+    const end = rawEnd !== null && isFinite(rawEnd) ? Math.max(rawEnd, start) : null;
+    ok.push({
+      dispatch: String(r.dispatch ?? ""),
+      task: String(r.task ?? ""),
+      run: String(r.run ?? ""),
+      agent: String(r.agent ?? "").trim() || "(unassigned)",
+      role: String(r.role ?? ""),
+      state: String(r.state ?? "").trim() || "(none)",
+      start: start,
+      end: end
+    });
+  }
+  ok.sort((a, b) => a.start - b.start);
+  return {records: ok, dropped: dropped};
+}
+
+/* ---------- time ---------- */
+
+const STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 14400, 21600, 43200, 86400, 172800];
+
+function pickStep(span, target) {
+  for (const s of STEPS) if (span / s <= target) return s;
+  return Math.ceil(span / target / 86400) * 86400;
+}
+
+function ticks(t0, t1, target) {
+  const step = pickStep(Math.max(t1 - t0, 1), target);
+  /* Snap to local wall-clock boundaries, not UTC ones. */
+  const offset = new Date(t0 * 1000).getTimezoneOffset() * 60;
+  const out = [];
+  let t = Math.ceil((t0 - offset) / step) * step + offset;
+  for (; t <= t1 && out.length < 40; t += step) out.push(t);
+  return {step: step, values: out};
+}
+
+const pad = (n) => String(n).padStart(2, "0");
+
+function tickLabel(t, step) {
+  const d = new Date(t * 1000);
+  if (step < 60) return pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+  if (step < 86400) return pad(d.getHours()) + ":" + pad(d.getMinutes());
+  return pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+}
+
+function stamp(t) {
+  const d = new Date(t * 1000);
+  return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) +
+    " " + pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+}
+
+function duration(sec) {
+  if (!isFinite(sec) || sec < 0) return "-";
+  if (sec < 60) return (sec < 10 ? sec.toFixed(1) : Math.round(sec)) + "s";
+  if (sec < 3600) return Math.floor(sec / 60) + "m " + pad(Math.round(sec % 60)) + "s";
+  return Math.floor(sec / 3600) + "h " + pad(Math.floor((sec % 3600) / 60)) + "m";
+}
+
+/* ---------- window ---------- */
+
+function frame(records) {
+  const now = Date.now() / 1000;
+  const minStart = Math.min.apply(null, records.map((r) => r.start));
+  const maxStart = Math.max.apply(null, records.map((r) => r.start));
+  const ends = records.filter((r) => r.end !== null).map((r) => r.end);
+  const running = records.some((r) => r.end === null);
+  const natural = Math.max(maxStart, ends.length ? Math.max.apply(null, ends) : maxStart);
+  const base = Math.max(natural - minStart, 1);
+
+  /* lagom: a running dispatch is drawn to the live edge, but an archived file opened
+     months later would stretch the window until every settled bar collapsed to a
+     hairline. Cap the edge at +25% of the settled span and flag it instead. */
+  const cap = natural + base * 0.25;
+  let edge = natural;
+  let clamped = false;
+  if (running) {
+    edge = Math.min(Math.max(now, natural + base * 0.02), cap);
+    clamped = now > cap;
+  }
+  const span = Math.max(edge - minStart, 1);
+  return {t0: minStart - span * 0.005, t1: edge + span * 0.015, edge: edge, clamped: clamped, now: now};
+}
+
+/* ---------- lanes ---------- */
+
+/* First-fit packing: a bar joins a lane only when that lane is clear, so two
+   dispatches that share a moment always land on different lines. eps keeps
+   near-touching bars apart visually rather than merging them into one block. */
+function pack(items, endOf, eps) {
+  const lanes = [];
+  for (const it of items) {
+    let placed = false;
+    for (const lane of lanes) {
+      if (it.start >= lane.until + eps) { lane.items.push(it); lane.until = endOf(it); placed = true; break; }
+    }
+    if (!placed) lanes.push({items: [it], until: endOf(it)});
+  }
+  return lanes.map((l) => l.items);
+}
+
+/* ---------- concurrency ---------- */
+
+function concurrency(records, endOf) {
+  const events = [];
+  for (const r of records) { events.push([r.start, 1], [endOf(r), -1]); }
+  events.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const segs = [];
+  let count = 0, at = events.length ? events[0][0] : 0;
+  for (const [t, delta] of events) {
+    if (t > at && count > 0) segs.push({from: at, to: t, count: count});
+    count += delta;
+    at = t;
+  }
+  const peak = segs.reduce((m, s) => Math.max(m, s.count), 0);
+  return {segs: segs, peak: peak};
+}
+
+/* ---------- render ---------- */
+
+function run() {
+  const loaded = load();
+  const {records, dropped} = clean(loaded.records);
+
+  const srcNode = $("source");
+  const srcText = $("source-text");
+  if (loaded.kind === "live") {
+    srcNode.dataset.kind = "live";
+    srcText.textContent = "live records — read from the embedded records block";
+  } else if (loaded.kind === "error") {
+    srcNode.dataset.kind = "error";
+    srcText.textContent = "example data — " + loaded.note;
+  } else {
+    srcNode.dataset.kind = "example";
+    srcText.textContent = "example data — the records block is empty, so this is an embedded sample slice";
+  }
+
+  const chart = $("chart");
+  if (records.length === 0) {
+    const n = el("div", "notice");
+    const b = el("b"); b.textContent = "No dispatches to draw";
+    n.appendChild(b);
+    n.appendChild(document.createTextNode("The records block held no entry with a numeric start."));
+    chart.appendChild(n);
+    $("footnote").textContent = dropped ? dropped + " record(s) were skipped as malformed." : "";
+    return;
+  }
+
+  const f = frame(records);
+  const span = f.t1 - f.t0;
+  const endOf = (r) => (r.end === null ? f.edge : r.end);
+  const pct = (t) => ((t - f.t0) / span) * 100;
+
+  /* axis */
+  const width = Math.max(chart.clientWidth - 172, 480);
+  const tk = ticks(f.t0, f.t1, Math.max(4, Math.min(11, Math.floor(width / 92))));
+  const axis = el("div", "axis");
+  for (const t of tk.values) {
+    const n = el("span", "tick");
+    n.style.left = pct(t).toFixed(3) + "%";
+    n.textContent = tickLabel(t, tk.step);
+    axis.appendChild(n);
+  }
+  chart.appendChild(axis);
+
+  const note = el("p", "axis-note");
+  note.textContent = "window " + stamp(f.t0) + " to " + stamp(f.t1) +
+    " (" + duration(span) + ", tick " + duration(tk.step) + ")" +
+    (f.clamped ? " — running bars are cut off at the right edge; the current time is past this window." : "");
+  chart.appendChild(note);
+
+  /* concurrency strip */
+  const conc = concurrency(records, endOf);
+  const stripRow = el("div", "strip-row");
+  const stripLabel = el("div", "strip-label");
+  const lb = el("b"); lb.textContent = "in flight";
+  stripLabel.appendChild(lb);
+  stripLabel.appendChild(document.createTextNode("peak " + conc.peak));
+  const strip = el("div", "strip");
+  for (const s of conc.segs) {
+    const bar = el("div", "seg");
+    bar.style.left = pct(s.from).toFixed(3) + "%";
+    bar.style.width = Math.max(pct(s.to) - pct(s.from), 0.15).toFixed(3) + "%";
+    bar.style.height = ((s.count / conc.peak) * 100).toFixed(2) + "%";
+    if (s.count > 1) bar.dataset.over = "1";
+    bar.title = s.count + " in flight";
+    strip.appendChild(bar);
+  }
+  if (conc.peak > 1) {
+    const base = el("div", "baseline");
+    base.style.bottom = ((1 / conc.peak) * 100).toFixed(2) + "%";
+    const cap = el("span"); cap.textContent = "1";
+    base.appendChild(cap);
+    strip.appendChild(base);
+  }
+  stripRow.append(stripLabel, strip);
+  chart.appendChild(stripRow);
+
+  /* rows */
+  const byAgent = new Map();
+  for (const r of records) {
+    if (!byAgent.has(r.agent)) byAgent.set(r.agent, []);
+    byAgent.get(r.agent).push(r);
+  }
+  const agents = [...byAgent.entries()].sort((a, b) => a[1][0].start - b[1][0].start);
+
+  const wrap = el("div", "rows-wrap");
+  const grid = el("div", "gridlines");
+  for (const t of tk.values) {
+    const line = el("i");
+    line.style.left = pct(t).toFixed(3) + "%";
+    grid.appendChild(line);
+  }
+  wrap.appendChild(grid);
+
+  const eps = span * 0.004;   /* ~3px of separation at a 750px plot */
+  const seen = new Set();
+  let maxLanes = 1;
+
+  for (const [agent, items] of agents) {
+    const row = el("div", "row");
+
+    const label = el("div", "row-label");
+    const name = el("b"); name.textContent = agent; name.title = agent;
+    const count = el("small");
+    const lanes = pack(items, endOf, eps);
+    maxLanes = Math.max(maxLanes, lanes.length);
+    count.textContent = items.length + (items.length === 1 ? " dispatch" : " dispatches") +
+      (lanes.length > 1 ? " / " + lanes.length + " at once" : "");
+    label.append(name, count);
+
+    const lanesBox = el("div", "lanes");
+    for (const lane of lanes) {
+      const laneBox = el("div", "lane");
+      for (const r of lane) {
+        const end = endOf(r);
+        const live = r.end === null;
+        const known = KNOWN[r.state];
+        const bar = el("button", "bar");
+        bar.type = "button";
+        bar.dataset.state = live ? "running" : (known ? known.cls : "unknown");
+        if (!known) bar.dataset.unknown = "1";
+        if (live) bar.dataset.running = "1";
+        bar.style.left = pct(r.start).toFixed(3) + "%";
+        bar.style.width = Math.max(pct(end) - pct(r.start), 0.25).toFixed(3) + "%";
+
+        /* Label only when the text can be read whole. A clipped id fragment
+           looks like data and says nothing; the ids live in the tooltip. */
+        const dur = end - r.start;
+        const px = ((pct(end) - pct(r.start)) / 100) * width;
+        if (px >= (live ? 76 : 50)) bar.textContent = duration(dur);
+        if (live) bar.appendChild(el("span", "tip"));
+
+        const stateWord = known ? known.label : r.state;
+        bar.setAttribute("aria-label",
+          agent + ", " + (live ? "running" : stateWord) + ", " + duration(dur) +
+          (live ? " so far" : "") + ", starting " + stamp(r.start) +
+          ". dispatch " + r.dispatch + ", task " + r.task + ", run " + r.run + ".");
+
+        bar._rec = {rec: r, end: end, live: live, dur: dur, stateWord: stateWord, known: !!known};
+        seen.add(r.state);
+        laneBox.appendChild(bar);
+      }
+      lanesBox.appendChild(laneBox);
+    }
+
+    row.append(label, lanesBox);
+    wrap.appendChild(row);
+  }
+  chart.appendChild(wrap);
+
+  /* legend — only the states actually present, unknown ones included by name */
+  const legend = $("legend");
+  legend.hidden = false;
+  const addKey = (state, text, unknown) => {
+    const s = el("span");
+    const sw = el("i");
+    if (state) sw.dataset.state = state;
+    if (unknown) sw.style.boxShadow = "inset 0 0 0 1px var(--surface-2), inset 0 0 0 2px var(--st-unknown)";
+    s.append(sw, document.createTextNode(text));
+    legend.appendChild(s);
+  };
+  const hasRunning = records.some((r) => r.end === null);
+  if (hasRunning) addKey("running", "still running (open right edge)");
+  for (const state of [...seen].sort()) {
+    if (state === "ready" && hasRunning) continue;
+    const known = KNOWN[state];
+    addKey(known ? known.cls : null, known ? known.label : state + " (unrecognised state)", !known);
+  }
+  const stack = el("span");
+  const si = el("i", "stack");
+  stack.append(si, document.createTextNode("taller strip / stacked rows = concurrent dispatches"));
+  legend.appendChild(stack);
+
+  /* stats */
+  const settled = records.filter((r) => r.end !== null);
+  const busy = conc.segs.filter((s) => s.count > 1).reduce((sum, s) => sum + (s.to - s.from), 0);
+  const stats = [
+    ["dispatches", String(records.length), ""],
+    ["agents", String(agents.length), ""],
+    ["peak in flight", String(conc.peak), conc.peak > 1 ? "at once" : "no overlap"],
+    ["overlapping time", duration(busy), "of " + duration(span)],
+    ["running now", String(records.length - settled.length), ""]
+  ];
+  const dl = $("stats");
+  for (const [k, v, sub] of stats) {
+    const box = el("div");
+    const dt = el("dt"); dt.textContent = k;
+    const dd = el("dd"); dd.textContent = v;
+    if (sub) { const s = el("span"); s.textContent = sub; dd.appendChild(s); }
+    box.append(dt, dd);
+    dl.appendChild(box);
+  }
+
+  $("footnote").textContent =
+    "Times are local (" + Intl.DateTimeFormat().resolvedOptions().timeZone + "). " +
+    "Hover or tab to a bar for its dispatch, task and run id." +
+    (dropped ? " " + dropped + " record(s) skipped as malformed." : "");
+
+  bindTooltip();
+}
+
+/* ---------- tooltip ---------- */
+
+function bindTooltip() {
+  const tip = $("tooltip");
+  let open = null;
+
+  const rowsOf = (d) => {
+    const box = el("div");
+    const head = el("p", "head");
+    head.textContent = d.live ? "running — " + duration(d.dur) + " so far" : d.stateWord + " — " + duration(d.dur);
+    if (!d.known) { const em = el("em"); em.textContent = "  (state not recognised)"; head.appendChild(em); }
+    box.appendChild(head);
+    const dl = el("dl");
+    const pairs = [
+      ["agent", d.rec.agent],
+      ["role", d.rec.role || "-"],
+      ["dispatch", d.rec.dispatch || "-"],
+      ["task", d.rec.task || "-"],
+      ["run", d.rec.run || "-"],
+      ["state", d.rec.state],
+      ["start", stamp(d.rec.start)],
+      ["end", d.live ? "still running" : stamp(d.end)]
+    ];
+    for (const [k, v] of pairs) {
+      const dt = el("dt"); dt.textContent = k;
+      const dd = el("dd"); dd.textContent = v;
+      dl.append(dt, dd);
+    }
+    box.appendChild(dl);
+    return box;
+  };
+
+  const show = (bar) => {
+    if (!bar._rec) return;
+    open = bar;
+    tip.textContent = "";
+    tip.appendChild(rowsOf(bar._rec));
+    tip.dataset.open = "1";
+    place(bar);
+  };
+
+  const place = (bar) => {
+    const r = bar.getBoundingClientRect();
+    const t = tip.getBoundingClientRect();
+    let left = r.left;
+    let top = r.bottom + 8;
+    if (left + t.width > window.innerWidth - 8) left = window.innerWidth - t.width - 8;
+    if (left < 8) left = 8;
+    if (top + t.height > window.innerHeight - 8) top = Math.max(8, r.top - t.height - 8);
+    tip.style.left = Math.round(left) + "px";
+    tip.style.top = Math.round(top) + "px";
+  };
+
+  const hide = () => { open = null; tip.dataset.open = "0"; };
+
+  document.addEventListener("mouseover", (e) => {
+    const bar = e.target.closest(".bar");
+    if (bar) show(bar); else if (open && !open.matches(":focus-visible")) hide();
+  });
+  document.addEventListener("focusin", (e) => {
+    const bar = e.target.closest(".bar");
+    if (bar) show(bar);
+  });
+  document.addEventListener("focusout", (e) => { if (e.target === open) hide(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") hide(); });
+  window.addEventListener("scroll", () => { if (open) place(open); }, true);
+  window.addEventListener("resize", hide);
+}
+
+run();
+</script>
+</body>
+</html>

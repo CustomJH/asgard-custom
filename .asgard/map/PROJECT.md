@@ -7,8 +7,8 @@
 ## Orientation
 
 - Project root: `./`
-- Languages by observed source files: Python (579), JavaScript (6), Rust (2)
-- Evidence scan: 791 files; 36 landmarks
+- Languages by observed source files: Python (585), JavaScript (6), Rust (2)
+- Evidence scan: 800 files; 36 landmarks
 
 ## Landmarks
 
@@ -66,7 +66,9 @@
 - `benchmarks/bragi-humanvoice/README.md` — doc: Bragi — human-voice bench · sections: Running; Part A — upstream labeled pairs; Part B — held-out human corpus; Part C — live A/B on a real model; Honest limits
 - `benchmarks/conductor/README.md` — doc: Conductor 대조 — arXiv 2512.04388 의 평가 축을 Asgard 에 적용 · sections: 두 층; 못 재는 것
 - `benchmarks/conductor/REPORT.md` — doc: Conductor 대조 + trinity-orchestrator.html §8 재검증 — 2026-08-06 · sections: 1. 정책 롤아웃 — 0-LLM (_policy_rollout.py_); 2. 결정론 마이크로벤치 — HEAD 재확인; 3. 라이브 대조 — 3아암 × 3과업 × 2반복 (18세션); 4. DIRECT 무세금 — §8 S5 재측정; 5. 하네스 레이턴시 — §8 표 재측정 (회귀); 6. 문서 §8 주장 대조표
+- `benchmarks/continual-harness/REPORT.md` — doc: Continual Harness 대조 — 실측 (2026-08-12) · sections: 결과; 축별로 읽는 법; 이 벤치가 못 재는 것; 남는 경합 하나; 이 변경이 안 만들었지만 판정이 찾아 준 것; 미해결
 - `benchmarks/core-loop/README.md` — doc: Asgard core loop A/B · sections: What this harness cannot measure: system-prompt size
+- `benchmarks/dispatch-parity/REPORT.md` — doc: 병렬 배차 실측 — worker 가 딜리버리 전문가를 부르는 길 (2026-08-12) · sections: 결과; 돌리는 법; 위임 경계 — 165조합; 실팬아웃 — 장부가 적은 것; 모드 B — 이 형상에서는 열리지 않는다; 이 벤치가 못 재는 것
 - `benchmarks/grounding/REPORT.md` — doc: 근거 대조 벤치 — 어간 하한 __stem_floor_ · sections: 결과 (실측 26-08-01); 읽는 법; 권고; 이 벤치가 못 재는 것
 - `benchmarks/hybrid-search/REPORT.md` — doc: 하이브리드 검색 벤치 — 2경로 vs 3경로 · sections: 검색 품질 (hit@k · MRR); 지연 (query() 벽시계)
 - `benchmarks/latency/README.md` — doc: 회수 지연 — k6 부하 시험 · sections: 실행; 실측 (26-07-28 · Apple Silicon · 시맨틱 ON · 100페이지); 읽는 법; 한계
@@ -96,7 +98,9 @@
 - `src/asgard/providers.py` — public surface: class ProviderProfile; class ResolvedProvider; def cred_path(); def normalize_model_id(value); def is_agent_model_id(model_id)
 - `benchmarks/bragi-humanvoice/build_corpus.py` — public surface: def korean_skills(base); def blader(base); def vietnamese(base); def japanese(base); def main()
 - `benchmarks/conductor/aggregate.py` — public surface: def med(xs); def fmt(v, spec); def main()
+- `benchmarks/continual-harness/harness.py` — public surface: def axis_mining_yield(); def axis_retry_diagnosis(); def axis_decision_survival(); def axis_remine_after_archive(); def main()
 - `benchmarks/core-loop/harness.py` — public surface: def main()
+- `benchmarks/dispatch-parity/collect.py` — public surface: def role_of(role, agent); def collect(db_path, run); def main()
 - `benchmarks/grounding/harness.py` — public surface: def floor_default(word); def floor_min(n); def floor_ratio(r); def floor_suffix(n); def floor_script(latin_suffix)
 - `benchmarks/hybrid-search/harness.py` — public surface: def build_wiki(d, extra_distractors); def score_mode(d, semantic_on); def latency_mode(d, semantic_on, iters); def main(); def print_summary(rec)
 - `benchmarks/latency/server.py` — public surface: def build(profile, pages); def main()
@@ -109,7 +113,7 @@
 - `benchmarks/shortcut-recall/harness.py` — public surface: def build_sandbox(); def build_memory(); def precheck(); def run_one(fid, task, judge, arm, rep); def main()
 - `studio-shell/src-tauri/icons/build_icons.py` — public surface: def superellipse(box, n, steps); def body_mask(size); def night(size); def master(); def main()
 - `tests/cli_boundary.py` — public surface: def strip_ansi(text); class Outcome; def run_cli(*argv, stdin)
-- `tests/hookscaffold.py` — public surface: def deploy_library(hooks_dir); def deploy_cli(bin_dir); def until(predicate, timeout, step)
+- `tests/hookscaffold.py` — public surface: def deploy_library(hooks_dir); def deploy_cli(bin_dir); def isolated_home_env(home, **extra); def until(predicate, timeout, step)
 - `tests/test_activity.py` — public surface: class ActivityEmitCase; class ActivityReadCase; class StudioAbsorbCase; class SessionEmitCase; class StudioLiveRunCase
 - `tests/test_adversarial_gate.py` — public surface: def run(script, args, stdin, cwd, env_extra); class AdversarialBase; class TestAdversarialVectors; class TestEncodingDisarm; class TestSessionIdentityDisarm
 - `tests/test_agent.py` — public surface: class Base; class TestEditor; class TestBash; class TestTruncation; class TestBashDestructiveGuard; uses `src/asgard/agent/quest_bridge.py`
@@ -122,7 +126,7 @@
 - `tests/test_automations.py` — public surface: class TestDueComputation; class TestStoreAndOutcome; class TestAutomationCLI
 - `tests/test_bragi.py` — public surface: class TestLanguageDetection; class TestDetection; class TestFalsePositiveGuards; class TestStatisticalFeatures; class TestGrading
 - `tests/test_bridge.py` — public surface: class TestScaffold; class TestSkillBody
-- `tests/test_budget_guard.py` — public surface: class TestLedger; class TestCostUnits; class TestVerdict; class TestHookProtocol; class TestFailOpen; uses `src/asgard/commands/budget.py`
+- `tests/test_budget_guard.py` — public surface: class TestLedger; class TestCostUnits; class TestVerdict; class TestWarnThresholdIsAShareOfTheCeiling; class TestHookProtocol; uses `src/asgard/commands/budget.py`
 - `tests/test_cancellation.py` — public surface: class TestBashCancel; class TestSessionCancel
 - `tests/test_charter.py` — public surface: class TestLoadCharter; class TestNote; uses `src/asgard/charter.py`
 - `tests/test_charter_hook.py` — public surface: class CharterHookBase; class TestCharterHook; uses `src/asgard/charter.py`
@@ -139,8 +143,6 @@
 - `tests/test_craft_lang.py` — public surface: class ScrubTest; class ExtractTest; class DepthTest; class CMemoryTest; class CBoundsAndCostTest
 - `tests/test_craft_note.py` — public surface: class MetaphorTest; class JargonTest; class DocstringTest; class ExtractionTest; class RatchetTest; uses `src/asgard/craft_rules.py`
 - `tests/test_doctor_shape.py` — public surface: class TestDoctorJsonShape; class TestTrinityRowNames; class TestPiecesStandAlone; class TestHookInterpreterIsExecuted; class TestConfigReading
-- `tests/test_document_tools.py` — public surface: class DocumentToolTest; class BundledDocumentSkillTest; uses `src/asgard/agent/tool_kernel.py`
-- `tests/test_eitri.py` — public surface: class TestScaffold; class TestSkillBodies; class TestSkillResolver; class TestWiring; uses `src/asgard/templates/eitri.py`
 
 ## Navigation contract
 
