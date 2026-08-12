@@ -2,6 +2,7 @@
 
 import json as _json
 import os
+import re
 import shlex
 from typing import NamedTuple
 
@@ -42,17 +43,9 @@ def _stale_role_agents(root: str) -> list[str]:
 # 아무것도 안 깔린 채 성공 줄만 본다 (commands/sync.py `_unregistered_cwd_note`).
 _TRINITY_FIX = "asgard init --force 로 Trinity 에셋 재설치"
 
-_TRINITY_HOOKS = (
-    "quest-log.py",
-    "verifier-gate.py",
-    "write-sentinel.py",
-    "unattended-context.py",
-    "subagent-gate.py",
-    "lagom-activate.py",
-    "lagom-tracker.py",
-    "lagom-subagent.py",
-    "lagom-canon.md",
-)
+# 훅 명령줄에서 훅 이름을 뽑는 자리. 클라이언트 셋이 다 `<폴더>/hooks/<이름>.py` 로 부르고,
+# 뒤에 인자가 붙거나(`subagent-gate.py pre`) 명령치환이 앞에 붙어도 이 조각은 그대로다.
+_HOOK_IN_COMMAND = re.compile(r"hooks/([a-z0-9-]+)\.py")
 
 
 class _Client(NamedTuple):
@@ -225,18 +218,81 @@ def _role_agents_check(root: str) -> dict:
     }
 
 
+def _hook_names(node: object) -> set[str]:
+    """이 조각 아래 명령줄이 부르는 훅 이름 — 확장자 없이.
+
+    설정 형상이 클라이언트마다 다르다: CC·Codex 는 이벤트→항목→`hooks[]` 두 겹이고 Cursor 는
+    이벤트→항목 한 겹이다. 그래서 키 이름을 따라가지 않고 아래로 훑어 명령줄만 모은다.
+    문자열·목록·매핑이 아닌 값(tomllib 이 돌려주는 datetime 등)은 빈 집합이다."""
+    if isinstance(node, str):
+        return set(_HOOK_IN_COMMAND.findall(node.replace("\\", "/")))
+    if isinstance(node, dict):
+        node = list(node.values())
+    if isinstance(node, list):
+        return {name for item in node for name in _hook_names(item)}
+    return set()
+
+
+def _registered_hooks(config: dict) -> dict[str, set[str]]:
+    """이벤트별로 이 설정이 등록한 훅 이름.
+
+    이벤트를 갈라서 세는 이유는 같은 훅이 두 자리에 걸리기 때문이다 — `failure-tracker` 는
+    PostToolUse 와 Stop 둘 다에 걸리고, 한쪽만 남으면 도구 실패 레인이나 턴 경계 레인 중
+    하나가 통째로 죽는다. 이름만 세면 그 상태가 초록으로 읽힌다."""
+    hooks = config.get("hooks")
+    return {event: _hook_names(entries) for event, entries in hooks.items()} if isinstance(hooks, dict) else {}
+
+
+def _template_hooks(client: str) -> dict[str, set[str]]:
+    """스캐폴드 정본이 등록하는 이벤트별 훅 — 설치기가 실제로 쓰는 그 문자열에서 뽑는다."""
+    from ...templates.claude import cc_settings
+    from ...templates.codex import codex_config
+    from ...templates.cursor import cursor_hooks_json
+
+    if client == "Codex":
+        import tomllib
+
+        return _registered_hooks(tomllib.loads(codex_config()))
+    return _registered_hooks(_json.loads(cc_settings() if client == "CC" else cursor_hooks_json()))
+
+
+def _client_hook_gaps(root: str, client: _Client) -> list[str]:
+    """정본이 등록하는데 이 프로젝트에는 빠진 것 — (이벤트, 훅) 배선과 훅 파일.
+
+    CC 는 Trinity 의 호스트라 설정이 비어도 잰다. 나머지 둘은 아스가르드 훅을 하나도 등록하지
+    않았으면 건너뛴다: 클라이언트가 스스로 만드는 폴더가 있어서(빈 `.cursor/`) 그 자리에 경고를
+    세우면 `asgard sync` 를 돌려도 안 사라지는 경고가 된다."""
+    expected = _template_hooks(client.name)
+    registered = _registered_hooks(_client_config(root, client.folder, client.config_name))
+    if not registered and client.name != "CC":
+        return []
+    hooks_dir = os.path.join(root, client.folder, "hooks")
+    gaps = [
+        f"{client.name} {event} 에 {name} 미등록"
+        for event, names in sorted(expected.items())
+        for name in sorted(names - registered.get(event, set()))
+    ]
+    return gaps + [
+        f"{client.name} 훅 파일 없음: {name}.py"
+        for name in sorted({name for names in expected.values() for name in names})
+        if not os.path.isfile(os.path.join(hooks_dir, f"{name}.py"))
+    ]
+
+
 def _trinity_hooks_check(root: str) -> dict:
-    """훅 파일 존재 + Stop/SubagentStop 게이트 배선. 깔려만 있고 안 걸린 게이트는 게이트가 아니다."""
-    missing = [h for h in _TRINITY_HOOKS if not os.path.exists(os.path.join(root, ".claude", "hooks", h))]
-    settings = _client_config(root, ".claude", "settings.json")
-    gate_wired = _hook_wired(settings, "Stop", "verifier-gate") and _hook_wired(
-        settings, "SubagentStop", "subagent-gate"
-    )
-    ok = not missing and gate_wired
+    """정본 템플릿이 등록하는 훅이 이 프로젝트 설정에도 이벤트별로 등록돼 있는가.
+
+    손으로 적은 9개 목록과 게이트 둘(Stop·SubagentStop)만 보던 판은 목록 밖의 훅을 통째로
+    못 봤다 — `verifier-context.py` 가 `.claude/settings.json` 에 한 줄도 없는데 이 행은
+    `wired` 를 냈다 (26-08-12 실측). 그 훅은 판정자에게 하네스가 관측한 실행 기록을 넘기는
+    자리라, 안 걸리면 판정 입력이 빈 채로 초록이 나온다. 비교 축을 템플릿으로 옮기면 훅이
+    늘어도 이 파일을 손볼 일이 없다."""
+    gaps = [gap for client in _MEMORY_CLIENTS for gap in _client_hook_gaps(root, client)]
+    detail = " · ".join(gaps[:6]) + (f" 외 {len(gaps) - 6}건" if len(gaps) > 6 else "")
     return {
         "name": "trinity hooks + Stop gate",
-        "ok": ok,
-        "detail": "wired" if ok else ("missing: " + ", ".join(missing) if missing else "Stop/SubagentStop 미배선"),
+        "ok": not gaps,
+        "detail": detail or "wired",
         "fix": _TRINITY_FIX,
     }
 
@@ -457,6 +513,8 @@ _PARITY_HOOKS = (
     "agent-activate.py",
     "map-activate.py",
     "verifier-context.py",
+    "dispatch-context.py",
+    "siege-inbox.py",
 )
 # 파일만 깔리고 배선이 없으면 그 규율은 없는 것과 같다 — 설정 원문에 이름이 있는지로 본다.
 _PARITY_WIRED = tuple(

@@ -144,6 +144,98 @@ class TestTrinityRowNames(unittest.TestCase):
         self.assertNotIn("memory wiring (CC)", names)
 
 
+class TestTemplateRegisteredHooksAreWired(unittest.TestCase):
+    """`trinity hooks + Stop gate` 는 정본 템플릿이 등록하는 훅 전부를 잰다.
+
+    손으로 적은 9개 목록과 Stop·SubagentStop 게이트 둘만 보던 판은 목록 밖의 훅을 통째로
+    못 봤다: `verifier-context.py` 가 `.claude/settings.json` 에 한 줄도 없는데 이 행은
+    `wired` 를 냈다 (26-08-12 실측). 그 훅은 판정자에게 실행 기록을 넘기는 자리라, 안 걸리면
+    판정 입력이 빈 채로 초록이 나온다."""
+
+    @staticmethod
+    def _template_names(settings: dict) -> set[str]:
+        """설정의 `hooks` 아래에서만 훅 이름을 모은다 — `permissions` 의 허용목록에도
+        `.claude/hooks/quest-log.py` 가 적혀 있지만 그건 배선이 아니라 승인 규칙이다."""
+        return set(re.findall(r"hooks/([a-z0-9-]+)\.py", json.dumps(settings["hooks"])))
+
+    @classmethod
+    def _without(cls, node, name: str):
+        """`name` 을 부르는 훅 항목만 뺀 설정 — 사람이 손으로 지운 배선의 재현."""
+        if isinstance(node, list):
+            return [cls._without(v, name) for v in node if not (isinstance(v, dict) and name in str(v.get("command")))]
+        if isinstance(node, dict):
+            return {key: cls._without(value, name) for key, value in node.items()}
+        return node
+
+    @classmethod
+    def _install_cc(cls, root: str, drop_wiring: str = "", drop_file: str = "") -> dict:
+        """정본 스캐폴드를 그대로 깐다 — 설정도 훅 파일도 템플릿이 부르는 이름 그대로."""
+        from asgard.templates.claude import cc_settings
+
+        _scaffolded(root)
+        settings = json.loads(cc_settings())
+        for name in cls._template_names(settings):
+            if name != drop_file:
+                _write(root, os.path.join(".claude", "hooks", f"{name}.py"), "# hook\n")
+        if drop_wiring:
+            settings["hooks"] = cls._without(settings["hooks"], drop_wiring)
+        _write(root, os.path.join(".claude", "settings.json"), json.dumps(settings))
+        return settings
+
+    def test_a_fully_wired_scaffold_is_green(self):
+        with tempfile.TemporaryDirectory() as td:
+            self._install_cc(td)
+            row = doctor._trinity_hooks_check(td)
+        self.assertTrue(row["ok"], row["detail"])
+
+    def test_the_hook_that_started_this_is_caught(self):
+        with tempfile.TemporaryDirectory() as td:
+            self._install_cc(td, drop_wiring="verifier-context")
+            row = doctor._trinity_hooks_check(td)
+        self.assertFalse(row["ok"], "정본이 등록하는 훅이 설정에 없는데 초록이다")
+        self.assertIn("verifier-context", row["detail"])
+        self.assertIn("SubagentStart", row["detail"])
+
+    def test_every_hook_the_template_registers_is_covered(self):
+        """축이 템플릿이라는 것의 판정 — 어느 하나를 빼도 빨개진다. 목록을 손으로 늘리면
+        다음에 추가된 훅에서 같은 결함이 다시 난다."""
+        with tempfile.TemporaryDirectory() as td:
+            names = sorted(self._template_names(self._install_cc(td)))
+        self.assertGreater(len(names), 9, "정본은 손목록(9개)보다 많은 훅을 등록한다")
+        for name in names:
+            with self.subTest(hook=name), tempfile.TemporaryDirectory() as td:
+                self._install_cc(td, drop_wiring=name)
+                row = doctor._trinity_hooks_check(td)
+                self.assertFalse(row["ok"], f"{name} 배선이 빠졌는데 초록이다")
+                self.assertIn(name, row["detail"])
+
+    def test_a_registered_hook_with_no_file_is_named(self):
+        with tempfile.TemporaryDirectory() as td:
+            self._install_cc(td, drop_file="map-activate")
+            row = doctor._trinity_hooks_check(td)
+        self.assertFalse(row["ok"])
+        self.assertIn("map-activate.py", row["detail"])
+
+    def test_a_client_folder_with_no_asgard_wiring_is_not_drift(self):
+        """클라이언트가 스스로 만드는 폴더가 있다 — 거기에 경고를 세우면 sync 로 안 사라진다."""
+        with tempfile.TemporaryDirectory() as td:
+            self._install_cc(td)
+            os.makedirs(os.path.join(td, ".cursor"), exist_ok=True)
+            self.assertTrue(doctor._trinity_hooks_check(td)["ok"])
+
+    def test_cursor_wiring_is_measured_against_its_own_template(self):
+        with tempfile.TemporaryDirectory() as td:
+            from asgard.templates.cursor import cursor_hooks_json
+
+            self._install_cc(td)
+            hooks = self._without(json.loads(cursor_hooks_json())["hooks"], "verifier-context")
+            _write(td, os.path.join(".cursor", "hooks.json"), json.dumps({"version": 1, "hooks": hooks}))
+            row = doctor._trinity_hooks_check(td)
+        self.assertFalse(row["ok"])
+        self.assertIn("Cursor", row["detail"])
+        self.assertIn("verifier-context", row["detail"])
+
+
 class TestPiecesStandAlone(unittest.TestCase):
     """쪼갠 조각을 각각 혼자 부른다 — 못 부르면 분해가 아니라 재배치다."""
 
