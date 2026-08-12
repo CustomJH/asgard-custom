@@ -43,9 +43,28 @@ def _timed_out_row(rows, cmd: str, width: int | None = None) -> bool:
     return any(isinstance(r, dict) and r.get("timed_out") and r.get("cmd") == target for r in rows or [])
 
 
-def _contract_timed_out_before(events: list[dict], cmd: str) -> bool:
-    """이 퀘스트에서 이미 timeout 으로 끊긴 계약 명령인가 (run_criteria_checks 쪽 기록 형상)."""
-    return any(_timed_out_row(event.get("criteria_checks"), cmd) for event in events)
+def _contract_timed_out_before(events: list[dict], cmd: str, budget: int, diff_hash: str) -> bool:
+    """이 퀘스트에서 이미 timeout 으로 끊긴 계약 명령인가 — **같은 상한, 같은 트리에서만** 그렇다.
+
+    이 메모에는 무효화 축이 없었다. 한 번 timeout 이 적히면 그 뒤로는 명령을 아예 안 돌리고
+    같은 행을 다시 적었고, 상한을 올려도 코드를 고쳐도 다시 재지 않았다 — 26-08-12 에 경합으로
+    한 번 늦은 계약이 그렇게 세 턴 연속 미충족으로 굳었다 (단독 실행 44.4초, 상한 120초).
+    그래서 축을 둘 준다: 그때의 상한과 그때의 트리. 둘 중 하나라도 다르면 다시 잰다.
+
+    상한을 안 적은 옛 행은 메모로 안 친다. 축이 없는 기록으로는 "같은 조건" 을 말할 수 없고,
+    한 번 더 재는 값이 영영 안 닫히는 퀘스트보다 싸다.
+    """
+    for event in events:
+        for row in event.get("criteria_checks") or []:
+            if not (isinstance(row, dict) and row.get("timed_out") and row.get("cmd") == cmd):
+                continue
+            if row.get("budget") != budget:
+                continue
+            recorded = event.get("diff_hash")
+            if diff_hash and recorded and recorded != diff_hash:
+                continue
+            return True
+    return False
 
 
 # `pytest` 바로 앞에 설 수 있는 것들 — 러너 두 개와 셸 경계. 이 중 하나가 앞에 있거나 명령의 첫
@@ -210,11 +229,14 @@ def run_criteria_checks(
             # 영영 미충족으로 남는다 (26-08-05 실측: 207자 계약 하나가 판정을 무한 재판정으로).
             results.append({**shared, "cmd": cmd, "shared": True})
             continue
-        if _contract_timed_out_before(events, cmd):
-            # 계약 명령이 timeout 보다 느리면 그 계약은 이 설정으로는 영영 충족될 수 없다. 미충족은
-            # 그대로 두되(기준 유지) 같은 대기를 append 마다 다시 사지는 않는다 — 판정은 안 바뀌고
-            # 재검증 턴마다 timeout 만큼만 늘어나던 자리다.
-            results.append({"cmd": cmd, "exit_code": None, "secs": 0.0, "timed_out": True, "memo": True})
+        if _contract_timed_out_before(events, cmd, timeout, diff_hash):
+            # 계약 명령이 timeout 보다 느리면 그 계약은 **이 상한과 이 트리에서는** 충족될 수 없다.
+            # 미충족은 그대로 두되(기준 유지) 같은 대기를 append 마다 다시 사지는 않는다 — 판정은
+            # 안 바뀌고 재검증 턴마다 timeout 만큼만 늘어나던 자리다. 상한이나 트리가 바뀌면
+            # `_contract_timed_out_before` 가 이 갈래를 안 태우고 다시 잰다.
+            results.append(
+                {"cmd": cmd, "exit_code": None, "secs": 0.0, "timed_out": True, "memo": True, "budget": timeout}
+            )
             continue
         t0 = time.time()
         code: int | None
@@ -232,6 +254,9 @@ def run_criteria_checks(
         if run_cmd:
             row["run_cmd"] = run_cmd
         if timed_out:
+            # 상한을 함께 적는다 — 이것이 메모의 무효화 키다. 안 적으면 다음 턴이 "무슨 조건에서
+            # 늦었는지" 를 모른 채 같은 결론을 물려받는다.
             row["timed_out"] = True
+            row["budget"] = timeout
         results.append(row)
     return results

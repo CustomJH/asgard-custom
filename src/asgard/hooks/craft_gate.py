@@ -43,6 +43,7 @@ if _HOOK_DIR not in sys.path:
     sys.path.append(_HOOK_DIR)
 
 from asgard_hooklib.firing import event, run  # noqa: E402
+from asgard_hooklib.policy import READ_ONLY_ROLES  # noqa: E402
 
 # Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 넣지 못한다 — 인코딩 오류가
 # fail-open에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
@@ -298,6 +299,16 @@ def main() -> None:
         root = str(os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd") or os.getcwd())
         raw_sid = "cursor" if protocol == "cursor" else data.get("session_id") or "default"
         sid = re.sub(r"[^A-Za-z0-9_.-]", "_", str(raw_sid))[:64]
+        agent = str(data.get("agent_type") or data.get("subagent_type") or "session")
+        if agent in READ_ONLY_ROLES:
+            # 판정 대상은 **세션 전체의 쓰기**다 (`writes-<sid>.json` 은 서브에이전트와 조율자가
+            # 같은 세션 id 로 함께 쓴다). 그래서 한 글자도 안 쓴 읽기 전용 역할이 남의 빚으로
+            # 종료를 막히고, 고칠 손이 없어 같은 문장을 두 번 되풀이한 뒤 3회째에 통과한다 —
+            # 26-08-12 실측: Thinker 가 그렇게 두 번 세워지고 재계획으로 빠져나갔다. 차단이
+            # 가르칠 수 없는 상대에게는 차단이 순수한 턴 비용이다. 빚은 그대로 남아 쓴 역할의
+            # 종료와 세션 Stop 에서 다시 판정된다.
+            _skipped(root, sid, "readonly-role")
+            sys.exit(0)
         paths = _writes(root, sid)
         if not paths:
             # 대상 없음 (fail-open). 두 사유를 갈라 센다 — 목록 자체가 없는 것은 Bash
@@ -313,7 +324,6 @@ def main() -> None:
         if not blocking:
             _receipt(fix)
             sys.exit(0)  # 수리만 하고 남은 것이 없는 실행은 차단이 아니다 — 래칫 카운터를 쓰지 않는다
-        agent = str(data.get("agent_type") or data.get("subagent_type") or "session")
         if _bump(root, sid, agent) > MAX_BLOCKS:
             sys.stderr.write(
                 "asgard craft-gate: %s exceeded %d block(s) — allowing (findings stand, unfixed)\n"

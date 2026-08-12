@@ -43,6 +43,7 @@ from asgard_hooklib.evidence import pass_evidence, trivial_evidence  # noqa: E40
 from asgard_hooklib.firing import run  # noqa: E402
 from asgard_hooklib.ledger import fold_tickets, norm_path, verifiable_units  # noqa: E402
 from asgard_hooklib.paths import read_text  # noqa: E402
+from asgard_hooklib.policy import READ_ONLY_ROLES  # noqa: E402
 from asgard_hooklib.siege import ledger_call  # noqa: E402
 
 MAX_BLOCKS = 2  # 역할당 — 3번째는 통과 (최후 방벽은 verifier-gate)
@@ -77,8 +78,9 @@ AGENT_RANK = {
     "asgard-loki": 4,
     "asgard-ullr": 5,  # 정찰 — 종점
 }
-# 트리를 만지지 않는 역할. `tools:` 에 Write·Edit 이 없는 것과 같은 집합이어야 한다.
-READ_ONLY_AGENTS = frozenset({"asgard-verifier", "asgard-thinker", "asgard-mimir", "asgard-loki", "asgard-ullr"})
+# 트리를 만지지 않는 역할 — 정본은 공용 라이브러리 하나다 (`policy.READ_ONLY_ROLES`).
+# 훅마다 사본을 들면 한 자리만 낡아도 같은 역할이 게이트마다 다르게 판정된다.
+READ_ONLY_AGENTS = READ_ONLY_ROLES
 # 전이 함수가 배정하는 자리 — 아무도 손으로 못 부른다. 자기 일을 심판·계획할 손을 자기가
 # 고르는 순간 판정도 계획도 자기 확인이 된다.
 UNDISPATCHABLE = frozenset({"asgard-thinker", "asgard-verifier"})
@@ -426,15 +428,37 @@ def siege_open(root: str, qid: str, caller: str, target: str, tool_input: dict) 
     )
 
 
-def siege_close(root: str, qid: str, agent: str, summary: str = "") -> None:
+def heal_ledger(root: str, qid: str, agent: str) -> bool:
+    """종료에서 여는 기록을 메워도 되는가 — 단위 티켓이 그 수명을 쥐고 있으면 안 된다.
+
+    티켓이 쥐는 것은 워커의 수명뿐이다 (`quest_log._siege_mirror` 가 claim/finish 로 연다).
+    같은 퀘스트에서 도는 thinker·verifier·딜리버리 전문가는 여전히 `siege_open` 이 여는
+    자리라, 그쪽 유실은 티켓이 있든 없든 메워야 한다.
+    """
+    if agent != "asgard-worker":
+        return True
+    return not fold_tickets(load_quest_events(root, qid))
+
+
+def siege_close(root: str, qid: str, agent: str, summary: str = "", *, heal: bool = False) -> None:
     """그 에이전트의 살아 있는 시도를 접는다. `siege_open` 이 연 것만 — 배정 단위 티켓의
     수명은 ticket-finish 가 쥔다.
 
     결과는 언제나 `succeeded` 다. 이 자리가 아는 것은 호출이 답을 들고 돌아왔다는 사실뿐이고,
     판정의 옳고 그름은 다른 축이다 — 네이티브의 `bifrost.settle_turn` 도 턴이 예외로 죽었을
     때만 failed 를 적는다. Verifier 의 FAIL 은 `summary` 로 간다.
+
+    `heal` 은 여는 기록이 유실된 자리를 여기서 메운다 (`siege_act.run_unnote`). 여는 쪽은 답을
+    안 기다리는 자식 프로세스라 실패가 조용하고, 그러면 실제로 돈 역할이 장부에서 통째로
+    사라진다 — 26-08-12 에 Thinker 가 그렇게 빠졌다. 단위 티켓이 있는 퀘스트에서는 끄는데,
+    그쪽 수명은 ticket-claim/finish 가 쥐고 있어 여기서 세우면 한 Task 를 둘이 연다.
     """
-    ledger_call(root, ["unnote", agent, "--quest", qid] + (["--summary", summary[:500]] if summary else []))
+    argv = ["unnote", agent, "--quest", qid]
+    if summary:
+        argv += ["--summary", summary[:500]]
+    if heal:
+        argv.append("--heal")
+    ledger_call(root, argv)
 
 
 def _role_summary(event: dict, want: str) -> str:
@@ -570,6 +594,65 @@ def record_hint(hooks_dir: str, want: str) -> str:
     )
 
 
+def worker_dispatch_barrier(protocol: str, root: str, qid: str, sid: str, tool_use_id: str, tool_input: dict) -> None:
+    """모드 B 워커 디스패치 배리어 — 단위 티켓이 선언된 퀘스트에서만 `[ASGARD_UNIT:<id>]` 마커를 요구한다.
+
+    마커는 **배정 단위가 있을 때만** 요구한다. 단위 티켓이 하나도 없는 퀘스트는 병렬 모드 B 가
+    아니라 단일 위임이고, 거기서 마커를 요구하면 조율자가 워커 서브에이전트를 아예 못 띄운다 —
+    26-08-12 까지 그랬다: 퀘스트를 연 세션에서 `asgard-worker` 호출이 전부 exit 2 로 끊겼고,
+    남은 길은 조율자가 직접 편집하는 MAIN_WORKER 뿐이라 워커 역할이 화면에 한 번도 안 떴다.
+    티켓이 선언된 순간부터는 종전대로 마커가 있어야 한다 (영수증↔티켓 결속).
+
+    면제는 **단일** 위임에만 준다. 마커 강제가 종전에 병렬 팬아웃까지 통째로 막고 있었으므로,
+    그것을 열면서 겹침 검사를 안 붙이면 티켓 없이 워커 여럿이 같은 파일을 동시에 고칠 수 있다 —
+    단위를 안 적었으니 파일 분리를 증명할 방법도, `physical_worker_problem` 이 볼 것도 없다.
+    그래서 앞선 마커 없는 워커가 아직 안 끝났으면 두 번째 호출을 거절하고 단위 선언을 요구한다."""
+    if record_worker_dispatch(root, qid, sid, tool_use_id, tool_input):
+        return
+    if fold_tickets(load_quest_events(root, qid)):
+        deny_pretool(protocol, "Asgard Mode B: Worker Agent prompt requires [ASGARD_UNIT:<id>] marker")
+    if live_unmarked_workers(root, qid, sid):
+        deny_pretool(
+            protocol,
+            "Asgard Mode B: another Worker without a unit marker is still running. Fanning out needs "
+            "declared units — record a ticket event per unit with non-overlapping `files`, then dispatch "
+            "each with [ASGARD_UNIT:<id>] as the prompt's first line. One Worker at a time needs no marker.",
+        )
+
+
+def live_unmarked_workers(root: str, qid: str, sid: str) -> int:
+    """이 세션에서 아직 안 끝난 asgard-worker 서브에이전트 수 — 티켓 없는 팬아웃을 가르는 축.
+
+    영수증은 SubagentStart 가 쓰고 SubagentStop 이 닫는다 (`record_agent_start`/`_stop`). 그래서
+    `stopped_at` 이 빈 것은 지금 도는 워커다. 티켓이 있는 퀘스트는 이 함수에 오지 않는다 —
+    거기서는 마커가 이미 강제되고 겹침은 티켓의 `files` 가 판정한다.
+    """
+    agents, _ = mode_b_receipts(root, qid, sid)
+    return sum(
+        1
+        for record in agents
+        if record.get("agent_type") == "asgard-worker" and record.get("started_at") and not record.get("stopped_at")
+    )
+
+
+def verifier_dispatch_barrier(protocol: str, root: str, qid: str, sid: str, tool_input: dict) -> None:
+    """모드 B 판정자 디스패치 배리어 — 유닛 조기 검증이면 그 티켓만, 웨이브 전체면 전 티켓 done 을 요구한다."""
+    tickets = fold_tickets(load_quest_events(root, qid))
+    unit = unit_marker(tool_input)
+    if unit is not None:
+        # 유닛 단위 조기(파이프라인) 검증 — 전 티켓 done 배리어와 동시성 감사
+        # (physical_worker_problem)는 웨이브 전체용이라 여기선 전제가 아니다.
+        if unit not in verifiable_units(list(tickets.values())):
+            deny_pretool(protocol, "Asgard Mode B: " + pipeline_denial_reason(tickets, unit))
+        return
+    unfinished = sorted(str(ticket["id"]) for ticket in tickets.values() if ticket["status"] != "done")
+    if unfinished:
+        deny_pretool(protocol, "Asgard Mode B: unfinished ticket(s): " + ", ".join(unfinished))
+    problem = physical_worker_problem(root, qid, sid, tickets)
+    if problem:
+        deny_pretool(protocol, "Asgard Mode B: " + problem)
+
+
 def main():
     try:
         data = json.load(sys.stdin)
@@ -604,23 +687,9 @@ def main():
                     sys.stdout.write(json.dumps({"permission": "allow"}))
                 sys.exit(0)
             if target == "asgard-worker":
-                if not record_worker_dispatch(root, qid, sid, str(data.get("tool_use_id") or ""), tool_input):
-                    deny_pretool(protocol, "Asgard Mode B: Worker Agent prompt requires [ASGARD_UNIT:<id>] marker")
+                worker_dispatch_barrier(protocol, root, qid, sid, str(data.get("tool_use_id") or ""), tool_input)
             elif target == "asgard-verifier":
-                tickets = fold_tickets(load_quest_events(root, qid))
-                unit = unit_marker(tool_input)
-                if unit is not None:
-                    # 유닛 단위 조기(파이프라인) 검증 — 전 티켓 done 배리어와 동시성 감사
-                    # (physical_worker_problem)는 웨이브 전체용이라 여기선 전제가 아니다.
-                    if unit not in verifiable_units(list(tickets.values())):
-                        deny_pretool(protocol, "Asgard Mode B: " + pipeline_denial_reason(tickets, unit))
-                else:
-                    unfinished = sorted(str(ticket["id"]) for ticket in tickets.values() if ticket["status"] != "done")
-                    if unfinished:
-                        deny_pretool(protocol, "Asgard Mode B: unfinished ticket(s): " + ", ".join(unfinished))
-                    problem = physical_worker_problem(root, qid, sid, tickets)
-                    if problem:
-                        deny_pretool(protocol, "Asgard Mode B: " + problem)
+                verifier_dispatch_barrier(protocol, root, qid, sid, tool_input)
             # 통과한 디스패치만 장부에 세운다 — 거절된 호출은 돌지 않으므로 시도가 아니다.
             # 단위 마커가 붙은 호출은 건너뛴다: 그 수명은 ticket-claim/finish 가 이미 쥐고 있고
             # (quest_log._siege_mirror), 여기서 또 열면 한 Task 를 둘이 연다.
@@ -637,7 +706,7 @@ def main():
             # Trinity 역할 아님 (딜리버리 전문가 포함) → 로그 규율의 대상은 아니다. 그래도 장부는
             # 접는다: 안 접으면 `siege show` 가 이미 끝난 에이전트를 영영 "도는 중" 으로 보인다.
             if stopping:
-                siege_close(root, qid, agent)
+                siege_close(root, qid, agent, heal=heal_ledger(root, qid, agent))
             sys.exit(0)
         task = str(data.get("task") or data.get("description") or "")
         agent_id = str(data.get("agent_id") or data.get("subagent_id") or "")
@@ -680,7 +749,7 @@ def main():
         record_agent_stop(root, qid, agent_id, agent, task)
         # 규율을 통과한 뒤에 접는다 — 차단된 역할은 아직 안 끝났고, 접어 두면 이어지는 두 번째
         # 종료가 접을 것을 못 찾아 그 역할이 장부에서 한 번 돈 것으로 남는다.
-        siege_close(root, qid, agent, summary=_role_summary(fresh[-1], want))
+        siege_close(root, qid, agent, summary=_role_summary(fresh[-1], want), heal=heal_ledger(root, qid, agent))
         # 통과 → 이 역할의 차단 카운터 리셋 (다음 위반은 새로 계수)
         try:
             path = os.path.join(root, ".asgard", "subgate-" + sid + ".json")

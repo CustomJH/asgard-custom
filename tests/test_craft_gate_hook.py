@@ -272,6 +272,25 @@ class SilentDisableIsCounted(unittest.TestCase):
         self.assertEqual(self._run({"session_id": "s2", "cwd": self.root}), (0, ""))
         self.assertEqual([e["code"] for e in self._events()], ["no-judged-writes"])
 
+    def test_a_read_only_role_is_never_held_for_someone_elses_debt(self):
+        """판정 대상은 세션 전체의 쓰기다 — 서브에이전트와 조율자가 같은 sid 로 함께 적는다.
+
+        그래서 한 글자도 안 쓴 읽기 전용 역할이 남의 빚으로 종료를 막히고, 고칠 손이 없어
+        같은 차단을 두 번 되풀이한 뒤에야 통과한다 (26-08-12 실측: Thinker 가 그렇게 두 번
+        세워졌다). 빚은 여기서 사라지지 않고 쓴 역할의 종료와 세션 Stop 이 다시 판정한다."""
+        self._sentinel("s5", ["app.py"])
+        for role in ("asgard-thinker", "asgard-verifier", "asgard-loki", "asgard-ullr", "asgard-mimir"):
+            self.assertEqual(self._run({"session_id": "s5", "cwd": self.root, "agent_type": role}), (0, ""))
+        self.assertEqual([e["code"] for e in self._events()], ["readonly-role"] * 5)
+
+    def test_a_write_capable_role_is_still_judged(self):
+        """면제는 고칠 손이 없는 역할에만 준다 — 쓰는 역할은 그대로 판정 레인으로 간다."""
+        self._sentinel("s6", ["app.py"])
+        self.assertEqual(
+            self._run({"session_id": "s6", "cwd": self.root, "agent_type": "asgard-worker"}, which=None), (0, "")
+        )
+        self.assertEqual([e["code"] for e in self._events()], ["no-asgard"])
+
     def test_a_missing_asgard_is_recorded(self):
         self._sentinel("s3", ["app.py"])
         self.assertEqual(self._run({"session_id": "s3", "cwd": self.root}, which=None), (0, ""))

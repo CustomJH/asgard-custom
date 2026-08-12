@@ -1599,6 +1599,33 @@ class TestBaseline(TrinityBase):
         self.verify()
         self.assertEqual(jout(self.qlog("state"))["baseline_state"], "none")  # 인질 방지 fail-open
 
+    def test_a_contract_timeout_memo_is_keyed_to_its_budget_and_tree(self):
+        """무효화 축 없는 메모는 캐시가 아니라 낙인이다.
+
+        26-08-12: 경합으로 한 번 늦은 계약이 세 턴 연속 미충족으로 굳었다 — 상한을 올려도,
+        트리가 바뀌어도 명령을 다시 안 돌리고 같은 timeout 행을 다시 적었다 (단독 실행 44.4초,
+        상한 120초). 그래서 그때의 상한과 그때의 트리를 키로 잡고, 하나라도 다르면 다시 잰다."""
+        from asgard.hooks.asgard_hooklib.baseline import _contract_timed_out_before
+
+        events = [{"diff_hash": "aaa", "criteria_checks": [{"cmd": "slow", "timed_out": True, "budget": 120}]}]
+        self.assertTrue(_contract_timed_out_before(events, "slow", 120, "aaa"))
+        self.assertFalse(_contract_timed_out_before(events, "slow", 240, "aaa"), "상한을 올렸는데 안 다시 잰다")
+        self.assertFalse(_contract_timed_out_before(events, "slow", 120, "bbb"), "트리가 바뀌었는데 안 다시 잰다")
+        legacy = [{"diff_hash": "aaa", "criteria_checks": [{"cmd": "slow", "timed_out": True}]}]
+        self.assertFalse(_contract_timed_out_before(legacy, "slow", 120, "aaa"), "축 없는 옛 행이 메모로 섰다")
+
+    def test_a_contract_timeout_records_the_budget_it_missed(self):
+        """상한을 같이 안 적으면 다음 턴이 무슨 조건에서 늦었는지 모른 채 결론만 물려받는다."""
+        self.policy(baseline_checks=[], baseline_timeout=1)
+        slow = 'python3 -c "import time; time.sleep(5)"'
+        self.open_quest("--criteria", f"느린 계약 | verify: {slow}")
+        self.write("app.py", "print('ok')\n")
+        self.verify()
+        rows = [r for r in self.last_event()["criteria_checks"] if r["cmd"] == slow]
+        self.assertEqual(len(rows), 1, self.last_event()["criteria_checks"])
+        self.assertTrue(rows[0]["timed_out"])
+        self.assertEqual(rows[0]["budget"], 1)
+
     def test_stdin_baseline_forgery_dropped(self):
         self.policy(baseline_checks=["false"])
         self.open_quest()
@@ -1915,6 +1942,24 @@ class TestStandardTransition(TrinityBase):
 
     def test_work_routes_baseline_when_behavior_tests_exist(self):
         self.policy(baseline_checks=["python3 -m pytest -q"])
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.write("tests/test_app.py", "def test_ok():\n    assert True\n")
+        self.work()
+        self.assertEqual(self.nxt()["next_role"], "BASELINE_VERIFY")
+
+    def test_role_dispatch_always_keeps_the_llm_verifier_on_a_small_write(self):
+        """저장소마다 판정자가 떴다 안 떴다 하는 원인이 이 임계값이다 — always 가 그것을 끈다."""
+        self.policy(baseline_checks=["python3 -m pytest -q"], role_dispatch="always")
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.write("tests/test_app.py", "def test_ok():\n    assert True\n")
+        self.work()
+        self.assertEqual(self.nxt()["next_role"], "VERIFIER")
+
+    def test_role_dispatch_typo_falls_back_to_auto(self):
+        """설정 오타 하나가 전이를 바꾸면 안 된다 (fail-open)."""
+        self.policy(baseline_checks=["python3 -m pytest -q"], role_dispatch="ALWAYS!")
         self.open_quest()
         self.write("app.py", "print('ok')\n")
         self.write("tests/test_app.py", "def test_ok():\n    assert True\n")
@@ -3098,6 +3143,66 @@ class TestSubagentGate(TrinityBase):
         dispatch = json.load(open(path))
         self.assertEqual(dispatch["unit"], 7)
         self.assertEqual(dispatch["agent_type"], "asgard-worker")
+
+    def test_a_single_worker_dispatch_needs_no_unit_marker(self):
+        """단위 티켓이 없는 퀘스트는 병렬 배정이 아니다 — 마커를 요구하면 워커를 못 띄운다.
+
+        26-08-12 까지 이 호출이 exit 2 였고, 그래서 퀘스트를 연 세션에는 조율자가 직접
+        편집하는 길밖에 남지 않았다 (워커 역할이 화면에 한 번도 안 떴다)."""
+        self.open_quest()
+        result = self.sg(
+            "",
+            event="PreToolUse",
+            tool_use_id="call-solo",
+            tool_input={"subagent_type": "asgard-worker", "prompt": "implement the whole quest"},
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_a_second_unmarked_worker_is_refused_while_the_first_still_runs(self):
+        """단일 위임의 면제가 팬아웃까지 열면 티켓 없이 같은 파일을 둘이 고칠 수 있다.
+
+        단위를 안 적었으니 파일 분리를 증명할 것도, `physical_worker_problem` 이 볼 것도 없다."""
+        self.open_quest()
+        first = self.sg(
+            "",
+            event="PreToolUse",
+            tool_use_id="call-a",
+            tool_input={"subagent_type": "asgard-worker", "prompt": "first"},
+        )
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.sg("asgard-worker", event="SubagentStart", agent_id="worker-a")
+        second = self.sg(
+            "",
+            event="PreToolUse",
+            tool_use_id="call-b",
+            tool_input={"subagent_type": "asgard-worker", "prompt": "second"},
+        )
+        self.assertEqual(second.returncode, 2)
+        self.assertIn("ASGARD_UNIT", second.stderr)
+        # 앞선 워커가 끝나면 다음 단일 위임은 다시 열린다 — 막는 것은 겹침이지 재위임이 아니다.
+        # work 이벤트가 있어야 종료 규율을 통과해 영수증이 닫힌다 (안 닫히면 계속 도는 것으로 읽힌다).
+        self.work()
+        self.sg("asgard-worker", event="SubagentStop", agent_id="worker-a")
+        third = self.sg(
+            "",
+            event="PreToolUse",
+            tool_use_id="call-c",
+            tool_input={"subagent_type": "asgard-worker", "prompt": "third"},
+        )
+        self.assertEqual(third.returncode, 0, third.stderr)
+
+    def test_a_worker_dispatch_needs_the_marker_once_units_exist(self):
+        """티켓이 선언된 순간부터 영수증은 티켓에 묶여야 한다 — 모드 B 규율은 그대로다."""
+        self.open_quest()
+        self.ticket(1)
+        result = self.sg(
+            "",
+            event="PreToolUse",
+            tool_use_id="call-unmarked",
+            tool_input={"subagent_type": "asgard-worker", "prompt": "implement without a marker"},
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("ASGARD_UNIT", result.stderr)
 
     def test_verifier_pretool_blocks_until_every_ticket_is_done(self):
         self.open_quest()

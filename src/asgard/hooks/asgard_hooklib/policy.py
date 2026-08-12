@@ -84,6 +84,12 @@ DEFAULT_POLICY: dict = {
     # 게이트-우선 적격 상한 — small_write(full-verify 기준)보다 훨씬 좁다:
     # 63라인 리라이트가 소형 판정돼 caller 미방어로 close 된 벤치 결함. 소형 diff 전용.
     "gate_first_max_lines": 25,
+    # 역할을 서브에이전트로 세울지 — auto: 전이 함수의 임계값이 정한다 (작은 변경은 하네스
+    # 베이스라인이 닫고 LLM Verifier 는 안 뜬다) / always: 쓰기가 있는 퀘스트는 언제나 LLM
+    # Verifier 턴으로 닫는다. 저장소마다 민감 경로와 변경 크기가 달라서 auto 에서는 같은
+    # 작업이 한 저장소에서는 판정자를 부르고 다른 저장소에서는 안 부른다 — 역할이 실제로
+    # 도는 모습을 매번 보려는 저장소가 always 를 켠다. 속도를 판정 턴 한 번과 맞바꾼다.
+    "role_dispatch": "auto",
     # 닫힌 퀘스트 로그 keep-last-N — 세션 상한 정책. 0 = 정리 없음(무한 누적).
     "quest_retention": 30,
     # 병렬 Worker는 기본적으로 독립 clone에서 실행하고 검증된 patch만 canonical root에 병합.
@@ -91,7 +97,20 @@ DEFAULT_POLICY: dict = {
 }
 
 
+# 트리를 만지지 않는 역할. 세 훅이 각자 이 목록을 들고 있었고, 그런 표는 한 자리만 낡아도
+# 판정이 갈린다 — 26-08-05 에 subagent-gate 의 부분 표가 검증 독립성을 프런트매터 산문으로
+# 만들어 놓은 적이 있다. `tools:` 에 Write·Edit 이 없는 역할 집합과 같아야 한다.
+READ_ONLY_ROLES = frozenset({"asgard-thinker", "asgard-verifier", "asgard-mimir", "asgard-loki", "asgard-ullr"})
+
 VERIFY_LEVELS = ("low", "high", "full")
+
+ROLE_DISPATCH_MODES = ("auto", "always")
+
+
+def role_dispatch(policy) -> str:
+    """trinity_policy.role_dispatch — 모르는 값은 auto 로 (fail-open, 설정 오타가 전이를 못 바꾼다)."""
+    mode = str((policy or {}).get("role_dispatch") or "").strip().lower()
+    return mode if mode in ROLE_DISPATCH_MODES else "auto"
 
 
 def verify_strength(policy) -> str:

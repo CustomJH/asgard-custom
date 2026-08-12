@@ -8,7 +8,7 @@ TRINITY 의 "작은 코디네이터"를 하네스에서 되풀이하는 자리�
 from __future__ import annotations
 
 from .integrity import EMPTY
-from .policy import full_verify_required, verify_strength
+from .policy import full_verify_required, role_dispatch, verify_strength
 
 # 깊은 변경의 증거 하한 — 하나로는 못 닫는다. 2 는 "계약 한 줄"과 "그 밖의 무엇"을 가르는
 # 최소값이고, 작은 변경은 이 하한을 지지 않는다 (기본 low 의 속도 선택 유지).
@@ -108,7 +108,10 @@ def _transition_axes(s: dict, policy: dict, flags) -> dict:
         "full_required": full_required,
         "level": "full" if full_required else "micro",
         "standard_ok": (
-            verify_strength(policy) != "full"  # 항상 full 설정이면 게이트-우선 micro PASS는 어차피 되돌려진다
+            # always 는 "역할이 도는 것을 매번 본다" 는 선언이다 — 게이트-우선이 살아 있으면 작은
+            # 변경은 하네스가 조용히 닫아 판정자 턴이 아예 안 생긴다.
+            role_dispatch(policy) != "always"
+            and verify_strength(policy) != "full"  # 항상 full 설정이면 게이트-우선 micro PASS는 어차피 되돌려진다
             and not sensitive
             and not big
             and gf_small

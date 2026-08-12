@@ -28,6 +28,7 @@ if _HOOK_DIR not in sys.path:
     sys.path.append(_HOOK_DIR)
 
 from asgard_hooklib.firing import run  # noqa: E402
+from asgard_hooklib.policy import READ_ONLY_ROLES  # noqa: E402
 from asgard_hooklib.readonly import (  # noqa: E402
     READONLY_BASH_HINT,
     READONLY_WRITE_HINT,
@@ -51,7 +52,7 @@ from asgard_hooklib.workspace import (  # noqa: E402
     work_roots,
 )
 
-_READONLY_AGENTS = {"asgard-thinker", "asgard-verifier", "asgard-loki", "asgard-ullr", "asgard-mimir"}
+_READONLY_AGENTS = READ_ONLY_ROLES  # 정본은 공용 라이브러리 하나다 — 훅마다 사본을 들지 않는다
 
 # 이 호스트에서 오딘에게 묻는 방법. 거부문이 "물어보라"고만 하면 물을 채널이 있는 모드에서도
 # 에이전트가 묻지 않고 멈추거나 혼자 넘어간다 — 무엇으로 묻는지까지 말해야 실행 가능한 처방이다.
@@ -192,9 +193,9 @@ def refusal_reason(tool_name: str, command: str, path: str, roots: tuple[str, ..
     **역할**에 붙는다 (tool_kernel.ROLE_CAPABILITIES가 정본): worker 계열은 mutate를 갖고,
     thinker/verifier/loki/ullr/mimir은 안 갖는다. 신원이 없는 호출은 메인 세션이 전이 함수가
     배정한 역할을 직접 수행하는 자리(MAIN_WORKER)라 쓰기가 그 역할의 몫이다 — 신원 부재를
-    읽기전용으로 읽으면 모드 B의 단일 변경이 통째로 막힌다: subagent-gate가
-    `[ASGARD_UNIT:<id>]` 없는 asgard-worker 디스패치를 거부하므로 우회로도 없다 (양쪽 차단 =
-    교착). 퀘스트 없는 쓰기는 이 훅의 소관이 아니다 — write-sentinel이 기록하고 Stop의
+    읽기전용으로 읽으면 조율자가 자기 배정을 수행하지 못하고, 단위 티켓이 선언된 퀘스트에서는
+    subagent-gate가 `[ASGARD_UNIT:<id>]` 없는 asgard-worker 디스패치도 거부하므로 우회로가
+    남지 않는다 (양쪽 차단 = 교착). 퀘스트 없는 쓰기는 이 훅의 소관이 아니다 — write-sentinel이 기록하고 Stop의
     verifier-gate가 물리 대조로 잡는다. 같은 것을 두 시점에 재판하면 교착이 된다."""
     # 표식 부분문자열 검사는 스튜디오 작업 공간 접두사를 뺀 형태로 한다 — 그 폴더는 `.asgard`
     # 아래 있지만 하네스 상태가 아니라 작업 대상이다 (`_studio_workspace`).
