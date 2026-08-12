@@ -47,9 +47,17 @@
 #
 # ── 기본 한도의 근거 ────────────────────────────────────────────────────────────────
 # 381세션 분포: p50 220,933 · p75 1,325,794 · p90 6,271,519 · p95 13,680,984 · p99 24,504,250.
-# 경고 6,000,000(p90 바로 아래) · 차단 15,000,000(p95와 p99 사이). 임의의 숫자를 박으면 게이트가
-# 오탐으로 죽는다 — 이 문턱이면 정상 작업의 95% 이상이 차단을 느끼지 못하고, 걸리는 것은 실측
-# 분포의 꼬리뿐이다. 경고는 상위 10% 대역에서 먼저 울려 차단이 예고 없이 오지 않게 한다.
+# 차단 54,000,000 은 p99 의 2.2배다 — 임의의 숫자를 박으면 게이트가 오탐으로 죽고, 걸리는 것은
+# 실측 분포의 꼬리뿐이어야 한다. 종전 30,000,000(p99 바로 위)에서 80% 올린 값이고, 올린 이유는
+# 분포가 아니라 이 게이트가 무엇을 끊느냐다: p99 근처의 상한이 잡는 것은 폭주가 아니라 판정
+# 왕복이 붙은 긴 정상 세션이었다. 저장소가 자기 폭을 좁히는 것은 설정으로 언제든 할 수 있고
+# (`asgard budget --set session_cost_units=<n>`), 내장 기본값은 그 반대쪽 — 정상 작업이 기본값
+# 때문에 끊기지 않는 자리 — 에 둔다.
+#
+# 경고는 그 상한의 80%다. 종전처럼 6,000,000(p90 아래) 같은 절대값에 박으면 상한의 11% 지점부터
+# "핵심만 끝내고 탐색은 버려라"가 매 턴 붙어, 세션은 남은 89%를 그 지시와 함께 쓴다. 몫으로
+# 두면 경고가 상한을 따라가고, 경고와 차단 사이에는 10,800,000 이 남는다 (정상 세션 여럿에
+# 맞먹는 예고 구간).
 #
 # 오류는 전부 allow (fail-open). 예산 가드가 죽어서 세션이 멈추는 것은 예산 초과보다 나쁘다.
 from __future__ import annotations
@@ -89,16 +97,25 @@ _USAGE_FIELDS = {
     "cache_read_input_tokens": "cache_read",
 }
 
+# 경고 문턱은 상한의 몫으로 잡는다. 절대값으로 박으면 상한을 올린 저장소에서 경고가 세션
+# 앞머리에 머물고, 그 뒤의 모든 턴이 "마무리하라"는 지시를 달고 돈다. 설정에 warn_cost_units
+# 를 적으면 그 절대값이 우선한다 — 몫은 기본값일 뿐이다.
+WARN_RATIO = 0.8
+
 DEFAULTS = {
     "enforce": "block",  # block | warn | off
-    # p99(24.5M) 위로 올렸다. 15M 은 p95(13.7M)와 p99 사이였는데, 그 값이 잡는 것은 폭주가
-    # 아니라 **긴 정상 세션**이었다 — 26-08-11 에 판정 왕복이 있는 한 세션이 상한에 닿아 남은
-    # 일이 독립 판정 하나뿐인 자리에서 배차가 막혔고, 그 턴이 판정 없이 끝났다. 상한의 값은
-    # 폭주를 끊는 것인데 판정을 끊으면 게이트가 지키려던 것을 게이트가 깎는다.
-    "session_cost_units": 30_000_000,
-    "warn_cost_units": 6_000_000,  # p90(6.27M) 바로 아래 — 차단 전에 먼저 울린다
-    "agent_cost_units": 3_000_000,  # 한 역할이 세션 내내 쓸 수 있는 누적 상한
-    "agent_calls": 24,  # 한 역할의 세션 내 호출 횟수 상한
+    # p99(24.5M)의 2.2배. 15M 은 p95(13.7M)와 p99 사이였는데, 그 값이 잡는 것은 폭주가 아니라
+    # **긴 정상 세션**이었다 — 26-08-11 에 판정 왕복이 있는 한 세션이 상한에 닿아 남은 일이 독립
+    # 판정 하나뿐인 자리에서 배차가 막혔고, 그 턴이 판정 없이 끝났다. 상한의 값은 폭주를 끊는
+    # 것인데 판정을 끊으면 게이트가 지키려던 것을 게이트가 깎는다. 30M 도 p99 바로 위라 같은
+    # 자리에 있었고, 26-08-12 에 80% 올려 54M 으로 뒀다.
+    "session_cost_units": 54_000_000,
+    # warn_cost_units 는 기본값이 없다 — 없으면 warn_threshold() 가 상한의 WARN_RATIO 배로 센다.
+    # 역할 상한은 세션 상한의 10% — 세션이 넓어지면 한 역할의 몫도 같은 비율로 넓어진다.
+    "agent_cost_units": 5_400_000,  # 한 역할이 세션 내내 쓸 수 있는 누적 상한
+    # 호출 횟수는 지출이 아니라 같은 역할을 되풀이해 부르는 모양(Canon 9)의 탐지라 상한과 함께
+    # 올리지 않는다 — 24회를 채우는 것은 예산을 다 쓴 것이 아니라 루프에 들어간 것이다.
+    "agent_calls": 24,
 }
 
 # 차단 사유 — 전송 표면 계약은 메시지 서두의 `[gate:<code>]` 태그 (failures.py 규약과 동일 어휘).
@@ -266,6 +283,15 @@ def _num(value, fallback):
     return value if value > 0 else fallback
 
 
+def warn_threshold(limits: dict) -> float:
+    """경고가 울리는 값 — 설정에 절대값이 없으면 상한의 WARN_RATIO 배.
+
+    판정(`verdict`)과 사람 표면(`asgard budget`)이 이 함수 하나를 본다. 두 자리에서 따로
+    계산하면 화면이 적어 놓은 문턱과 게이트가 울리는 문턱이 갈라진다."""
+    ceiling = float(_num(limits.get("session_cost_units"), DEFAULTS["session_cost_units"]))
+    return float(_num(limits.get("warn_cost_units"), ceiling * WARN_RATIO))
+
+
 def verdict(ledger: Ledger, limits: dict, role: str = "") -> Verdict:
     """세션 상한 → 역할 누적 상한 → 역할 호출 상한 순으로 본다. 판정은 순수 — IO 없음.
 
@@ -313,7 +339,7 @@ def verdict(ledger: Ledger, limits: dict, role: str = "") -> Verdict:
                 call_cap,
             )
 
-    warn_at = _num(limits.get("warn_cost_units"), DEFAULTS["warn_cost_units"])
+    warn_at = warn_threshold(limits)
     if warn_at < ceiling and spent >= warn_at:
         return Verdict("warn", "budget-warn", warn_text(ledger, spent, ceiling), spent, ceiling)
     return Verdict("allow", spent=spent, limit=ceiling)

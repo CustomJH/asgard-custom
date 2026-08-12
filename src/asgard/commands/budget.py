@@ -41,7 +41,7 @@ def _payload(ledger: bg.Ledger, limits: dict, spent: float) -> str:
             "enforce": limits.get("enforce"),
             "cost_units": round(spent),
             "session_cost_units": limits.get("session_cost_units"),
-            "warn_cost_units": limits.get("warn_cost_units"),
+            "warn_cost_units": round(bg.warn_threshold(limits)),
             "raw": {
                 "input": total.input,
                 "output": total.output,
@@ -75,7 +75,7 @@ def _payload(ledger: bg.Ledger, limits: dict, spent: float) -> str:
 # 실행하는 것은 방금 그 게이트에 막힌 역할이다 — 자기를 막은 문을 스스로 떼는 손잡이는 안 준다.
 SETTABLE = {
     "session_cost_units": "이 세션이 쓸 수 있는 가중 비용 단위 상한",
-    "warn_cost_units": "경고를 울리는 문턱",
+    "warn_cost_units": "경고를 울리는 문턱 — 안 적으면 상한의 80%",
     "agent_cost_units": "역할 하나가 세션 내내 쓸 수 있는 누적 상한",
     "agent_calls": "역할 하나의 세션 내 호출 횟수 상한",
 }
@@ -196,7 +196,7 @@ def run_budget(*, transcript: str = "", json_out: bool = False, quiet: bool = Fa
         ui.warn(f"일부만 읽었어요 — {ledger.read_error}")
 
     ceiling = float(limits.get("session_cost_units") or bg.DEFAULTS["session_cost_units"])
-    warn_at = float(limits.get("warn_cost_units") or bg.DEFAULTS["warn_cost_units"])
+    warn_at = bg.warn_threshold(limits)
     pct = (spent / ceiling * 100) if ceiling else 0.0
     line = f"가중 비용 단위 {spent:,.0f} / {ceiling:,.0f} ({pct:.0f}%)"
     (ui.warn if spent >= warn_at else ui.ok)(line)

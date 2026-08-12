@@ -197,6 +197,49 @@ class TestVerdict(unittest.TestCase):
             self.assertNotIn("{", rendered)
 
 
+class TestWarnThresholdIsAShareOfTheCeiling(unittest.TestCase):
+    """경고 문턱은 절대값이 아니라 상한의 몫이다.
+
+    절대값이던 때는 상한을 올린 저장소에서 경고가 세션 앞머리에 그대로 남아, 그 뒤 모든 턴이
+    "핵심만 끝내고 탐색은 버려라"를 달고 돌았다. 몫이면 상한을 올린 만큼 경고도 따라 올라간다."""
+
+    def test_default_threshold_is_eighty_percent_of_the_ceiling(self):
+        self.assertEqual(bg.warn_threshold({}), bg.DEFAULTS["session_cost_units"] * 0.8)
+
+    def test_threshold_follows_a_raised_ceiling(self):
+        self.assertEqual(bg.warn_threshold({"session_cost_units": 60_000_000}), 48_000_000)
+
+    def test_an_explicit_threshold_wins(self):
+        limits = {"session_cost_units": 60_000_000, "warn_cost_units": 5_000_000}
+        self.assertEqual(bg.warn_threshold(limits), 5_000_000)
+
+    def test_junk_falls_back_to_the_share(self):
+        # 0·문자열을 문턱으로 받으면 "언제나 경고"가 되어 경고가 신호이기를 그만둔다.
+        for junk in ({"warn_cost_units": 0}, {"warn_cost_units": "soon"}):
+            self.assertEqual(bg.warn_threshold(junk), bg.DEFAULTS["session_cost_units"] * 0.8)
+
+    def test_verdict_stays_quiet_under_the_share(self):
+        ledger = bg.Ledger()
+        ledger.main.output = 8_000_000  # 40,000,000 cost units — 기본 상한의 74%
+        self.assertEqual(bg.verdict(ledger, {}).action, "allow")
+
+    def test_verdict_warns_over_the_share(self):
+        ledger = bg.Ledger()
+        ledger.main.output = 9_000_000  # 45,000,000 cost units — 기본 상한의 83%
+        result = bg.verdict(ledger, {})
+        self.assertEqual(result.action, "warn")
+        self.assertIn("83%", result.message)
+
+    def test_the_command_screen_reads_the_same_threshold(self):
+        # 화면이 적어 놓은 문턱과 게이트가 울리는 문턱이 갈라지면, 벽에 닿기 전에 보이게 한다는
+        # 이 명령의 계약이 깨진다.
+        from asgard.commands.budget import _payload
+
+        limits = dict(bg.DEFAULTS)
+        payload = json.loads(_payload(bg.Ledger(), limits, 0.0))
+        self.assertEqual(payload["warn_cost_units"], round(bg.warn_threshold(limits)))
+
+
 def _run(payload: dict, argv: list[str]) -> tuple[int, str, str]:
     out, err = io.StringIO(), io.StringIO()
     with (
@@ -219,7 +262,7 @@ class TestHookProtocol(unittest.TestCase):
         self.root = tempfile.mkdtemp()
         self.addCleanup(lambda: None)
         os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
-        self.over = _transcript(_assistant(output_tokens=10_000_000))
+        self.over = _transcript(_assistant(output_tokens=12_000_000))  # 60M units — 기본 상한 54M 초과
         self.addCleanup(os.unlink, self.over)
         self.under = _transcript(_assistant(output_tokens=1))
         self.addCleanup(os.unlink, self.under)
@@ -270,13 +313,13 @@ class TestHookProtocol(unittest.TestCase):
 
     def test_cursor_prompt_warn_emits_nothing(self):
         # 주입 통로가 없는 이벤트에 스키마를 내면 훅 전체가 파싱 실패로 죽어 차단까지 사라진다.
-        warn = _transcript(_assistant(output_tokens=1_400_000))  # 7M units — warn 대역
+        warn = _transcript(_assistant(output_tokens=9_000_000))  # 45M units — 기본 상한 54M 의 83%
         self.addCleanup(os.unlink, warn)
         code, out, _ = _run(self._payload(warn), ["cursor", "prompt"])
         self.assertEqual((code, out), (0, ""))
 
     def test_codex_warn_uses_hook_specific_output(self):
-        warn = _transcript(_assistant(output_tokens=1_400_000))
+        warn = _transcript(_assistant(output_tokens=9_000_000))  # 45M units — 경고 대역
         self.addCleanup(os.unlink, warn)
         code, out, _ = _run(self._payload(warn), ["codex", "prompt"])
         self.assertEqual(code, 0)
@@ -361,21 +404,27 @@ class TestLimitsConfig(unittest.TestCase):
     def test_defaults_sit_where_the_measurement_says(self):
         """기본 한도의 근거는 381세션 실측 분포다 — 임의의 숫자면 게이트가 오탐으로 죽는다.
 
-        경고는 p90 아래에서 먼저 울린다. 차단은 **p99 이상**이다 — 종전에는 p95~p99 사이였고,
-        그 상한이 잡은 것은 폭주가 아니라 긴 정상 세션이었다. 26-08-11 실측: 판정 왕복이 있는 한
-        세션이 15M 에서 막혔는데 그때 남은 일은 독립 판정 하나뿐이었고, 배차가 막혀 그 턴이 판정
-        없이 끝났다(같은 세션이 이어서 21.5M 을 썼다). 상한의 값은 폭주를 끊는 것인데 판정을
-        끊으면 게이트가 지키려던 것을 게이트가 깎는다.
+        차단은 **p99 이상**이다 — 종전에는 p95~p99 사이였고, 그 상한이 잡은 것은 폭주가 아니라
+        긴 정상 세션이었다. 26-08-11 실측: 판정 왕복이 있는 한 세션이 15M 에서 막혔는데 그때 남은
+        일은 독립 판정 하나뿐이었고, 배차가 막혀 그 턴이 판정 없이 끝났다(같은 세션이 이어서
+        21.5M 을 썼다). 상한의 값은 폭주를 끊는 것인데 판정을 끊으면 게이트가 지키려던 것을
+        게이트가 깎는다. 26-08-12 에 기본값을 한 번 더 80% 올려 54M(p99 의 2.2배)에 뒀다 —
+        좁히는 쪽은 저장소가 설정으로 언제든 하고, 내장 기본값은 정상 작업을 안 끊는 자리에 둔다.
 
         위 문턱은 분포가 아니라 안전장치다: 오타 하나로 게이트가 사실상 꺼지는 것을 막을 뿐이라
         p99 의 네 배로 넉넉히 잡는다. 그 사이에서 정확히 어디에 둘지는 저장소가 정한다
-        (`asgard budget --set session_cost_units=<n>`)."""
-        p90, p99 = 6_271_519, 24_504_250
+        (`asgard budget --set session_cost_units=<n>`).
+
+        경고는 상한의 80% 다. 절대값 6M(p90 아래)이던 때는 상한의 11% 지점부터 경고가 붙어 세션이
+        남은 89% 를 "마무리하라"는 지시와 함께 썼다. 몫으로 두면 경고는 실측 상위 5% 대역 위에서
+        울리고, 울린 뒤에도 정상 세션 하나(p75)보다 넓은 여유가 차단까지 남는다."""
+        p75, p95, p99 = 1_325_794, 13_680_984, 24_504_250
         # DEFAULTS는 enforce("block") 때문에 str|int 표다 — 숫자로 좁혀야 비교가 성립한다.
-        warn, ceiling = int(bg.DEFAULTS["warn_cost_units"]), int(bg.DEFAULTS["session_cost_units"])
-        self.assertLessEqual(warn, p90)
+        ceiling, warn = int(bg.DEFAULTS["session_cost_units"]), bg.warn_threshold({})
         self.assertGreaterEqual(ceiling, p99, "긴 정상 세션을 끊으면 판정이 먼저 죽는다")
         self.assertLessEqual(ceiling, p99 * 4, "상한이 이만큼 높으면 게이트가 꺼진 것과 같다")
+        self.assertGreaterEqual(warn, p95, "경고가 이보다 낮으면 정상 세션이 지시를 달고 돈다")
+        self.assertGreaterEqual(ceiling - warn, p75, "예고 뒤에 세션 하나만큼은 남아야 한다")
         self.assertLess(warn, ceiling)
 
 
