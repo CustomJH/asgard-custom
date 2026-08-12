@@ -46,6 +46,9 @@ dev = [
     # (tests/conftest.py 의 session 스코프 `_hermetic_studio_state` 는 xdist 워커마다 따로 도는
     # 별개 프로세스에서 각자 잡힌다).
     "pytest-xdist>=3.6",
+    # `--timeout` 을 준다. 퀘스트 criteria 의 verify 계약이 이 플래그로 스위트 상한을 적는데,
+    # 없으면 그 명령이 `unrecognized arguments` 로 exit 4 를 내고 계약이 영영 미충족으로 남는다.
+    "pytest-timeout>=2.3",
     "ruff>=0.8",
     "ty>=0.0.56",
     "model2vec>=0.8",  # 시맨틱 스트림 dev 실검증·벤치용 — 배포 기본엔 불포함 (extra: semantic)
