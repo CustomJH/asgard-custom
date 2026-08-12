@@ -27,7 +27,8 @@ _HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
 if _HOOK_DIR not in sys.path:
     sys.path.append(_HOOK_DIR)
 
-from asgard_hooklib.firing import run  # noqa: E402
+from asgard_hooklib.destructive import consent_given, consent_refusal, destructive_reason  # noqa: E402
+from asgard_hooklib.firing import event, run  # noqa: E402
 
 # Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 넣지 못한다 — 인코딩 오류가
 # fail-open에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
@@ -370,6 +371,25 @@ def main() -> None:
             file=sys.stderr,
         )
         sys.exit(2)
+
+    # 동의로 열리는 파괴 연산 — 위 표와 달리 이쪽은 정당한 이유로 실행될 때가 있어서, 차단이
+    # 아니라 한 번 멈춰 Odin 에게 물을 자리를 만든다. 동의로 통과한 호출은 세어야 뜻이 있다.
+    if reason := destructive_reason(cmd):
+        root = os.environ.get("CLAUDE_PROJECT_DIR") or str(data.get("cwd") or os.getcwd())
+        if not consent_given(cmd):
+            event(root, "git-guard", "gate_block", "destructive-consent", [reason])
+            message = consent_refusal(reason, cmd)
+            if cursor:
+                sys.stdout.write(
+                    json.dumps(
+                        {"permission": "deny", "user_message": message, "agent_message": message},
+                        separators=(",", ":"),
+                    )
+                )
+                sys.exit(0)
+            print(message, file=sys.stderr)
+            sys.exit(2)
+        event(root, "git-guard", "consent_used", "destructive-consent", [reason])
 
     if cursor:  # Cursor는 침묵을 허용으로 안 본다 — 명시적 allow 응답이 프로토콜 요구사항.
         sys.stdout.write(json.dumps({"permission": "allow"}, separators=(",", ":")))
