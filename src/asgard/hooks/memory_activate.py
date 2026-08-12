@@ -119,6 +119,23 @@ def _transcript_turn(path: str, user: str, assistant: str) -> tuple[str, str]:
     return user, assistant
 
 
+def _turn_payload(data: dict, root: str, session_id: str, user: str, assistant: str) -> dict:
+    """`memory sync-turn` 에 넘길 한 턴 — 이 훅이 아는 것을 저쪽이 읽을 모양으로 묶는다.
+
+    `transcript_path` 를 같이 넘기는 이유: 정정 채굴원이 "정정을 부른 응답"을 찾으려면 이 턴의
+    앞을 봐야 한다. 여기서 미리 읽지 않고 경로만 넘기는 것은 값 때문이다 — 정정은 드물고 기록은
+    크므로, 읽을지는 `correction_signal` 이 맞은 뒤에 저쪽이 정한다."""
+    turn_id = str(data.get("turn_id") or hashlib.sha256((user + "\0" + assistant).encode()).hexdigest()[:24])
+    return {
+        "session_id": session_id,
+        "turn_id": turn_id,
+        "user_text": user,
+        "assistant_text": assistant,
+        "transcript_path": str(data.get("transcript_path") or ""),
+        **_completion_context(root, session_id),
+    }
+
+
 def _latest_turn(data: dict) -> tuple[str, str]:
     user = str(data.get("prompt") or "").strip()
     assistant = str(data.get("last_assistant_message") or "").strip()
@@ -232,14 +249,7 @@ def main():
                 or str(data.get("cwd") or os.getcwd())
             )
             session_id = str(data.get("session_id") or data.get("conversation_id") or mode)
-            turn_id = str(data.get("turn_id") or hashlib.sha256((user + "\0" + assistant).encode()).hexdigest()[:24])
-            payload = {
-                "session_id": session_id,
-                "turn_id": turn_id,
-                "user_text": user,
-                "assistant_text": assistant,
-                **_completion_context(root, session_id),
-            }
+            payload = _turn_payload(data, root, session_id, user, assistant)
             r = subprocess.run(
                 [exe, "memory", "sync-turn", "--mode", mode],
                 input=json.dumps(payload, ensure_ascii=False),

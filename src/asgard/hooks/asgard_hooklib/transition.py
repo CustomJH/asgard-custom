@@ -247,8 +247,21 @@ def _next_step(s: dict, flags, axes: dict) -> tuple[str, str]:
     return "VERIFIER", "Worker complete — %s-verify verdict is next" % axes["level"]
 
 
+UNCHANGED_SINCE_FAIL = (
+    "the working tree is byte-identical to the tree that just failed, so nothing a verdict can "
+    "observe has moved. Change the source or the tests, or record why the failure cannot be "
+    "repaired here, before asking for another verdict"
+)
+
+
 def transition(s: dict, policy: dict, flags, priors: dict | None = None) -> dict:
     """다음에 누가 도는가 — 결정 테이블. 물음 셋을 순서대로 묻고 첫 답을 그대로 쓴다."""
     axes = _transition_axes(s, policy, flags)
     role, why = _blocked_step(s, policy, flags) or _verdict_step(s, flags, priors, axes) or _next_step(s, flags, axes)
+    # 역할은 안 바꾸고 사유만 늘린다. 역할을 바꾸면 이 관측이 정책이 되는데, 트리가 안 움직인
+    # 이유는 워커가 놀았을 수도 있고 고칠 자리가 추적 파일 밖(환경·서비스)일 수도 있어 하네스가
+    # 가릴 수 없다. 가릴 수 있는 것은 사실 하나뿐이다 — 판정을 다시 받아도 같은 답이 나온다는 것.
+    # 이 문장이 없으면 다음 사유가 "연속 FAIL" 이라 원인을 접근 탓으로 잘못 적는다.
+    if s.get("unchanged_since_fail"):
+        why = "%s. Note: %s" % (why, UNCHANGED_SINCE_FAIL)
     return {"next_role": role, "verify_level": axes["level"], "why": why, "features": axes["features"]}

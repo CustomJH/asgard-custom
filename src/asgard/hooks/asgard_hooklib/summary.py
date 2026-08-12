@@ -131,6 +131,50 @@ def prune_quests(root: str, policy: dict) -> list[str]:
     return pruned
 
 
+def fail_streaks(events: list[dict]) -> tuple[int, int]:
+    """(동종 서명 연속 FAIL, 서명 무관 연속 FAIL) — 3-strike 판정의 결정론 계수 (Canon 9).
+
+    네이티브 루프는 `failure_count` 를 이벤트에 안 넣으므로 퀘스트 로그에서 직접 센다.
+    마지막 plan(재계획) **이후**의 FAIL 만 센다 — 재계획이 3-strike 에 대한 응답이라 거기서
+    스트릭이 리셋된다. 안 리셋하면 REPLAN → 여전히 count≥3 → REPLAN 무한 루프가 된다
+    (라이브 재현됨). 서명 무관 축을 따로 세는 이유는 자유 텍스트 서명이 매번 달라도 도돌이표는
+    빠져나와야 하기 때문이다."""
+    last_plan_i = max((i for i, e in enumerate(events) if e.get("event") == "plan"), default=-1)
+    same_sig = any_sig = 0
+    sig = None
+    for i in range(len(events) - 1, last_plan_i, -1):
+        e = events[i]
+        if e.get("event") != "verify":
+            continue
+        if e.get("verdict") != "FAIL":
+            break
+        any_sig += 1
+        if sig is None:
+            sig = e.get("failure_sig")
+        if sig and e.get("failure_sig") == sig:
+            same_sig += 1
+    return same_sig, any_sig
+
+
+def frozen_since_fail(verifies: list[dict], work_after_verify: bool, current_hash: str) -> bool:
+    """직전 FAIL 이후로 트리가 한 글자도 안 움직였는가.
+
+    work 이벤트는 물리 증거를 안 들고 온다 — "고쳤다"는 말만 남는다. 그래서 실패한 판정이
+    적어 둔 해시와 지금 트리를 맞대 본다. 같으면 워커는 실패한 그 트리를 그대로 다시
+    판정받는 것이고, 베이스라인은 같은 diff_hash 기록을 재사용하므로(`baseline.run_baseline`)
+    결과도 같다. 그때 로그에 남는 사유는 "연속 FAIL — 접근을 재설계하라"인데, 실제 원인은
+    접근이 아니라 아무도 트리를 안 건드린 것이다.
+
+    `EMPTY` 는 빈 트리의 해시라 두 쪽이 다 `EMPTY` 여도 "안 움직였다"의 증거가 아니다:
+    `diff_state` 는 `base_ref` 가 없거나 `"NONE"` 인 퀘스트에서 트리를 아예 안 보고 `EMPTY` 를
+    돌려준다(`tree.py`). 그런 퀘스트에서는 워커가 무엇을 고쳤든 두 해시가 같아진다."""
+    last_verify = verifies[-1] if verifies else None
+    if not last_verify or last_verify.get("verdict") != "FAIL" or not work_after_verify:
+        return False
+    hashed = last_verify.get("diff_hash")
+    return bool(hashed) and hashed != EMPTY and hashed == current_hash
+
+
 def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
     """코디네이터 관찰용 요약 — next의 입력이기도 하다."""
     base_ref = next((e.get("base_ref") for e in events if e.get("base_ref")), None)
@@ -157,23 +201,7 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
     # sticky FAIL이 WORKER_RETRY를 무한 재발화시키는 루프 방지 (재검증 없이 재시도 반복).
     last_verify_i = max((i for i, e in enumerate(events) if e.get("event") == "verify"), default=-1)
     work_after_verify = any(e.get("event") == "work" for e in events[last_verify_i + 1 :]) if verifies else False
-    # 동종 실패 스트릭 — 같은 failure_sig의 연속 FAIL을 결정론 계산 (3-strike, Canon 9).
-    # 네이티브 루프는 failure_count를 이벤트에 안 넣는다 — 퀘스트 로그에서 직접 센다.
-    # 마지막 plan(재계획) "이후"의 FAIL만 센다 — 재계획이 3-strike의 응답이므로 스트릭 리셋.
-    # 안 리셋하면 REPLAN → 여전히 count≥3 → REPLAN 무한 루프 (라이브 재현됨).
-    last_plan_i = max((i for i, e in enumerate(events) if e.get("event") == "plan"), default=-1)
-    fail_streak, fail_streak_any, sig = 0, 0, None
-    for i in range(len(events) - 1, last_plan_i, -1):
-        e = events[i]
-        if e.get("event") != "verify":
-            continue
-        if e.get("verdict") != "FAIL":
-            break
-        fail_streak_any += 1  # sig 무관 연속 FAIL — 자유 텍스트 sig가 매번 달라도 도돌이표는 탈출해야 한다
-        if sig is None:
-            sig = e.get("failure_sig")
-        if sig and e.get("failure_sig") == sig:
-            fail_streak += 1
+    fail_streak, fail_streak_any = fail_streaks(events)
     sens = [f for f in changed if sensitive_path(f, policy["sensitive_paths"])]
     dts = deleted_tests(root, base_ref, current_ref=current_ref)
     # small_write 판정은 테스트 파일 제외 — 테스트 추가는 검증 표면이지 리스크 질량이 아니다
@@ -218,6 +246,7 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
         "last_verdict": None if work_after_verify else (verifies[-1].get("verdict") if verifies else None),
         "failure_count": max([int(e.get("failure_count") or 0) for e in events] + [fail_streak]),
         "fail_streak_any": fail_streak_any,
+        "unchanged_since_fail": frozen_since_fail(verifies, work_after_verify, cur),
         "criteria": next((e.get("criteria") for e in events if e.get("criteria")), []),
         "risk_write": any((e.get("risk") or {}).get("has_write") for e in events),
         "plan_turns": sum(1 for e in events if e.get("event") == "plan"),

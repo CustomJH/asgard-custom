@@ -1,5 +1,6 @@
 """memory 커맨드 — 자동 저장. 턴 동기화·게이트 상태·기계 승인."""
 
+import collections
 import contextlib
 import json as _json
 import os
@@ -19,6 +20,8 @@ from ...memory_bridge import (
 )
 from ...project_memory import propose_completion, retain_turn
 from ._core import _guard
+
+_TRANSCRIPT_TAIL = 400  # 기록 꼬리에서 볼 줄 수 — 정정을 부른 응답은 바로 앞 턴이다
 
 
 def _auto_retain_skip_reason(gate: str, cfg: dict) -> str:
@@ -77,12 +80,72 @@ def _stage_correction(payload: dict) -> None:
     `<하위>/.asgard/evolution/corrections.jsonl` 에 쌓인다 — 쓰는 자리와 읽는 자리가 갈리면
     채굴원이 조용히 죽는다 (같은 이유로 backends.run_tick 이 먼저 고친 자리)."""
     with contextlib.suppress(Exception):
-        from ...evolution import record_correction
+        from ...evolution import correction_signal, record_correction
         from ..evolve import _root as _git_toplevel
 
+        user_text = str(payload.get("user_text") or "")
+        # 기록을 읽는 것은 정정으로 판정된 뒤다 — 판정은 정규식 하나이고 기록은 메가바이트다.
+        before = _assistant_before(str(payload.get("transcript_path") or "")) if correction_signal(user_text) else ""
         record_correction(
-            _git_toplevel(), str(payload.get("user_text") or ""), str(payload.get("assistant_text") or "")
+            _git_toplevel(),
+            user_text,
+            str(payload.get("assistant_text") or ""),
+            assistant_before=before,
         )
+
+
+def _assistant_before(path: str) -> str:
+    """정정 발화 **직전**의 어시스턴트 응답 — 정정을 부른 그 답.
+
+    훅이 넘기는 짝은 (정정 발화, 그 정정에 **답한** 응답)이라, 저장된 응답은 잘못한 답이 아니라
+    이미 고쳐진 답이다. 그것을 증거로 들면 카드가 수정 결과를 실수로 지목한다.
+
+    기록 꼬리만 본다 — 정정을 부른 응답은 바로 앞 턴이고, 앞부터 읽으면 긴 세션에서 파일 전체를
+    사게 된다. 못 읽으면 빈 문자열이고, 그때는 카드가 이 항목 없이 뜬다 (채굴이 턴을 막지 않는다)."""
+    rows = _transcript_tail(path)
+    # 마지막 사용자 발화가 정정이다 — 그 앞의 어시스턴트 응답을 되짚는다.
+    last_user = next((i for i in range(len(rows) - 1, -1, -1) if rows[i][0] == "user"), None)
+    if last_user is None:
+        return ""
+    return next((text for role, text in reversed(rows[:last_user]) if role == "assistant"), "")
+
+
+def _transcript_tail(path: str) -> list[tuple[str, str]]:
+    """기록 꼬리의 (역할, 글) 목록 — 못 읽으면 빈 목록."""
+    if not path:
+        return []
+    rows: list[tuple[str, str]] = []
+    with contextlib.suppress(OSError):
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            lines = list(collections.deque(handle, maxlen=_TRANSCRIPT_TAIL))
+        rows = [pair for pair in (_transcript_row(line) for line in lines) if pair]
+    return rows
+
+
+def _transcript_row(line: str) -> tuple[str, str] | None:
+    """기록 한 줄 → (역할, 글). 찢어진 줄이나 글 없는 줄은 None."""
+    # 객체가 아닌 JSON 한 줄(`[1,2]`·`"hi"`·`42`)은 `.get` 에서 AttributeError 를 낸다 —
+    # ValueError 만 잡으면 그 줄 하나가 정정 채굴 전체를 조용히 끊는다.
+    with contextlib.suppress(ValueError, AttributeError):
+        row = _json.loads(line)
+        message = row.get("message") if isinstance(row.get("message"), dict) else row
+        role = str(message.get("role") or row.get("role") or row.get("type") or "")
+        text = _plain_text(message.get("content"))
+        if role in ("user", "assistant") and text:
+            return role, text
+    return None
+
+
+def _plain_text(content: object) -> str:
+    """기록의 content(문자열 또는 블록 목록)에서 사람이 읽는 글만 이어 붙인다."""
+    if isinstance(content, str):
+        return content.strip()
+    parts = [
+        str(block.get("text") or "")
+        for block in (content if isinstance(content, list) else [])
+        if isinstance(block, dict) and block.get("type") == "text"
+    ]
+    return " ".join(part for part in parts if part).strip()
 
 
 def run_sync_turn(mode: str) -> int:

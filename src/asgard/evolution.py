@@ -33,6 +33,9 @@ from .skill_bank import APPROVAL_FILE, SKILL_FILE, approval_receipt, learned_ski
 EVO_DIR = "evolution"
 PENDING = "pending"
 REJECTED = "rejected"
+PROPOSED = "proposed"  # 기계가 붙이는 유일한 상태 — 나머지는 사람이나 정책이 내린 판단이다
+ARCHIVED = "archived"  # 승인이 보관으로 물린 자리 — 기록은 남기고 재채굴만 다시 연다
+_DECIDED = frozenset({"approved", "rejected", ARCHIVED})
 SEEN_FILE = "seen.json"
 CORRECTIONS_FILE = "corrections.jsonl"
 _SCAN_CAP = 3  # 스캔 1회당 신규 후보 상한 — 인박스 폭탄 방지
@@ -88,8 +91,45 @@ def _load_seen(root: str) -> dict:
     return d if isinstance(d, dict) else {}
 
 
-def _save_seen(root: str, seen: dict) -> None:
-    io_files.write_json(_evo_dir(root, SEEN_FILE), seen)
+def _save_seen(root: str, seen: dict, *, drop: object = ()) -> None:
+    """latch 저장 — 디스크 최신본과 합쳐서 쓴다. `drop` 은 이번에 없앨 신호들 (`reset` 전용).
+
+    왜 통째로 안 덮어쓰는가. 이 파일을 쓰는 손이 둘 이상인데 읽기-수정-쓰기 사이에 잠금이
+    없다: 사람이 치는 `evolve approve`/`reject` 와, 매 턴 끝 Stop 훅이 도는 `autoscan` 이
+    같은 파일을 각자 읽고 각자 덮어쓴다. 나중에 쓰는 쪽이 앞 쪽 항목을 통째로 지우는데,
+    지워지는 것이 `proposed` 면 후보가 한 번 더 뜨는 정도지만 `approved`·`rejected` 면
+    사람이 내린 판단과 그 사유가 없어진다 — `reject` 가 약속한 "같은 신호는 다시 제안하지
+    않는다"가 깨지고, 사유 문자열은 이 파일에만 있어 복구할 곳도 없다.
+
+    보관(`archived`)도 사람의 판단이라 같은 보호를 받는다. 판단 둘이 같은 신호를 두고 부딪히면
+    **적힌 시각이 더 새 쪽을 채택한다** — 호출 순서로 정하면 보관 직전 스냅샷을 든 손이 `archived` 를
+    `approved` 로 되돌리고 그 신호가 다시 못 캐지게 된다. 예외는 하나다: 그 보관에서 다시 캔
+    후보(`reopened`)의 `proposed` 는 보관 사실에서 파생된 것이라 통과시킨다. 안 그러면
+    재채굴이 latch 를 영영 못 갱신한다.
+
+    잠금 대신 병합인 이유는 이식성이다. POSIX 의 `fcntl.flock` 과 Windows 의 `msvcrt.locking`
+    은 서로 다른 모듈이라 잠금을 쓰면 운영체제마다 구현을 따로 두어야 하고, 병합은 같은 코드가
+    양쪽에서 그대로 동작한다. 시각은 초 단위라 같은 초의 두 쓰기는 못 가른다 (수용).
+    """
+    merged = dict(_load_seen(root))
+    for signal in drop if isinstance(drop, (list, tuple, set, frozenset)) else ():
+        merged.pop(str(signal), None)
+    for signal, row in seen.items():
+        prior = merged.get(signal)
+        # 보호받는 행은 둘이다: 사람이 내린 판단(승인·거절·보관)과, 그 보관에서 다시 캔
+        # 제안이다. 뒤쪽은 상태만 보면 기계가 붙인 `proposed` 라 그냥 두면 보호에서 빠지는데,
+        # 그 행이 들고 있는 `reopened` 가 곧 보관 사실이라 잃으면 보관이 취소된다.
+        held = isinstance(prior, dict) and (prior.get("status") in _DECIDED or prior.get("reopened"))
+        if not held:
+            merged[signal] = row
+            continue
+        incoming = row or {}
+        if str(incoming.get("status")) == PROPOSED and not incoming.get("reopened"):
+            continue  # 디스크의 사람 판단을 기계가 붙이는 `proposed` 로 되돌리지 않는다
+        if str(incoming.get("ts") or "") < str(prior.get("ts") or ""):
+            continue  # 낡은 스냅샷이 더 새 판단을 덮지 않는다
+        merged[signal] = row
+    io_files.write_json(_evo_dir(root, SEEN_FILE), merged)
 
 
 def _read_quest(path: str) -> list[dict]:
@@ -112,16 +152,35 @@ def _read_quest(path: str) -> list[dict]:
 def _quest_signal(events: list[dict]) -> dict | None:
     """퀘스트 1개 → hard-won 신호 또는 None. 결정론 — LLM 없음.
 
-    조건: 최종 verdict PASS + 도중 FAIL(또는 ESCALATE) 존재. 금지 시그니처면 제외."""
+    조건: 최종 verdict PASS + 도중 실패 존재. 실패는 판정이 낸 FAIL·ESCALATE 와 failure-tracker
+    가 적은 `event="fail"` 둘 다 센다. 금지 시그니처면 제외."""
     if not events:
         return None
     verdicts = [e for e in events if e.get("verdict") in ("PASS", "FAIL", "ESCALATE")]
     if not verdicts or verdicts[-1]["verdict"] != "PASS":
         return None
     fails = [e for e in verdicts if e["verdict"] in ("FAIL", "ESCALATE")]
-    if not fails:
+    # 판정이 낸 실패만 세면 워커가 스스로 뚫고 나온 실패가 통째로 안 보인다. failure-tracker 는
+    # 같은 도구·같은 오류 종류가 3회 반복될 때 `event="fail"` 을 이 로그에 적는데(Canon 9),
+    # 그 이벤트의 verdict 는 NA 라 위 목록에 안 들어온다. 그래서 "워커가 세 번 막히고 고친 뒤
+    # 첫 판정에 통과한" 퀘스트는 — 교훈이 가장 구체적인 바로 그 모양인데 — 후보를 한 건도 안
+    # 낸다. 도구 실패 서명도 실패 증거로 같이 센다.
+    #
+    # 세는 범위는 **마지막 PASS 앞**이다. 통과한 뒤에 적힌 도구 실패는 이 퀘스트가 이겨 낸
+    # 실패가 아니라 그 다음에 벌어진 일이라, 세면 "무엇을 뚫고 통과했는가"가 아닌 카드가 뜬다.
+    # 금지 필터도 여기서 먼저 건다: 도구 오류는 환경 사정(미설치·권한·네트워크)이 섞이는
+    # 자리라 거르지 않으면 그날의 사정이 카드가 된다.
+    last_pass_i = max(i for i, e in enumerate(events) if e.get("verdict") == "PASS")
+    tool_fails = [
+        e
+        for e in events[:last_pass_i]
+        if e.get("event") == "fail" and e.get("failure_sig") and not _FORBIDDEN_SIG.search(str(e["failure_sig"]))
+    ]
+    if not fails and not tool_fails:
         return None  # 순탄한 PASS = 교훈 없음
     sig = next((str(e.get("failure_sig") or "") for e in reversed(fails) if e.get("failure_sig")), "")
+    if not sig:
+        sig = next((str(e["failure_sig"]) for e in reversed(tool_fails)), "")
     if sig and _FORBIDDEN_SIG.search(sig):
         return None
     final = verdicts[-1]
@@ -131,7 +190,7 @@ def _quest_signal(events: list[dict]) -> dict | None:
         "quest_id": str(events[0].get("quest_id") or ""),
         "signal": sig or f"quest:{events[0].get('quest_id', '')}",
         "failure_sig": sig,
-        "fail_count": len(fails),
+        "fail_count": len(fails) + len(tool_fails),
         "escalated": any(e["verdict"] == "ESCALATE" for e in fails),
         "criteria": [str(c) for c in (final.get("criteria") or [])][:6],
         "pass_commands": [str(c.get("cmd", ""))[:200] for c in pass_cmds][:6],
@@ -142,7 +201,7 @@ def _quest_signal(events: list[dict]) -> dict | None:
         # 초안 본문에 박제되는 누수가 있었다 (26-07-16)
         "fail_whys": [
             str(e.get("failure_sig"))[:200]
-            for e in fails
+            for e in [*fails, *tool_fails]
             if e.get("failure_sig") and not _FORBIDDEN_SIG.search(str(e["failure_sig"]))
         ][:4],
     }
@@ -255,10 +314,14 @@ def correction_signal(user_text: str) -> str | None:
     return None
 
 
-def record_correction(root: str, user_text: str, assistant_text: str = "") -> bool:
+def record_correction(root: str, user_text: str, assistant_text: str = "", *, assistant_before: str = "") -> bool:
     """정정 발화를 corrections.jsonl에 스테이징한다 (탐지 실패·중복·위협 = False, 무해).
 
-    저장은 신호 원문뿐 — 스킬 초안 변환은 mine()이 latch와 함께 수행한다."""
+    저장은 신호 원문뿐 — 스킬 초안 변환은 mine()이 latch와 함께 수행한다.
+
+    응답을 둘 적는다. `assistant_before` 는 정정을 **부른** 답이고 `assistant_text` 는 정정을
+    **받고 낸** 답이다. 훅이 넘기는 짝은 뒤쪽뿐이라 종전에는 그것을 "직전 맥락"이라 적었는데,
+    그건 이미 고쳐진 답이라 카드가 수정 결과를 실수로 지목했다."""
     try:
         phrase = correction_signal(user_text)
         if not phrase:
@@ -283,6 +346,7 @@ def record_correction(root: str, user_text: str, assistant_text: str = "") -> bo
                 "signal": signal,
                 "phrase": phrase,
                 "user_text": user_text.strip()[:_CORRECTION_MAX_CHARS],
+                "assistant_before": re.sub(r"\s+", " ", (assistant_before or "").strip())[:400],
                 "assistant_head": re.sub(r"\s+", " ", (assistant_text or "").strip())[:200],
                 "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             }
@@ -311,7 +375,12 @@ def _correction_draft(row: dict) -> tuple[str, str]:
     name = "learned-" + _slug(quote, "correction")
     # 정정에는 실패 서명이 없다 — 사용자 원문에 코드 이름이 없으면 자리표시자가 나가고,
     # `approve` 가 그것을 막아 사람이 재발 조건을 직접 적게 한다.
-    triggers = _triggers("", quote + " " + row.get("assistant_head", ""))
+    #
+    # 트리거는 오딘의 말과 **정정을 부른 답**에서 뽑는다. `assistant_head` 는 그 정정에 답한
+    # 뒤의 글이라 이미 고쳐진 답이고, 거기서 이름을 뽑으면 재발 조건 대신 수정 결과가 트리거가
+    # 된다. `assistant_before` 가 비어 있으면(기록을 못 읽은 세션) 오딘의 말만 쓴다.
+    before = str(row.get("assistant_before") or "")
+    triggers = _triggers("", f"{quote} {before}".strip())
     body = [
         "---",
         f"name: {name}",
@@ -326,7 +395,10 @@ def _correction_draft(row: dict) -> tuple[str, str]:
         "## 정정 (사용자 원문)",
         f"- 「{quote}」 ({row.get('ts', '')[:10]})",
         "",
-        "## 직전 맥락 (에이전트 응답 머리)",
+        "## 정정을 부른 응답",
+        f"- {before or '(미기록 — 이 세션의 대화 기록을 못 읽었다)'}",
+        "",
+        "## 정정 뒤 응답 머리",
         f"- {row.get('assistant_head') or '(미기록)'}",
         "",
         "## 근거",
@@ -559,9 +631,26 @@ def _stage_candidate(root: str, seen: dict, signal: str, name: str, skill_md: st
         "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         **meta_extra,
     }
+    # 보관에서 다시 열린 신호였다는 사실은 상태를 `proposed` 로 덮어도 남아야 한다 — 그 표식이
+    # 없으면 `autoapprove` 가 사람이 내려놓은 카드를 같은 턴에 되설치한다.
+    row: dict = {"status": PROPOSED, "id": cid, "ts": meta["created"]}
+    if str((seen.get(signal) or {}).get("status")) == ARCHIVED:
+        meta["reopened"] = True
+        row["reopened"] = True
     io_files.write_json(os.path.join(d, "meta.json"), meta)
-    seen[signal] = {"status": "proposed", "id": cid, "ts": meta["created"]}
+    seen[signal] = row
     return meta
+
+
+def _mineable(seen: dict, signal: str) -> bool:
+    """이 신호를 (다시) 캘 수 있는가 — 처음 보는 신호이거나, 승인이 보관으로 물린 신호다.
+
+    latch 는 키 존재로 판정했다. 그래서 승인된 스킬을 나중에 보관해도 그 신호는 영영 다시
+    안 캐졌다 — 초안 생성기가 좋아져도(트리거 규칙은 26-08-11 에 실제로 한 번 바뀌었다) 같은
+    퀘스트에서 더 나은 카드를 다시 뜰 수 없고, 퀘스트 로그는 keep-last-N 으로 지워져 원자료가
+    먼저 사라진다. 보관은 키를 지우지 않고 상태만 되돌리므로 누가 언제 승인했는지는 남는다."""
+    row = seen.get(signal)
+    return row is None or str((row or {}).get("status")) == ARCHIVED
 
 
 def mine(root: str, cap: int = _SCAN_CAP) -> list[dict]:
@@ -574,7 +663,7 @@ def mine(root: str, cap: int = _SCAN_CAP) -> list[dict]:
             if not fname.endswith(".jsonl") or len(created) >= cap:
                 continue
             sig = _quest_signal(_read_quest(os.path.join(qdir, fname)))
-            if not sig or sig["signal"] in seen:
+            if not sig or not _mineable(seen, sig["signal"]):
                 continue
             name, skill_md = _draft(sig)
             created.append(
@@ -591,7 +680,7 @@ def mine(root: str, cap: int = _SCAN_CAP) -> list[dict]:
         if len(created) >= cap:
             break
         signal = str(row.get("signal") or "")
-        if not signal or signal in seen:
+        if not signal or not _mineable(seen, signal):
             continue
         name, skill_md = _correction_draft(row)
         created.append(_stage_candidate(root, seen, signal, name, skill_md, {"origin": "correction"}))
@@ -612,10 +701,10 @@ def unmined_signals(root: str, qid: str | None = None) -> int:
             if qid and fname != f"{qid}.jsonl":
                 continue
             sig = _quest_signal(_read_quest(os.path.join(qdir, fname)))
-            if sig and sig["signal"] not in seen:
+            if sig and _mineable(seen, sig["signal"]):
                 n += 1
     if qid is None:
-        n += sum(1 for row in _corrections(root) if str(row.get("signal") or "") not in seen)
+        n += sum(1 for row in _corrections(root) if _mineable(seen, str(row.get("signal") or "")))
     return n
 
 
@@ -704,6 +793,11 @@ def autoapprove(root: str, mined: list[dict]) -> list[dict]:
     있고, 그것을 뒤늦게 설치하면 "설치하지 않는다"는 판단을 정책이 뒤집는다. 자율은 새로
     자라는 자리에만 서고 사람이 손댄 자리는 사람의 것으로 남긴다.
 
+    한 번 보관된 신호는 등급과 무관하게 안 선다. 보관은 "이 카드는 안 쓴다"는 판단이고,
+    보관이 신호를 다시 채굴 가능하게 열어 두므로(`_mineable`) 그 판단이 없으면 다음 tick 이
+    같은 카드를 캐서 그대로 다시 설치한다 — 보관·재설치가 매 턴 도는 고리가 된다. 다시 캐는
+    것까지는 값이 있다: 초안 생성기가 좋아졌을 때 사람이 새 카드를 **읽고** 고를 수 있다.
+
     설치 실패(약한 트리거·이름 충돌)는 조용히 넘긴다 — 초안은 pending 에 그대로 있고 사람이
     `evolve list` 에서 같은 것을 본다."""
     allowed = _AUTONOMY_ORIGINS.get(autonomy_mode(), frozenset())
@@ -713,6 +807,8 @@ def autoapprove(root: str, mined: list[dict]) -> list[dict]:
     for meta in mined:
         if str(meta.get("origin") or "") not in allowed:
             continue
+        if meta.get("reopened"):
+            continue  # 사람이 한 번 내려놓은 것 — 다시 캐되 다시 설치하지는 않는다
         try:
             ok, _msg = approve(root, str(meta.get("id") or ""), auto=True)
         except Exception:
@@ -775,10 +871,10 @@ def nudge_line(root: str) -> str | None:
         for fname in (os.listdir(qdir) if os.path.isdir(qdir) else [])
         if fname.endswith(".jsonl")
         for sig in [_quest_signal(_read_quest(os.path.join(qdir, fname)))]
-        if sig and sig["signal"] not in seen
+        if sig and _mineable(seen, sig["signal"])
     )
     signals += sorted(
-        str(row["signal"]) for row in _corrections(root) if row.get("signal") and str(row["signal"]) not in seen
+        str(row["signal"]) for row in _corrections(root) if row.get("signal") and _mineable(seen, str(row["signal"]))
     )
     if not signals:
         return None
@@ -886,14 +982,9 @@ def approve(root: str, cid: str, *, auto: bool = False) -> tuple[bool, str]:
     }
     _save_seen(root, seen)
     shutil.rmtree(src, ignore_errors=True)
-    # 클라이언트 서브에이전트는 스킬 명단을 자기 파일에서 읽는다. 그 파일은 설치 시점에 구워지므로
-    # 여기서 다시 그리지 않으면 방금 깐 스킬이 다음 `asgard sync` 까지 배차에 안 보인다
-    # (26-08-12 실측: 워커 둘 다 이 스킬을 못 받았고 명단에도 없었다). 실패는 삼킨다 — 명단이
-    # 낡는 것과 설치가 안 되는 것 중에는 앞이 낫다.
-    with contextlib.suppress(Exception):
-        from .commands.setup import refresh_role_agents
-
-        refresh_role_agents(root)
+    # 명단은 설치 시점에 구워지므로 여기서 다시 그리지 않으면 방금 깐 스킬이 다음 `asgard sync`
+    # 까지 배차에 안 보인다 (26-08-12 실측: 워커 둘 다 이 스킬을 못 받았고 명단에도 없었다).
+    _redraw_roster(root)
     return True, f"설치됨: .asgard/skills/{name}/ — 다음 디스패치부터 자동 라우팅 (재시작 불필요)"
 
 
@@ -937,7 +1028,7 @@ def reset(root: str) -> tuple[int, int, list[str]]:
         cid = str(meta.get("id") or "")
         if not cid:
             continue
-        src, dst = _evo_dir(root, PENDING, cid), _evo_dir(root, REJECTED, f"{cid}-{stamp}")
+        src, dst = _evo_dir(root, PENDING, cid), _archive_slot(root, f"{cid}-{stamp}")
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         shutil.move(src, dst)
         names.append(str(meta.get("name") or cid))
@@ -946,11 +1037,37 @@ def reset(root: str) -> tuple[int, int, list[str]]:
     # 충돌하고, 거절은 `reject` 가 "같은 신호는 다시 제안하지 않는다"고 약속한 자리다 — 그 약속과
     # 거절 사유는 `seen.json` 에만 있어서 여기서 지우면 사람이 한 번 내친 초안이 다시 올라온다.
     # 초기화가 푸는 것은 기계가 붙인 `proposed` 뿐이다.
-    kept = {sig: row for sig, row in seen.items() if str((row or {}).get("status")) in ("approved", "rejected")}
-    freed = len(seen) - len(kept)
-    _save_seen(root, kept)
+    #
+    # 보관에서 다시 캔 후보(`reopened`)는 지우는 대신 `archived` 로 되돌린다. 그 행이 사라지면
+    # "사람이 이 스킬을 내려놓았다"는 사실이 같이 사라져, 다음 채굴이 표식 없는 새 후보를 뜨고
+    # 등급 safe 가 그것을 자동 설치한다 — 초기화 한 번이 보관을 취소하는 자리였다. 되돌린
+    # 행은 `_mineable` 이 열린 것으로 보므로 재채굴은 그대로 열려 있다.
+    kept: dict = {}
+    freed = 0
+    for sig, row in seen.items():
+        if str((row or {}).get("status")) != PROPOSED:
+            kept[sig] = row
+            continue
+        freed += 1
+        if (row or {}).get("reopened"):
+            kept[sig] = {**row, "status": ARCHIVED}
+    _save_seen(root, kept, drop=set(seen) - set(kept))
     _clear_nudge_latch(root)
     return (len(names), freed, names)
+
+
+def _archive_slot(root: str, base: str) -> str:
+    """`rejected/` 안에서 아직 안 쓰인 자리 — 이름이 겹치면 뒤에 번호를 붙인다.
+
+    자리 이름이 초 단위 시각이라 같은 초에 두 번 치면 겹친다. `shutil.move` 는 목적지가 이미
+    디렉터리면 그 **안으로** 옮기려 하고, 그 안에 같은 이름이 또 있으면 `shutil.Error` 로 죽는다
+    — `evolve reset` 을 연달아 두 번 친 사람이 예외를 본 자리다."""
+    slot = _evo_dir(root, REJECTED, base)
+    seq = 2
+    while os.path.exists(slot):
+        slot = _evo_dir(root, REJECTED, f"{base}-{seq}")
+        seq += 1
+    return slot
 
 
 def _clear_nudge_latch(root: str) -> None:
@@ -961,19 +1078,90 @@ def _clear_nudge_latch(root: str) -> None:
         pass  # 없으면 지울 것도 없다 — 초기화가 이 한 줄로 실패하지 않는다
 
 
+def _relatch(root: str, name: str, cid: str, *, was: str, now: str) -> bool:
+    """스킬 하나의 latch 를 `was` 에서 `now` 로 옮긴다 — 파일 전이와 짝을 맞추는 손.
+
+    보관은 `approved → archived`(그 신호를 다시 캘 수 있게), 복원은 그 반대다. 복원 쪽 짝이
+    없으면 되살린 스킬의 신호가 계속 열린 채라 다음 채굴이 이미 설치된 스킬의 초안을 또 만들고,
+    그 초안은 승인하면 이름 충돌로 거절되므로 인박스에서 없어지지 않는다.
+
+    영수증의 `candidate_id` 를 **먼저** 다 훑고, 못 찾았을 때만 이름으로 찾는다. 순서가 계약이다:
+    한 번의 훑기에서 `id 일치 또는 이름 일치` 로 받으면, 이름이 같은 다른 신호가 앞에 있을 때
+    그쪽이 먼저 걸려 영수증이 지목한 행은 그대로 남는다 (`approve` 는 이름을 검사하지만 신호는
+    안 검사하므로 같은 이름이 두 신호에 적힐 수 있다). 재채굴로 `proposed` 가 된 행도 같은 표에서
+    잡힌다."""
+    rows = [
+        (signal, row) for signal, row in _load_seen(root).items() if isinstance(row, dict) and row.get("status") == was
+    ]
+    hit = next((pair for pair in rows if cid and pair[1].get("id") == cid), None)
+    hit = hit or next((pair for pair in rows if pair[1].get("name") == name), None)
+    if not hit:
+        return False
+    signal, row = hit
+    moved = {**row, "status": now, "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    moved.pop("reopened", None)
+    _save_seen(root, {signal: moved})
+    return True
+
+
+def _receipt_cid(skill_dir: str) -> str:
+    return str((io_files.read_json(os.path.join(skill_dir, APPROVAL_FILE), {}) or {}).get("candidate_id") or "")
+
+
+def _discard_reopened_draft(root: str, name: str, cid: str) -> bool:
+    """복원한 스킬 때문에 떠 있던 초안을 인박스에서 뺀다 — 승인해도 이름 충돌로만 끝날 초안이다.
+
+    보관과 복원 사이에 스캔이 한 번이라도 돌면 그 신호의 초안이 pending 에 서 있다. latch 만
+    올리고 이 초안을 두면 넛지가 매번 "승인을 기다린다"고 말하는데, 승인하면 방금 되살린 스킬과
+    이름이 부딪혀 거절된다. 초안은 `rejected/` 로 옮겨 그대로 남는다 — `reject` 를 안 쓰는 이유는
+    그쪽이 latch 를 `rejected` 로 적어, 복원이 방금 올려 둔 `approved` 를 덮기 때문이다."""
+    for meta in pending_list(root):
+        if str(meta.get("id") or "") != cid and str(meta.get("name") or "") != name:
+            continue
+        src = _evo_dir(root, PENDING, str(meta.get("id") or ""))
+        dst = _archive_slot(root, f"{meta.get('id')}-{time.strftime('%Y%m%d%H%M%S')}")
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        with contextlib.suppress(OSError):
+            shutil.move(src, dst)
+            return True
+    return False
+
+
 def archive_skill(root: str, name: str) -> tuple[bool, str]:
-    """보관 전이 — 삭제 없는 비활성화 (라우팅 스캔이 .archive를 건너뛴다). 복원 = 되돌리기."""
+    """보관 전이 — 삭제 없는 비활성화 (라우팅 스캔이 .archive를 건너뛴다). 복원 = 되돌리기.
+
+    파일만 치우면 절반이다. 승인 latch 가 `approved` 로 남아 그 신호는 영영 다시 안 캐지고,
+    배차 명단은 `approve` 가 구워 둔 대로라 내린 스킬 이름이 워커·프레이야·토르 파일에 남는다.
+    셋을 한 걸음에 되돌린다."""
     src = os.path.join(root, ".asgard", "skills", name)
     if not os.path.isdir(src):
         return False, f"learned 스킬 없음: {name}"
+    cid = _receipt_cid(src)
     dst = os.path.join(root, ".asgard", "skills", ".archive", f"{name}-{time.strftime('%Y%m%d%H%M%S')}")
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     shutil.move(src, dst)
-    return True, f"보관됨: {dst} (복원: asgard evolve restore {name})"
+    reopened = _relatch(root, name, cid, was="approved", now=ARCHIVED)
+    _redraw_roster(root)
+    tail = " 같은 신호는 다시 채굴된다." if reopened else ""
+    return True, f"보관됨: {dst} (복원: asgard evolve restore {name}).{tail}"
+
+
+def _redraw_roster(root: str) -> None:
+    """배차 명단 재렌더 — 클라이언트 서브에이전트는 스킬 목록을 자기 파일에서 읽는다.
+
+    실패는 삼킨다: 명단이 낡는 것과 보관·복원 자체가 실패하는 것 중에는 앞이 낫다
+    (`approve` 가 설치 뒤에 거는 것과 같은 판단)."""
+    with contextlib.suppress(Exception):
+        from .commands.setup import refresh_role_agents
+
+        refresh_role_agents(root)
 
 
 def restore_skill(root: str, name: str) -> tuple[bool, str]:
-    """보관 해제 — 최신 아카이브 스냅샷을 활성 위치로 복귀 (충돌 검증 포함)."""
+    """보관 해제 — 최신 아카이브 스냅샷을 활성 위치로 복귀 (충돌 검증 포함).
+
+    latch 도 `approved` 로 되돌린다. 안 되돌리면 신호가 계속 채굴 가능한 채라 다음 스캔이
+    이미 서 있는 스킬의 초안을 또 뜨고, 승인하면 이름 충돌로 거절되는 후보가 인박스에 남는다."""
     adir = os.path.join(root, ".asgard", "skills", ".archive")
     snaps = sorted(
         d for d in (os.listdir(adir) if os.path.isdir(adir) else []) if re.fullmatch(rf"{re.escape(name)}-\d{{14}}", d)
@@ -986,6 +1174,13 @@ def restore_skill(root: str, name: str) -> tuple[bool, str]:
     if name in _bundled_names():
         return False, f"이름 충돌: 번들 스킬 '{name}'과 겹친다 (아카이브 중 번들이 추가됨)."
     shutil.move(os.path.join(adir, snaps[-1]), dst)
+    cid = _receipt_cid(dst)
+    # 보관이 latch 를 어디에 놓았든(그대로 `archived`, 또는 재채굴로 `proposed`) 한 번에 올린다.
+    for was in (ARCHIVED, PROPOSED):
+        if _relatch(root, name, cid, was=was, now="approved"):
+            break
+    _discard_reopened_draft(root, name, cid)
+    _redraw_roster(root)
     return True, f"복원됨: .asgard/skills/{name}/ — 다음 디스패치부터 다시 라우팅 (최신 스냅샷 {snaps[-1]})"
 
 

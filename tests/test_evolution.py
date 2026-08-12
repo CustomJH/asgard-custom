@@ -1380,5 +1380,283 @@ class TestAutonomy(EvoBase):
             self.assertEqual(evolution.autonomy_mode(), "safe")
 
 
+class TestWorkerFailuresAreEvidenceToo(EvoBase):
+    """워커가 스스로 뚫고 나온 실패도 교훈이다 — failure-tracker 의 `event="fail"` 축."""
+
+    def _tool_fail_quest(self, qid: str, sig: str) -> None:
+        """판정은 한 번에 통과했지만 도중 도구가 같은 오류로 3회 막힌 퀘스트."""
+        _write_quest(
+            self.root,
+            qid,
+            [
+                _quest_line(qid, role="thinker", event="plan"),
+                _quest_line(qid, role="worker", event="fail", failure_sig=sig, failure_count=3),
+                _quest_line(
+                    qid,
+                    verdict="PASS",
+                    criteria=["도구 오류를 뚫고 통과"],
+                    commands=[{"cmd": "pytest tests/test_x.py", "exit_code": 0}],
+                    changed_files=["src/asgard/skill_bank.py"],
+                ),
+            ],
+        )
+
+    def test_a_tool_failure_streak_alone_is_mineable(self):
+        self._tool_fail_quest("q-tool", "asgard_hooklib-import-error")
+        created = evolution.mine(self.root)
+        self.assertEqual(len(created), 1)
+        self.assertEqual(created[0]["signal"], "asgard_hooklib-import-error")
+
+    def test_an_environment_tool_failure_is_still_refused(self):
+        """도구 오류에는 그날의 사정이 섞인다 — 금지 서명은 채굴 전에 걸러진다."""
+        self._tool_fail_quest("q-env-tool", "zsh: command not found: pytest")
+        self.assertEqual(evolution.mine(self.root), [])
+
+    def test_a_verdict_failure_still_names_the_signal(self):
+        """판정 실패와 도구 실패가 같이 있으면 서명은 판정 쪽을 쓴다 (기존 계약 유지)."""
+        _hard_won(self.root, qid="q-both", sig="verifier-gate-record-missing")
+        created = evolution.mine(self.root)
+        self.assertEqual(created[0]["signal"], "verifier-gate-record-missing")
+
+    def test_a_failure_after_the_pass_is_not_what_the_quest_overcame(self):
+        """통과한 뒤에 적힌 도구 실패는 그 다음에 벌어진 일이지 뚫고 나온 실패가 아니다."""
+        _write_quest(
+            self.root,
+            "q-after",
+            [
+                _quest_line("q-after", role="thinker", event="plan"),
+                _quest_line(
+                    "q-after",
+                    verdict="PASS",
+                    criteria=["순탄하게 통과"],
+                    commands=[{"cmd": "pytest -q", "exit_code": 0}],
+                ),
+                _quest_line("q-after", role="worker", event="fail", failure_sig="edit-tool-string-not-found"),
+            ],
+        )
+        self.assertEqual(evolution.mine(self.root), [])
+
+
+class TestTheLatchSurvivesASecondWriter(EvoBase):
+    """`seen.json` 은 잠금 없는 읽기-수정-쓰기다 — 사람의 판단이 자동 채굴에 안 지워져야 한다."""
+
+    def test_a_concurrent_miner_write_keeps_the_human_decision(self):
+        evolution._save_seen(self.root, {})
+        human = evolution._load_seen(self.root)  # 사람이 치는 `evolve reject`
+        miner = evolution._load_seen(self.root)  # 같은 시각 Stop 훅의 autoscan
+        human["sig-human"] = {"status": "rejected", "id": "evo-h", "reason": "일반화가 틀렸다"}
+        miner["sig-miner"] = {"status": evolution.PROPOSED, "id": "evo-m"}
+        evolution._save_seen(self.root, human)
+        evolution._save_seen(self.root, miner)
+        final = evolution._load_seen(self.root)
+        self.assertEqual(final["sig-human"]["status"], "rejected")
+        self.assertEqual(final["sig-human"]["reason"], "일반화가 틀렸다")
+        self.assertEqual(final["sig-miner"]["status"], evolution.PROPOSED)
+
+    def test_a_stale_proposed_does_not_undo_a_decision(self):
+        evolution._save_seen(self.root, {"sig-x": {"status": "approved", "id": "evo-x", "name": "learned-x"}})
+        evolution._save_seen(self.root, {"sig-x": {"status": evolution.PROPOSED, "id": "evo-x"}})
+        self.assertEqual(evolution._load_seen(self.root)["sig-x"]["status"], "approved")
+
+    def test_two_resets_in_one_second_do_not_collide(self):
+        """자리 이름이 초 단위 시각이라 연달아 치면 겹친다 — 겹치면 `shutil.Error` 로 죽었다."""
+        _hard_won(self.root, qid="q-one", sig="first-signal")
+        evolution.mine(self.root)
+        evolution.reset(self.root)
+        _hard_won(self.root, qid="q-one", sig="first-signal")
+        evolution.mine(self.root)
+        cleared, _freed, _names = evolution.reset(self.root)
+        self.assertEqual(cleared, 1)
+        rejected = sorted(os.listdir(os.path.join(self.root, ".asgard", "evolution", "rejected")))
+        self.assertEqual(len(rejected), 2)  # 둘 다 남는다 — 하나가 다른 하나를 삼키지 않는다
+
+    def test_reset_still_frees_only_the_machine_latch(self):
+        evolution._save_seen(
+            self.root,
+            {
+                "sig-p": {"status": evolution.PROPOSED, "id": "evo-p"},
+                "sig-r": {"status": "rejected", "id": "evo-r", "reason": "아니다"},
+            },
+        )
+        _cleared, freed, _names = evolution.reset(self.root)
+        final = evolution._load_seen(self.root)
+        self.assertEqual(freed, 1)
+        self.assertNotIn("sig-p", final)  # 병합이 지운 latch 를 되살리지 않는다
+        self.assertEqual(final["sig-r"]["status"], "rejected")
+
+
+class TestArchiveReopensTheLesson(EvoBase):
+    """보관은 파일만 치우는 것이 아니다 — 그 신호를 다시 배울 길도 같이 연다."""
+
+    def test_an_archived_skill_lets_the_same_signal_be_mined_again(self):
+        _hard_won(self.root)
+        staged = evolution.mine(self.root)
+        ok, message = evolution.approve(self.root, staged[0]["id"])
+        self.assertTrue(ok, message)
+        self.assertEqual(evolution.mine(self.root), [])  # 승인 중에는 닫혀 있다
+        name = staged[0]["name"]
+        ok, message = evolution.archive_skill(self.root, name)
+        self.assertTrue(ok, message)
+        self.assertIn("다시 채굴된다", message)
+        again = evolution.mine(self.root)
+        self.assertEqual([row["signal"] for row in again], [staged[0]["signal"]])
+
+    def _installed_names(self) -> list[str]:
+        skills = self.proj_skills()
+        return sorted(n for n in (os.listdir(skills) if os.path.isdir(skills) else []) if not n.startswith("."))
+
+    def _install_then_archive(self) -> str:
+        """설치까지 간 학습 스킬 하나를 보관한 상태로 만든다 — 이름을 돌려준다."""
+        _hard_won(self.root)
+        staged = evolution.mine(self.root)
+        ok, message = evolution.approve(self.root, staged[0]["id"])
+        self.assertTrue(ok, message)
+        name = staged[0]["name"]
+        ok, message = evolution.archive_skill(self.root, name)
+        self.assertTrue(ok, message)
+        return name
+
+    def test_an_archived_skill_is_not_reinstalled_by_the_next_tick(self):
+        """보관은 다시 **배우게** 열지, 다시 **설치**하지 않는다.
+
+        턴 끝에 실제로 도는 손은 `nudge_line` 이다 — `autoscan` 다음에 곧바로 `autoapprove` 를
+        부르고 기본 등급 safe 가 retrospective 를 자동 설치한다. 이 관문이 없으면
+        `evolve archive` 가 다음 턴에 스스로 취소되고, `skill_curator` 의 90일 노후 정책도 같이
+        무력해진다 (재설치가 SKILL.md 의 `created` 를 오늘로 되돌려 idle 이 0일이 된다)."""
+        self._install_then_archive()
+        self.assertEqual(evolution.autonomy_mode(), "safe")
+        evolution.nudge_line(self.root)
+        self.assertEqual(self._installed_names(), [])
+        self.assertTrue(evolution.pending_list(self.root))  # 초안으로는 다시 떠 사람이 고를 수 있다
+
+    def test_a_reset_does_not_cancel_an_archive(self):
+        """`reset` 은 기계가 붙인 latch 만 푼다 — 사람이 내려놓았다는 사실까지 지우면 안 된다.
+
+        그 사실이 `reset` 이 지우도록 설계된 `proposed` 행 안에만 있으면, 초기화 한 번이
+        보관을 취소한다: 다음 채굴이 표식 없는 새 후보를 뜨고 등급 safe 가 그것을 설치한다."""
+        self._install_then_archive()
+        evolution.nudge_line(self.root)
+        evolution.reset(self.root)
+        evolution.nudge_line(self.root)
+        self.assertEqual(self._installed_names(), [])
+
+    def test_a_restore_closes_the_signal_again(self):
+        """복원은 보관의 짝이다 — latch 를 안 올리면 이미 선 스킬의 초안이 계속 뜬다."""
+        name = self._install_then_archive()
+        ok, message = evolution.restore_skill(self.root, name)
+        self.assertTrue(ok, message)
+        self.assertEqual(self._installed_names(), [name])
+        self.assertEqual(evolution.mine(self.root), [])
+
+    def test_a_restore_clears_the_draft_the_archive_left_behind(self):
+        """보관과 복원 사이에 스캔이 돌았으면 그 초안은 승인해도 이름 충돌로만 끝난다."""
+        name = self._install_then_archive()
+        evolution.nudge_line(self.root)  # 보관 뒤 한 바퀴 — 초안이 인박스에 선다
+        self.assertTrue(evolution.pending_list(self.root))
+        ok, message = evolution.restore_skill(self.root, name)
+        self.assertTrue(ok, message)
+        self.assertEqual(evolution.pending_list(self.root), [])
+        self.assertEqual(self._installed_names(), [name])
+        self.assertEqual(evolution._load_seen(self.root)["verifier-gate-record-missing"]["status"], "approved")
+
+    def test_a_stale_snapshot_cannot_close_a_reopened_signal(self):
+        """재채굴된 행도 보관 사실을 들고 있다 — 낡은 `approved` 가 그것을 닫으면 안 된다."""
+        self._install_then_archive()
+        evolution.nudge_line(self.root)  # latch 가 `proposed` + reopened 가 된다
+        signal = "verifier-gate-record-missing"
+        stale = {signal: {"status": "approved", "id": "evo-x", "name": "learned-x", "ts": "2020-01-01T00:00:00Z"}}
+        evolution._save_seen(self.root, stale)
+        row = evolution._load_seen(self.root)[signal]
+        self.assertEqual(row["status"], evolution.PROPOSED)
+        self.assertTrue(row["reopened"])
+
+    def test_a_relatch_prefers_the_receipt_over_a_shared_name(self):
+        """영수증이 지목한 행이 먼저다 — 이름이 같은 다른 신호가 앞에 있어도."""
+        evolution._save_seen(
+            self.root,
+            {
+                "sig-other": {
+                    "status": "approved",
+                    "id": "evo-other",
+                    "name": "learned-dup",
+                    "ts": "2026-01-01T00:00:00Z",
+                },
+                "sig-mine": {
+                    "status": "approved",
+                    "id": "evo-mine",
+                    "name": "learned-dup",
+                    "ts": "2026-01-01T00:00:00Z",
+                },
+            },
+        )
+        self.assertTrue(
+            evolution._relatch(self.root, "learned-dup", "evo-mine", was="approved", now=evolution.ARCHIVED)
+        )
+        seen = evolution._load_seen(self.root)
+        self.assertEqual(seen["sig-mine"]["status"], evolution.ARCHIVED)
+        self.assertEqual(seen["sig-other"]["status"], "approved")
+
+    def test_a_stale_snapshot_cannot_undo_an_archive(self):
+        """보관 직전 스냅샷을 든 손이 나중에 써도 `archived` 가 `approved` 로 안 돌아간다.
+
+        판단끼리 부딪히면 호출 순서가 아니라 적힌 시각이 정한다 — 안 그러면 보관이 조용히
+        취소되고 그 신호는 `_mineable` 이 다시 False 가 된다."""
+        signal = "verifier-gate-record-missing"
+        self._install_then_archive()
+        stale = {signal: {"status": "approved", "id": "evo-x", "name": "learned-x", "ts": "2020-01-01T00:00:00Z"}}
+        evolution._save_seen(self.root, stale)
+        self.assertEqual(evolution._load_seen(self.root)[signal]["status"], evolution.ARCHIVED)
+        fresh = {signal: {"status": "approved", "id": "evo-x", "name": "learned-x", "ts": "2099-01-01T00:00:00Z"}}
+        evolution._save_seen(self.root, fresh)
+        self.assertEqual(evolution._load_seen(self.root)[signal]["status"], "approved")
+
+    def test_an_archived_latch_records_who_approved_it(self):
+        _hard_won(self.root)
+        staged = evolution.mine(self.root)
+        evolution.approve(self.root, staged[0]["id"])
+        evolution.archive_skill(self.root, staged[0]["name"])
+        row = evolution._load_seen(self.root)[staged[0]["signal"]]
+        self.assertEqual(row["status"], evolution.ARCHIVED)
+        self.assertEqual(row["by"], "user")
+        self.assertEqual(row["name"], staged[0]["name"])
+
+
+class TestACorrectionQuotesOdinOnly(EvoBase):
+    """정정 초안의 트리거는 오딘의 말에서만 나온다 — 저장된 응답은 정정 **뒤**의 답이다."""
+
+    def test_the_card_quotes_the_reply_that_caused_the_correction(self):
+        """증거는 정정을 **부른** 답이다 — 정정을 받고 고친 답이 아니다."""
+        row = {
+            "signal": "correction:abc",
+            "phrase": "하지 마",
+            "user_text": "커밋 꼬리표는 붙이지 마",
+            "assistant_before": "seal_footer_policy 를 켜서 Co-Authored-By 를 붙였습니다",
+            "assistant_head": "다시 커밋했습니다",
+            "ts": "2026-08-12T00:00:00Z",
+        }
+        _name, draft = evolution._correction_draft(row)
+        self.assertIn("## 정정을 부른 응답", draft)
+        self.assertIn("seal_footer_policy 를 켜서", draft)
+        self.assertIn("seal_footer_policy", draft.split("---")[1])  # 트리거로도 선다
+
+    def test_a_card_without_the_transcript_says_so(self):
+        """기록을 못 읽은 세션에서는 그 자리를 비운 채 그렇게 적는다 — 빈칸을 감추지 않는다."""
+        row = {"signal": "correction:x", "phrase": "하지 마", "user_text": "붙이지 마", "ts": "2026-08-12T00:00:00Z"}
+        _name, draft = evolution._correction_draft(row)
+        self.assertIn("(미기록 — 이 세션의 대화 기록을 못 읽었다)", draft)
+
+    def test_the_post_correction_reply_is_not_a_trigger_source(self):
+        row = {
+            "signal": "correction:abc",
+            "phrase": "하지 마",
+            "user_text": "커밋 꼬리표는 붙이지 마",
+            "assistant_head": "seal_footer_policy 를 고쳐서 다시 커밋했습니다",
+            "ts": "2026-08-12T00:00:00Z",
+        }
+        _name, draft = evolution._correction_draft(row)
+        self.assertNotIn("seal_footer_policy", draft.split("---")[1])  # frontmatter 안에 없다
+        self.assertIn("정정 뒤 응답 머리", draft)
+
+
 if __name__ == "__main__":
     unittest.main()
