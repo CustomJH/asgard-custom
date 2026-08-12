@@ -107,5 +107,10 @@
   },
   "budget": {
     "session_cost_units": 30000000
+  },
+  "paths": {
+    "additional_roots": [
+      "/Users/yun/develop/work_space/vn_onm/helios-asgard"
+    ]
   }
 }

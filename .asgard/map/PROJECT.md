@@ -126,7 +126,7 @@
 - `tests/test_cancellation.py` — public surface: class TestBashCancel; class TestSessionCancel
 - `tests/test_charter.py` — public surface: class TestLoadCharter; class TestNote; uses `src/asgard/charter.py`
 - `tests/test_charter_hook.py` — public surface: class CharterHookBase; class TestCharterHook; uses `src/asgard/charter.py`
-- `tests/test_claude_native.py` — public surface: class TestProfile; class TestNativeClient; class TestTransport; class TestStreaming; class TestCustomToolBridge; uses `src/asgard/agent/session.py`, `src/asgard/providers.py`
+- `tests/test_claude_native.py` — public surface: def tearDownModule(); class TestProfile; class TestNativeClient; class TestTransport; class TestStreaming; uses `src/asgard/agent/session.py`, `src/asgard/providers.py`
 - `tests/test_cli_surface.py` — public surface: class TestMachineOutputNeedsAFlag; class TestQuietOwnsDashQ; class TestJsonCoverage; class TestShortFlagMeansOneThing; class TestOneNamePerBehaviour
 - `tests/test_code_map.py` — public surface: class CodeMapBase; class TestProjectMap; class TestMapCLI; class TestLanguageSurfaceCoverage
 - `tests/test_color_capability.py` — public surface: def test_windows_console_is_color_capable(monkeypatch, _clean_env); def test_windows_console_without_vt_stays_plain(monkeypatch, _clean_env); def test_no_color_wins_on_windows_without_touching_the_console(monkeypatch, _clean_env); def test_redirected_stdout_is_never_colored(monkeypatch, _clean_env); def test_posix_still_treats_unset_term_as_dumb(monkeypatch, _clean_env)
