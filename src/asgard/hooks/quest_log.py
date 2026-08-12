@@ -510,6 +510,10 @@ def _append_rejection(raw: dict) -> str:
             )
     if raw.get("verdict", "NA") not in VERDICTS:
         return "verdict must be one of %s" % sorted(VERDICTS)
+    # 오타를 받아 주면 그 칸이 정규화에서 사라져 배차가 succeeded 로 접힌다 — 실패를 적었다고
+    # 믿는 쪽과 성공을 읽는 쪽이 갈린다. `verdict` 와 같은 규약으로 쓰는 자리에서 거절한다.
+    if str(raw.get("outcome") or "succeeded").strip().lower() not in ("succeeded", "failed"):
+        return "outcome must be succeeded or failed"
     return ""
 
 

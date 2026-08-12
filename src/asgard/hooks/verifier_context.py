@@ -18,6 +18,11 @@
 # "판정자가 아무것도 모른다"가 아니라 "워커의 말이 아니라 하네스의 관측을 읽는다" 이므로, 여기서
 # 넓히는 것은 사실 관측뿐이다 — 누구의 해석도 넣지 않는다.
 #
+# 호스트 셋이 남기는 기록의 깊이가 다르고, 이 훅이 지는 몫은 그 차이를 판정자에게 그대로 넘기는
+# 것이다. Claude Code 와 Codex 는 호출과 결과를 다 적고, Cursor 는 호출만 적는다 (transcript.py
+# 의 모듈 설명에 세 형식의 실측이 있다). 결과가 없는 호스트에서 성패를 주장하면 판정자가 아무도
+# 확인하지 않은 초록을 읽으므로, 그때는 `ran` 으로만 적고 직접 다시 돌리라고 말한다.
+#
 # Fail-open + stdlib-only: 주입이 실패해서 판정 턴이 죽으면 본말전도라 어떤 오류든 조용히 exit 0.
 import json
 import os
@@ -33,7 +38,16 @@ from asgard_hooklib.firing import run  # noqa: E402
 from asgard_hooklib.inject import client, emit_context  # noqa: E402
 from asgard_hooklib.paths import git, quest_dir  # noqa: E402
 from asgard_hooklib.session import active_quest  # noqa: E402
-from asgard_hooklib.transcript import calls, exit_code, never_ran, session_file, tail_rows  # noqa: E402
+from asgard_hooklib.transcript import (  # noqa: E402
+    FULL,
+    INVOCATIONS,
+    MISSING,
+    UNKNOWN,
+    exit_code,
+    never_ran,
+    read,
+    session_file,
+)
 from asgard_hooklib.tree import current_tree_ref  # noqa: E402
 
 # Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 넣지 못한다 — 인코딩 오류가
@@ -45,7 +59,9 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 AGENT = "asgard-verifier"
-WRITE_TOOLS = {"Write", "Edit", "NotebookEdit"}
+# 파일을 바꾼 호출. `Delete` 는 Codex 의 패치(`*** Delete File:`)와 Cursor 의 같은 이름 도구가 쓴다 —
+# 지우기도 쓰기이고, 여기서 빠지면 판정자가 사라진 파일을 아무도 건드리지 않은 것으로 읽는다.
+WRITE_TOOLS = {"Write", "Edit", "NotebookEdit", "Delete"}
 # 상한 셋. 판정자의 컨텍스트는 판정에 쓰라고 있는 것이지 기록을 옮겨 적으라고 있는 것이 아니다 —
 # 넘치면 잘랐다는 사실을 본문에 적어 판정자가 직접 더 볼지 정하게 한다.
 MAX_FILES = 80
@@ -142,11 +158,14 @@ def label(call) -> str:
     """이 호출이 어떻게 끝났는가 — 판정자가 워커의 주장과 맞대 볼 한 낱말.
 
     `ok` 는 오류 표식 없이 돌아온 것이고, `blocked` 는 가드가 막아 **실행되지 않은** 것이다.
-    둘을 가르는 이유는 Canon 9 와 같다: 안 돈 명령은 실패의 증거도 성공의 증거도 아니다."""
+    둘을 가르는 이유는 Canon 9 와 같다: 안 돈 명령은 실패의 증거도 성공의 증거도 아니다.
+
+    `ran` 은 셋째 사실이다 — 호출은 갔는데 그 결과가 기록에 없다. Cursor 기록 전체와 Codex 의
+    `exec` 가 여기 온다. 이것을 `ok` 로 접으면 판정자가 아무도 확인하지 않은 초록을 읽는다."""
     if never_ran(call.output):
         return "blocked"
     if not call.failed:
-        return "ok"
+        return "ok" if call.outcome_known else "ran"
     code = exit_code(call.output)
     return "exit %d" % code if code is not None else "failed"
 
@@ -166,35 +185,53 @@ def unresolved(commands: list) -> list:
     실패는 작업의 일부이고, 한 번 빨간 뒤 다시 안 돌린 명령이 미해결이다.
 
     맞대는 것은 **자르지 않은 명령문**이다. 화면용으로 자른 문자열로 비교하면 앞 200자가 같은 서로
-    다른 명령 둘이 한 명령으로 보여, 하나가 초록이면 다른 하나의 미해결 실패가 조용히 사라진다."""
+    다른 명령 둘이 한 명령으로 보여, 하나가 초록이면 다른 하나의 미해결 실패가 조용히 사라진다.
+
+    `ran` 은 미해결도 해결도 아니다. 결과가 기록에 없는 호출이라 실패로 셀 근거가 없고, 앞선
+    실패를 지울 근거도 없다."""
     healed = {cmd for cmd, mark in commands if mark == "ok"}
-    return [(cmd, mark) for cmd, mark in commands if mark not in ("ok", "blocked") and cmd not in healed]
+    return [(cmd, mark) for cmd, mark in commands if mark not in ("ok", "blocked", "ran") and cmd not in healed]
 
 
 def collect(data: dict) -> tuple:
-    """(명령, 쓰기, 기록을 읽었는가) — 기준 시각 이후 하네스가 본 것.
+    """(명령, 쓰기, 기록의 깊이) — 기준 시각 이후 하네스가 본 것.
 
-    셋째 값이 있는 이유: 기록을 못 읽은 것과 아무것도 안 돌린 것은 완전히 다른 사실인데 둘 다
-    빈 목록이 된다. 구별 없이 "Commands (0)" 을 보여 주면 판정자는 워커가 아무 명령도 안 돌렸다고
-    읽는다 — 실행 기록을 주려다 없는 사실을 주는 셈이다. 기록 파일은 호스트가 정하므로 (지금은
-    Claude Code 만 이 모양으로 적는다) 이 갈래는 호스트별로 다르게 밟힌다."""
-    rows = tail_rows(session_file(data))
-    record = since(calls(rows), data.get("_since", ""))
+    셋째 값이 있는 이유: 기록을 못 읽은 것·형식을 모르는 것·결과가 안 남는 것·아무것도 안 돌린
+    것이 전부 빈 목록이나 표식 없는 목록으로 뭉개지는데, 판정자에게는 서로 다른 사실이다. 구별
+    없이 "Commands (0)" 을 보여 주면 판정자는 워커가 아무 명령도 안 돌렸다고 읽는다 — 실행 기록을
+    주려다 없는 사실을 주는 셈이다. 깊이를 정하는 것은 `read` 이고, 여기서는 그것을 그대로 전달한다."""
+    record, depth = read(session_file(data))
     commands, writes = [], []
-    for call in record:
+    for call in since(record, data.get("_since", "")):
         if call.tool == "Bash":
             commands.append((str(call.request.get("command") or "").strip().replace("\n", " ⏎ "), label(call)))
         elif call.tool in WRITE_TOOLS:
             writes.append((call.tool, str(call.request.get("file_path") or call.request.get("notebook_path") or "")))
-    return commands, writes, bool(rows)
+    return commands, writes, depth
 
 
-def render(ref: str, turn: int, files: list, commands: list, writes: list, observed: bool = True) -> str:
+# 기록이 없을 때 그 이유를 적는 두 줄. 판정자가 할 일은 같아도(직접 다시 돌려라) 다음에 고칠
+# 자리가 다르다 — 없는 파일은 호스트 배선을 의심할 자리이고, 못 알아본 형식은 판독기가 그 호스트를
+# 아직 모르는 자리다.
+BLANK_REASON = {
+    MISSING: "Execution record: unreadable — the session transcript is not on disk, or this host does not",
+    UNKNOWN: "Execution record: unrecognized — the session transcript was read, but its rows are not a",
+}
+BLANK_DETAIL = {
+    MISSING: "write one where the harness looks.",
+    UNKNOWN: "shape this harness knows how to parse.",
+}
+
+
+def render(ref: str, turn: int, files: list, commands: list, writes: list, depth: str = FULL) -> str:
     """판정자가 읽을 블록. 사실만 적고 해석은 안 적는다."""
     where = "the last verdict (turn %d)" % turn if turn else "the quest opening"
+    # 구간을 자를 수 있는 것은 기록에 시각이 있을 때뿐이다. Cursor 는 안 적으므로 "이후"라고 쓰면
+    # 안 자른 목록에 잘랐다는 딱지를 붙이는 것이 된다.
+    span = "since %s" % where if depth != INVOCATIONS else "for this session"
     lines = [
         "<asgard-verifier-input>",
-        "Harness-observed record since %s. The harness watched these; this is not the Worker's" % where,
+        "Harness-observed record %s. The harness watched these; this is not the Worker's" % span,
         "account of them. Compare what the Worker says it did against what actually ran.",
         "",
         "Diff anchor: %s — run your own diff against it (git diff %s)." % (ref or "(none)", ref or "<ref>"),
@@ -204,14 +241,21 @@ def render(ref: str, turn: int, files: list, commands: list, writes: list, obser
     lines.extend("  " + row for row in files[:MAX_FILES])
     if len(files) > MAX_FILES:
         lines.append("  … %d more — read them with git diff --name-status" % (len(files) - MAX_FILES))
-    if not observed:
+    if depth in BLANK_REASON:
         # 침묵보다 나쁜 것은 없는 사실을 주는 것이다 — 빈 목록은 "안 돌렸다"로 읽힌다.
         lines.append("")
-        lines.append("Execution record: unavailable on this host — the session transcript could not be read,")
-        lines.append("so no claim can be made about what did or did not run. Ask the Worker to show its")
+        lines.append(BLANK_REASON[depth])
+        lines.append(BLANK_DETAIL[depth])
+        lines.append("No claim can be made about what did or did not run. Ask the Worker to show its")
         lines.append("commands, and re-run the verification commands yourself.")
         lines.append("</asgard-verifier-input>")
         return "\n".join(lines)
+    if depth == INVOCATIONS:
+        lines.append("")
+        lines.append("This host records which tool calls were made, not what came back, and stamps no times.")
+        lines.append("So the lists below cover the whole session rather than only what followed the anchor,")
+        lines.append("and every command is marked `ran`: the call was made, and the record says nothing about")
+        lines.append("whether it succeeded. Run the verification commands yourself before you rule on them.")
     if writes:
         lines.append("")
         lines.append("Write-tool calls (%d) — every file this session edited, in order:" % len(writes))
@@ -230,9 +274,11 @@ def render(ref: str, turn: int, files: list, commands: list, writes: list, obser
         lines.extend("  %-9s %s" % (mark, cmd[:CMD_CHARS]) for cmd, mark in stuck[:MAX_COMMANDS])
         if len(stuck) > MAX_COMMANDS:
             lines.append("  … %d more" % (len(stuck) - MAX_COMMANDS))
-    lines.append("")
-    lines.append("A command that never ran cannot support a claim. `blocked` means a guard refused it")
-    lines.append("before execution — neither evidence of failure nor of success.")
+    if depth == FULL:
+        lines.append("")
+        lines.append("A command that never ran cannot support a claim. `blocked` means a guard refused it")
+        lines.append("before execution — neither evidence of failure nor of success. `ran` means the host")
+        lines.append("recorded the call but not its outcome.")
     lines.append("</asgard-verifier-input>")
     return "\n".join(lines)
 
@@ -250,11 +296,11 @@ def main() -> None:
         if not qid:
             sys.exit(0)  # 퀘스트가 없으면 판정 구간도 없다
         ref, stamp, turn = anchor(quest_events(root, qid))
-        commands, writes, observed = collect({**data, "_since": stamp})
+        commands, writes, depth = collect({**data, "_since": stamp})
         files = changed_files(root, ref)
         if not (files or commands or writes):
             sys.exit(0)  # 실을 것이 없으면 아무 말도 안 한다
-        emit_context(client(), render(ref, turn, files, commands, writes, observed), "SubagentStart")
+        emit_context(client(), render(ref, turn, files, commands, writes, depth), "SubagentStart")
     except Exception:
         sys.exit(0)
     sys.exit(0)

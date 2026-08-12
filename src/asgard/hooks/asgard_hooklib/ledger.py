@@ -202,6 +202,11 @@ def normalize(ev: dict, events: list[dict], qid: str, session: str) -> dict:
         full["ticket_status"] = ev["ticket_status"]
     if ev.get("subtask"):
         full["subtask"] = str(ev["subtask"])[:1000]
+    # 돌아온 역할이 목표에 닿았는가 — `failed` 하나만 통과한다. 종료 훅이 이 칸을 읽어 배차를
+    # 실패로 접고(`subagent_gate._role_outcome`), 이 칸이 없는 배차는 succeeded 로 접힌다. 모르는
+    # 값을 그대로 넣으면 그 오타가 조용히 성공으로 읽히므로, 오타는 쓰는 쪽에 남긴다.
+    if str(ev.get("outcome") or "").strip().lower() == "failed":
+        full["outcome"] = "failed"
     if isinstance(ev.get("access"), list):
         full["access"] = ev["access"][:20]
     if ev.get("ticket_error"):

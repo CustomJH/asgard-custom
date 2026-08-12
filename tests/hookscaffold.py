@@ -70,12 +70,17 @@ def isolated_home_env(home: str, **extra: str) -> dict[str, str]:
     return env
 
 
-def until(predicate, timeout: float = 30.0, step: float = 0.1) -> bool:
+def until(predicate, timeout: float = 120.0, step: float = 0.1) -> bool:
     """`predicate()` 가 참이 될 때까지 기다린다 — 장부 기록은 떼어 낸 프로세스가 적는다.
 
     훅은 답을 안 기다리고 돌아간다(장부는 파생이고 디스패치는 사람이 기다리는 자리다). 그래서
     시험도 곧바로 읽으면 아직 없는 것을 못 찾았다고 말한다. 상한을 넉넉히 두는 이유는 이
     프로세스가 CLI 기동 전체를 치르기 때문이다.
+
+    상한이 30초였을 때 26-08-13 전수 실행에서 `test_a_claim_and_finish_build_the_graph_and_settle_it`
+    이 "배차 장부에 Run 을 안 열었다"로 떨어졌다. 같은 시험이 단독과 이웃 729건에서는 통과했으므로
+    끊긴 것은 기록이 아니라 대기였다 — 18코어가 xdist 로 포화된 상태에서 CLI 기동이 30초를 넘긴다.
+    통과하는 실행에서는 값이 비싸지 않다: 참이 되는 즉시 돌아오므로 느려지는 것은 실패하는 쪽뿐이다.
     """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:

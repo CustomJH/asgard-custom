@@ -71,6 +71,10 @@ def cursor_hooks_json() -> str:
                         {"command": f"{py} .cursor/hooks/agent-activate.py cursor"},
                         {"command": f"{py} .cursor/hooks/map-activate.py cursor"},
                         {"command": f"{py} .cursor/hooks/unattended-context.py cursor"},
+                        # 배차 장부 우편함 — Cursor 에서는 여기가 유일한 자리다. beforeSubmitPrompt
+                        # 에는 주입 통로가 없어서, 거기 걸면 메일을 확인 처리해 놓고 아무 데도
+                        # 안 보여 준다(= 그 메일이 사라진다).
+                        {"command": f"{py} .cursor/hooks/siege-inbox.py cursor"},
                     ],
                     "beforeSubmitPrompt": [
                         # 소비 상한 — 주입 통로는 없지만 차단(continue:false)은 된다.
@@ -133,6 +137,10 @@ def cursor_hooks_json() -> str:
                         {"command": f"{py} .cursor/hooks/manual-activate.py cursor"},
                         {"command": f"{py} .cursor/hooks/agent-activate.py cursor"},
                         {"command": f"{py} .cursor/hooks/map-activate.py cursor"},
+                        # 배차받은 쪽의 통로 — 자기 배차 주소, 못 정할 결정을 남기는 자리, 실패를
+                        # 적는 명령. 매처가 없는 이유는 판정자만 빼면 전부가 대상이고 그 하나는
+                        # 훅이 스스로 거르기 때문이다 (판정자의 이 자리는 verifier-context 가 쓴다).
+                        {"command": f"{py} .cursor/hooks/dispatch-context.py cursor"},
                         # 판정자 입력 — 하네스가 관측한 실행 기록. 매처를 거는 이유는 게이트와 같다:
                         # 이 이벤트는 역할 신원을 들고 오므로 판정자만 고를 수 있다 (도구 훅인
                         # preToolUse 와 다른 점이다 — 그쪽엔 agent_type 이 없다).

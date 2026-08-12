@@ -169,6 +169,12 @@ def cc_settings() -> str:
                                     "type": "command",
                                     "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/map-activate.py"',
                                 },
+                                # 배차 장부 우편함 — 다른 세션이나 `siege serve` 가 이 세션 앞으로
+                                # 보낸 메일. 받을 것이 없으면 sqlite 조회 하나로 끝난다.
+                                {
+                                    "type": "command",
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/siege-inbox.py"',
+                                },
                                 # 되짚기의 앞쪽 절반 — 같은 자리를 다시 건드리기 **전에** 남은 물음을
                                 # 사용자에게만 꺼낸다. 모델 컨텍스트에 넣으면 모델이 대신 답해 버린다.
                                 {
@@ -203,6 +209,15 @@ def cc_settings() -> str:
                                 {
                                     "type": "command",
                                     "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/map-activate.py"',
+                                },
+                                # What a dispatched agent needs to reach the ledger it is already on:
+                                # its own address, where to leave a question it cannot settle, and how
+                                # to report a failure. Without the last one the ledger records every
+                                # attempt as succeeded. No matcher — the hook excludes the Verifier
+                                # itself, whose seat here belongs to verifier-context.
+                                {
+                                    "type": "command",
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/dispatch-context.py"',
                                 },
                             ]
                         },

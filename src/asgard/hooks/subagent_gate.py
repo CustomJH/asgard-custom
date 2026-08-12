@@ -121,6 +121,18 @@ AGENT_TARGETS = {
 }
 
 
+# 배정 단위 하나를 끝까지 수행할 수 있는 에이전트 — 모드 B 영수증이 "이 단위를 누가 실제로
+# 돌렸는가"를 셀 때 보는 집합이다. 손으로 든 목록이 아니라 위임 표에서 뽑는다: 워커 자신과,
+# 워커가 변경 표면에 따라 내려보내는 쓰기 가능한 딜리버리(freyja=화면, thor·thor-lead=백엔드,
+# eitri=빌드·CI). 읽기 전용은 트리를 안 고치니 단위를 끝낼 수 없고, 판정자·사고자는 전이 함수가
+# 배정하는 자리라 배차 대상 자체가 아니다 (UNDISPATCHABLE).
+#
+# 26-08-12 까지 이 집합이 `asgard-worker` 하나였다. 그런데 `[ASGARD_UNIT:<id>]` 를 달고
+# asgard-thor 에게 보낸 단위는 영수증이 안 잡혀, 전 단위가 done 인데도 판정자 배차가
+# "physical worker dispatch receipts missing" 으로 막혔다.
+UNIT_EXECUTORS = frozenset({"asgard-worker"}) | (AGENT_TARGETS["asgard-worker"] - READ_ONLY_AGENTS)
+
+
 def closure_violations() -> list[str]:
     """표가 두 불변식을 어긴 자리 — 없으면 빈 목록. 시험이 부르는 자리다.
 
@@ -307,7 +319,25 @@ def record_agent_stop(root: str, qid: str, agent_id: str, agent: str = "", task:
         return
 
 
-def record_worker_dispatch(root: str, qid: str, sid: str, tool_use_id: str, tool_input: dict) -> bool:
+def record_executor_lifecycle(root: str, qid: str, sid: str, agent: str, agent_id: str, task: str, *, starting: bool):
+    """딜리버리 전문가의 시작·종료도 물리 영수증으로 남긴다.
+
+    단위를 받아 실제로 도는 손인데 시작·종료가 안 적히면, 그 단위는 아무도 안 돈 것으로 읽혀
+    판정자 배차가 막힌다. 역할 로그 규율(work·verify 이벤트)은 여전히 트리니티 역할만 진다 —
+    이 함수는 영수증만 남기고 아무것도 거절하지 않는다."""
+    if starting:
+        record_agent_start(root, qid, sid, agent, agent_id, task)
+    else:
+        record_agent_stop(root, qid, agent_id, agent, task)
+
+
+def record_worker_dispatch(
+    root: str, qid: str, sid: str, tool_use_id: str, tool_input: dict, agent: str = "asgard-worker"
+) -> bool:
+    """`[ASGARD_UNIT:<id>]` 가 붙은 배차를 영수증으로 남긴다 — 수행자 종류를 받은 그대로 적는다.
+
+    종전에는 종류를 `asgard-worker` 로 못박아, 같은 단위를 딜리버리 전문가가 받아도 영수증은
+    워커가 받은 것처럼 적혔다. 마커가 없으면 아무것도 안 쓰고 False 를 돌려준다."""
     prompt = str(
         tool_input.get("prompt")
         or tool_input.get("task")
@@ -329,7 +359,7 @@ def record_worker_dispatch(root: str, qid: str, sid: str, tool_use_id: str, tool
         "quest_id": qid,
         "session_id": sid,
         "tool_use_id": tool_use_id,
-        "agent_type": "asgard-worker",
+        "agent_type": agent,
         "unit": unit,
         "requested_at": time.time_ns(),
         "quest_turn": max((int(event.get("turn") or 0) for event in load_quest_events(root, qid)), default=0),
@@ -440,13 +470,16 @@ def heal_ledger(root: str, qid: str, agent: str) -> bool:
     return not fold_tickets(load_quest_events(root, qid))
 
 
-def siege_close(root: str, qid: str, agent: str, summary: str = "", *, heal: bool = False) -> None:
+def siege_close(
+    root: str, qid: str, agent: str, summary: str = "", *, heal: bool = False, outcome: str = "succeeded"
+) -> None:
     """그 에이전트의 살아 있는 시도를 접는다. `siege_open` 이 연 것만 — 배정 단위 티켓의
     수명은 ticket-finish 가 쥔다.
 
-    결과는 언제나 `succeeded` 다. 이 자리가 아는 것은 호출이 답을 들고 돌아왔다는 사실뿐이고,
+    기본 결과는 `succeeded` 다. 이 자리가 스스로 아는 것은 호출이 답을 들고 돌아왔다는 사실뿐이고,
     판정의 옳고 그름은 다른 축이다 — 네이티브의 `bifrost.settle_turn` 도 턴이 예외로 죽었을
-    때만 failed 를 적는다. Verifier 의 FAIL 은 `summary` 로 간다.
+    때만 failed 를 적는다. Verifier 의 FAIL 은 `summary` 로 간다. `failed` 로 접는 경우는 하나뿐:
+    돌아온 역할이 자기 이벤트에 그렇게 적었을 때다 (`_role_outcome`).
 
     `heal` 은 여는 기록이 유실된 자리를 여기서 메운다 (`siege_act.run_unnote`). 여는 쪽은 답을
     안 기다리는 자식 프로세스라 실패가 조용하고, 그러면 실제로 돈 역할이 장부에서 통째로
@@ -458,6 +491,8 @@ def siege_close(root: str, qid: str, agent: str, summary: str = "", *, heal: boo
         argv += ["--summary", summary[:500]]
     if heal:
         argv.append("--heal")
+    if outcome != "succeeded":
+        argv += ["--outcome", outcome]
     ledger_call(root, argv)
 
 
@@ -475,6 +510,20 @@ def _role_summary(event: dict, want: str) -> str:
         return subtask[:200]
     changed = event.get("changed_files") or []
     return "파일 %d건 변경" % len(changed) if changed else ""
+
+
+def _role_outcome(event: dict) -> str:
+    """돌아온 역할이 이 시도를 실패로 적었는가 — 장부에 넣을 결과 한 낱말.
+
+    배차가 답을 들고 돌아왔다는 것과 그 답이 목표에 닿았다는 것은 서로 다른 사실인데, 종료 훅이
+    보는 것은 앞의 하나뿐이다. 그래서 뒤의 하나는 역할이 자기 이벤트에 적어야 한다 —
+    `dispatch-context` 가 배차받은 쪽에 그 자리를 알려 준다.
+
+    `failed` 라고 정확히 적힌 것만 실패로 읽는다. 모르는 값을 실패로 접으면 성공한 배차가 회로
+    차단 횟수를 먹는다. 판정자의 FAIL 은 여기 오지 않는다 — 그것은 워커 일에 대한 결론이지
+    판정 배차 자체의 실패가 아니고, `verdict` 는 이 칸이 아니다.
+    """
+    return "failed" if str(event.get("outcome") or "").strip().lower() == "failed" else "succeeded"
 
 
 def pipeline_denial_reason(tickets: dict[str, dict], unit: str) -> str:
@@ -522,10 +571,13 @@ def physical_worker_problem(root: str, qid: str, sid: str, tickets: dict[str, di
     if not tickets:
         return ""
     agents, dispatches = mode_b_receipts(root, qid, sid)
+    # 이 수가 말하는 것은 "물리적으로 끝까지 돈 수행자가 몇인가"이지 단위와의 결속이 아니다
+    # (워커가 자기 단위 안에서 부른 thor 도 같은 종류라 여기서는 섞인다). 단위 결속은 아래
+    # 배차 영수증의 `unit` 이 진다.
     workers = [
         record
         for record in agents
-        if record.get("agent_type") == "asgard-worker" and record.get("started_at") and record.get("stopped_at")
+        if record.get("agent_type") in UNIT_EXECUTORS and record.get("started_at") and record.get("stopped_at")
     ]
     distinct = {str(record.get("agent_id")) for record in workers if record.get("agent_id")}
     if len(distinct) < len(tickets):
@@ -533,14 +585,17 @@ def physical_worker_problem(root: str, qid: str, sid: str, tickets: dict[str, di
             len(tickets),
             len(distinct),
         )
-    dispatched = {str(record.get("unit")) for record in dispatches if record.get("agent_type") == "asgard-worker"}
+    dispatched = {str(record.get("unit")) for record in dispatches if record.get("agent_type") in UNIT_EXECUTORS}
     missing = sorted(set(tickets) - dispatched)
     if missing:
         return "physical worker dispatch receipts missing for unit(s): " + ", ".join(missing)
+    # **첫** 배차 턴이다. 이 검사가 묻는 것은 "후행 단위가 선행 완료 전에 시작됐는가"라 재는 것은
+    # 시작 시점이고, 최대를 쓰면 나중 재배차 한 번이 이른 첫 배차를 덮어 위반을 가린다.
     dispatch_turn = {}
     for record in dispatches:
         key = str(record.get("unit"))
-        dispatch_turn[key] = max(dispatch_turn.get(key, 0), int(record.get("quest_turn") or 0))
+        turn = int(record.get("quest_turn") or 0)
+        dispatch_turn[key] = min(dispatch_turn[key], turn) if key in dispatch_turn else turn
     done_turn = {}
     for event in load_quest_events(root, qid):
         if event.get("event") == "ticket" and event.get("ticket_status") == "done" and event.get("unit") is not None:
@@ -549,7 +604,12 @@ def physical_worker_problem(root: str, qid: str, sid: str, tickets: dict[str, di
     for key, ticket in tickets.items():
         for dependency in ticket["access"]:
             dep = str(dependency)
-            if dispatch_turn.get(key, 0) <= done_turn.get(dep, 0):
+            # 경계는 `<` 다. 영수증의 `quest_turn` 은 배차 시점에 **이미 적혀 있던** 마지막 턴이라,
+            # 선행의 done 이벤트 직후에 배차하면 두 값이 같아진다 — 정상 순서인데 `<=` 는 그것을
+            # 위반으로 읽었다 (실측 asgard-coherence-refactor-260812: tier-table 배차 21 ·
+            # recall-split done 21 로 판정자 배차가 막혔다). 선행 완료 전 배차는 최소한 한 턴
+            # 작으므로 `<` 로도 그대로 잡힌다.
+            if dispatch_turn.get(key, 0) < done_turn.get(dep, 0):
                 return "dependency fan-in violation: unit %s dispatched before unit %s completed" % (key, dep)
     done, remaining, max_wave = set(), dict(tickets), 0
     while remaining:
@@ -690,6 +750,10 @@ def main():
                 worker_dispatch_barrier(protocol, root, qid, sid, str(data.get("tool_use_id") or ""), tool_input)
             elif target == "asgard-verifier":
                 verifier_dispatch_barrier(protocol, root, qid, sid, tool_input)
+            elif target in UNIT_EXECUTORS:
+                # 단위를 딜리버리 전문가가 받는 길 — 마커가 있을 때만 영수증을 남기고 거절은 없다.
+                # 마커 없는 호출은 워커가 자기 단위 안에서 여는 하위 배차라, 여기서 막으면 표면별 위임이 끊긴다.
+                record_worker_dispatch(root, qid, sid, str(data.get("tool_use_id") or ""), tool_input, target)
             # 통과한 디스패치만 장부에 세운다 — 거절된 호출은 돌지 않으므로 시도가 아니다.
             # 단위 마커가 붙은 호출은 건너뛴다: 그 수명은 ticket-claim/finish 가 이미 쥐고 있고
             # (quest_log._siege_mirror), 여기서 또 열면 한 Task 를 둘이 연다.
@@ -701,16 +765,19 @@ def main():
         if not qid:
             sys.exit(0)  # 활성 quest 없음 → 로그 규율의 대상이 아니다 (fail-open)
         stopping = event in {"SubagentStop", "subagentStop", "stop"}
+        starting = event in {"SubagentStart", "subagentStart", "start"}
         want = ROLE_EVENT.get(agent)
+        task = str(data.get("task") or data.get("description") or "")
+        agent_id = str(data.get("agent_id") or data.get("subagent_id") or "")
         if not want:
-            # Trinity 역할 아님 (딜리버리 전문가 포함) → 로그 규율의 대상은 아니다. 그래도 장부는
-            # 접는다: 안 접으면 `siege show` 가 이미 끝난 에이전트를 영영 "도는 중" 으로 보인다.
+            # Trinity 역할 아님 → 로그 규율의 대상은 아니다. 단위를 수행할 수 있는 손이면 영수증만 남긴다.
+            if agent in UNIT_EXECUTORS and (starting or stopping):
+                record_executor_lifecycle(root, qid, sid, agent, agent_id, task, starting=starting)
+            # 장부도 접는다: 안 접으면 `siege show` 가 이미 끝난 에이전트를 영영 "도는 중" 으로 보인다.
             if stopping:
                 siege_close(root, qid, agent, heal=heal_ledger(root, qid, agent))
             sys.exit(0)
-        task = str(data.get("task") or data.get("description") or "")
-        agent_id = str(data.get("agent_id") or data.get("subagent_id") or "")
-        if event in {"SubagentStart", "subagentStart", "start"}:
+        if starting:
             record_agent_start(root, qid, sid, agent, agent_id, task)
             sys.exit(0)
         events, readable = read_quest_events(root, qid)
@@ -734,8 +801,8 @@ def main():
                 "logging it — record it, then end: %s" % (agent, qid, want, record_hint(hooks_dir, want)),
                 protocol=protocol,
             )
+        last = fresh[-1]
         if want == "verify":
-            last = fresh[-1]
             if last.get("verdict") == "PASS" and not pass_evidence(last):
                 block(
                     root,
@@ -749,7 +816,8 @@ def main():
         record_agent_stop(root, qid, agent_id, agent, task)
         # 규율을 통과한 뒤에 접는다 — 차단된 역할은 아직 안 끝났고, 접어 두면 이어지는 두 번째
         # 종료가 접을 것을 못 찾아 그 역할이 장부에서 한 번 돈 것으로 남는다.
-        siege_close(root, qid, agent, summary=_role_summary(fresh[-1], want), heal=heal_ledger(root, qid, agent))
+        heal = heal_ledger(root, qid, agent)
+        siege_close(root, qid, agent, summary=_role_summary(last, want), heal=heal, outcome=_role_outcome(last))
         # 통과 → 이 역할의 차단 카운터 리셋 (다음 위반은 새로 계수)
         try:
             path = os.path.join(root, ".asgard", "subgate-" + sid + ".json")

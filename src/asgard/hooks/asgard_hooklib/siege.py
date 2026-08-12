@@ -18,6 +18,7 @@ orchestration` 으로 시작했고, 둘 다 fail-open 이라 실패가 조용했
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 
@@ -42,3 +43,34 @@ def ledger_call(root: str, argv: list[str]) -> bool:
     except Exception:
         return False
     return True
+
+
+def ledger_read(root: str, argv: list[str], timeout: float = 8.0) -> dict | list | None:
+    """`asgard siege <argv> --json` 의 답을 기다려 파싱해 돌려준다. 못 얻으면 None.
+
+    `ledger_call` 과 갈리는 이유는 자리가 다르기 때문이다. 저쪽은 장부에 한 줄 적고 마는
+    파생 기록이라 답이 필요 없다. 이쪽은 우편함에서 **무엇을 받았는지**가 곧 결과이고,
+    그것을 못 읽으면 훅이 주입할 내용 자체가 없다. 그래서 CLI 기동 시간을 그대로 부담한다 —
+    부르는 쪽이 먼저 sqlite 조회로 받을 것이 있는지 확인한 뒤에만 이 문을 쓰는 이유다.
+
+    CLI 기동이 `timeout` 을 넘기면 죽이고 None 을 준다. 훅은 사람이 기다리는 자리라
+    무한정 붙잡고 있을 수 없다.
+    """
+    try:
+        binary = shutil.which("asgard")
+        if not binary:
+            return None
+        done = subprocess.run(  # noqa: S603 — 인자는 부르는 쪽이 만든 값이고 셸을 안 거친다
+            [binary, "siege", *argv, "--json"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=timeout,
+            check=False,
+        )
+        if done.returncode != 0:
+            return None
+        return json.loads(done.stdout or "null")
+    except Exception:
+        return None

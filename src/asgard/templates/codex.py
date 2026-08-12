@@ -88,6 +88,12 @@ command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/agent-activate.py
 type = "command"
 command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/map-activate.py" codex'
 
+# Dispatch-ledger mailbox — mail another session or a `siege serve` process addressed to this one.
+# An empty mailbox costs one read-only sqlite query; the CLI is spawned only when mail is waiting.
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/siege-inbox.py" codex'
+
 # Tutor, forward half — before touching the same place again, put the questions still open there
 # in front of the human. User-facing only: a model that reads them answers them on the user's behalf.
 [[hooks.UserPromptSubmit.hooks]]
@@ -192,6 +198,13 @@ command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/map-activate.py" 
 [[hooks.SubagentStart.hooks]]
 type = "command"
 command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/verifier-context.py" codex'
+
+# What a dispatched agent needs to reach the ledger it is already on: its own address, where to leave
+# a question it cannot settle, and how to report a failure. Without the last one every attempt is
+# recorded as succeeded. The hook excludes the Verifier, whose seat here is verifier-context.
+[[hooks.SubagentStart.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/dispatch-context.py" codex'
 
 [[hooks.PreToolUse]]
 matcher = "^Agent$"

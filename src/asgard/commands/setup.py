@@ -355,6 +355,10 @@ def hook_files(hooks_dir: str, client: str = "claude-code") -> list[tuple[str, s
         (j(hooks_dir, "map-activate.py"), hook("map-activate")),
         # 판정자 입력 — 하네스가 관측한 실행 기록. 배선은 판정자 서브에이전트가 있는 호스트에만.
         (j(hooks_dir, "verifier-context.py"), hook("verifier-context")),
+        # 배차받은 쪽의 통로 — 자기 배차 주소, 막혔을 때 남기는 질문, 실패를 적는 자리 (SubagentStart).
+        (j(hooks_dir, "dispatch-context.py"), hook("dispatch-context")),
+        # 배차 장부 우편함 — 다른 세션·`siege serve` 가 이 세션 앞으로 보낸 메일 (턴 머리).
+        (j(hooks_dir, "siege-inbox.py"), hook("siege-inbox")),
     ]
     # 공용 라이브러리는 훅과 **같은 폴더**에 깔린다. 그 인접이 곧 임포트 경로다: 스크립트로 실행된
     # 훅은 자기 폴더가 `sys.path[0]` 이라 `import asgard_hooklib` 이 그대로 선다. 표에 한 줄씩
@@ -740,6 +744,87 @@ def run_init(
         ui.warn("cancelled — nothing written.")
         return 0
     return _apply_lagom(lagom, dry_run, _run_profile(chosen, force, dry_run))
+
+
+def _policy_value(key: str, raw: str) -> object:
+    """`key=value` 오른쪽을 그 키의 타입으로 읽는다 — 키마다 타입이 달라 공용 파서가 없다."""
+    if key == "baseline_timeout":
+        seconds = int(raw)
+        if seconds <= 0:
+            raise ValueError("baseline_timeout 은 1초 이상이어야 해요")
+        return seconds
+    if key == "baseline_parallel":
+        if raw.lower() not in {"true", "false"}:
+            raise ValueError("baseline_parallel 은 true 또는 false 예요")
+        return raw.lower() == "true"
+    if key == "verify_level":
+        if raw not in {"low", "high", "full"}:
+            raise ValueError("verify_level 은 low·high·full 중 하나예요")
+        return raw
+    return raw  # baseline_checks — 명령문 하나. 여러 번 주면 순서대로 쌓인다.
+
+
+def run_policy_set(assignments: list[str], *, json_out: bool = False) -> int:
+    """`asgard trinity --set key=value` — trinity_policy 의 프로젝트 소유 키만 고쳐 쓴다.
+
+    이 네 키에 명령이 필요한 이유는 가드다. `hooks.readonly_guard` 는 `.asgard/` 아래 편집을
+    어느 역할에도 안 열어서, "설정 파일을 직접 고치세요"라는 처방은 역할 앞에서 그냥 멈춘다.
+    같은 이유로 26-08-05 에 예산 상한이 `asgard budget --set` 을 얻었고, 이 넷은 그때 안 받았다.
+
+    판정 키는 안 연다 — `PROJECT_OWNED_POLICY_KEYS` 밖은 시드가 이기는 값이라 여기서 고쳐도
+    `asgard sync` 가 되돌린다(`_refreshed_policy`). 고칠 수 없는 것을 고칠 수 있는 척하는 문은
+    없는 문보다 나쁘다.
+
+    `baseline_checks` 는 목록이라 `--set baseline_checks=<명령>` 을 준 만큼 쌓고, 빈 값 하나를
+    주면 비운다. 나머지 셋은 같은 키를 두 번 주면 나중 값이 남는다.
+    """
+    import json
+
+    from ..settings import load_project, project_path, save_project
+
+    root = os.getcwd()
+    ui.set_quiet(json_out)
+    checks: list[str] = []
+    changed: dict[str, object] = {}
+    try:
+        settings_path = project_path(root)
+        # budget 과 같은 이유로 먼저 읽는다 — `save_project` 는 섹션을 통째로 교체하므로,
+        # 못 읽는 파일 위에서 쓰면 paths·agents 가 한 번에 사라진다.
+        if os.path.exists(settings_path):
+            with open(settings_path, encoding="utf-8") as handle:
+                if not isinstance(json.load(handle), dict):
+                    raise ValueError(f"{settings_path} 가 JSON 객체가 아니에요 — 고친 뒤 다시 불러 주세요")
+        section = load_project(root).get("trinity_policy")
+        values = dict(section) if isinstance(section, dict) else {}
+        for text in assignments:
+            key, _, raw = text.partition("=")
+            key = key.strip()
+            if key not in PROJECT_OWNED_POLICY_KEYS:
+                raise ValueError(f"{key or '<빈 키>'} 는 이 명령이 여는 키가 아니에요 — {', '.join(PROJECT_OWNED_POLICY_KEYS)}")
+            if key == "baseline_checks":
+                checks.append(raw.strip())
+                continue
+            values[key] = changed[key] = _policy_value(key, raw.strip())
+        if checks:
+            values["baseline_checks"] = changed["baseline_checks"] = [c for c in checks if c]
+    except json.JSONDecodeError as error:
+        message = f"{project_path(root)} 를 JSON 으로 못 읽었어요 — {error}"
+        print(json.dumps({"error": message}, ensure_ascii=False)) if json_out else ui.warn(message)
+        return 2
+    except (ValueError, OSError) as error:
+        message = str(error) if isinstance(error, ValueError) else f"{project_path(root)} 를 못 읽었어요 — {error}"
+        print(json.dumps({"error": message}, ensure_ascii=False)) if json_out else ui.warn(message)
+        return 2
+    path = save_project(root, "trinity_policy", values)
+    if json_out:
+        print(json.dumps({"path": path, "changed": changed, "trinity_policy": values}, ensure_ascii=False, indent=2))
+        return 0
+    ui.head("trinity · 정책을 고쳤어요")
+    for key, value in changed.items():
+        ui.ok(f"{key} = {value}")
+    ui.step(ui.dim(f"    {path}"))
+    ui.done()
+    return 0
 
 
 if __name__ == "__main__":  # lagom: profile→setup mapping self-check (no framework)
