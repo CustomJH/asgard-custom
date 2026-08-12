@@ -294,16 +294,17 @@ def _semantic_nudge_line(d: str) -> str:
 
 
 def run_tick(json_out: bool = False) -> int:
-    """턴 끝 신호를 한 프로세스에서 본다 — 진화·노른·패턴·2차 진화·학습·시맨틱 준비.
+    """턴 끝 신호를 한 프로세스에서 본다 — 진화·스킬 노후·노른·패턴·2차 진화·학습·시맨틱 준비.
 
     Stop 훅이 네 번 띄우던 자리다: `evolve nudge` · `memory norn --wake` ·
     `memory pattern --due` · `memory semantic nudge`. 넷이 하는 일은 "낼 말이 한 줄 있는가"
     판정이고 출력도 각각 한 줄인데, 값의 대부분은 인터프리터 부팅이었다 (26-08-04 실측:
     네 자식 합계 408~434ms, 그중 프로세스 바닥값 68ms × 4).
 
-    여섯 중 넷은 이제 말만 하지 않고 **패스를 띄운다** (norn·pattern·project_evolve·
+    일곱 중 넷은 이제 말만 하지 않고 **패스를 띄운다** (norn·pattern·project_evolve·
     project_memory.automation의 wake). 판정은 여전히 파일 몇 개를 읽을 뿐이고 — 손질 본체는
-    분리 스폰한 자식이 맡는다.
+    분리 스폰한 자식이 맡는다. 스킬 노후(skill_curator.wake)는 자식을 안 띄운다: 원료가
+    SKILL.md 몇 개라 스폰이 판정보다 비싸다.
 
     판정·latch·스폰은 옮기지 않는다 — 각 모듈의 같은 함수를 그대로 부른다. 하나가 죽어도
     나머지는 낸다: 넛지는 편의지 계약이 아니라, 하나의 실패가 턴 종료를 막으면 안 된다."""
@@ -325,12 +326,14 @@ def run_tick(json_out: bool = False) -> int:
             lines.append(line.splitlines()[0])
 
     from ... import evolution as evo
+    from ... import skill_curator
     from ...memory import norn as norn_mod
     from ...memory import pattern as pattern_mod
     from ...project_memory import automation as project_automation
     from ...project_memory import evolve as project_evolve
 
     _collect(lambda: evo.nudge_line(root))
+    _collect(lambda: skill_curator.wake(root))
     _collect(lambda: norn_mod.wake(root, d))
     _collect(lambda: pattern_mod.wake(root, d))
     _collect(lambda: project_evolve.wake(root))

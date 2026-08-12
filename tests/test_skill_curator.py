@@ -104,5 +104,53 @@ class TestLifecycle(CuratorBase):
         self.assertTrue(os.path.isdir(os.path.join(self.root, ".asgard", "skills", "learned-old")))
 
 
+class TestWake(CuratorBase):
+    """턴 끝에서 부르는 손 — 26-08-12 이전에는 `curate` 의 호출자가 CLI 하나뿐이라, 아무도
+    치지 않는 저장소에서 학습 스킬은 영영 늙지 않았다."""
+
+    def _skill_dir(self, name: str) -> str:
+        return os.path.join(self.root, ".asgard", "skills", name)
+
+    def _wake(self, grade: str) -> str | None:
+        from unittest import mock
+
+        from asgard.evolution import AUTONOMY_ENV
+        from asgard.skill_curator import wake
+
+        with mock.patch.dict(os.environ, {AUTONOMY_ENV: grade}):
+            return wake(self.root)
+
+    def test_silent_when_nothing_has_aged(self):
+        _write_skill(self.root, "learned-fresh", created_days_ago=1)
+        self.assertIsNone(self._wake("safe"))
+
+    def test_an_idle_skill_is_put_away_and_the_line_names_the_way_back(self):
+        _write_skill(self.root, "learned-old", created_days_ago=ARCHIVE_DAYS + 5)
+        line = self._wake("safe")
+        assert line is not None
+        self.assertIn("learned-old", line)
+        self.assertIn("restore", line)
+        self.assertFalse(os.path.isdir(self._skill_dir("learned-old")))
+
+    def test_off_reports_instead_of_touching(self):
+        _write_skill(self.root, "learned-old", created_days_ago=ARCHIVE_DAYS + 5)
+        line = self._wake("off")
+        assert line is not None
+        self.assertIn("curate", line)  # 사람이 칠 명령을 말한다
+        self.assertTrue(os.path.isdir(self._skill_dir("learned-old")))
+
+    def test_the_same_report_is_not_repeated(self):
+        _write_skill(self.root, "learned-stale", created_days_ago=STALE_DAYS + 2)
+        self.assertIsNotNone(self._wake("off"))
+        self.assertIsNone(self._wake("off"))  # 같은 집합 재발화 금지
+        _write_skill(self.root, "learned-stale2", created_days_ago=STALE_DAYS + 3)
+        self.assertIsNotNone(self._wake("off"))  # 집합이 바뀌면 다시 한 번
+
+    def test_a_hand_installed_skill_is_never_put_away(self):
+        _write_skill(self.root, "manual-old", origin="manual", created_days_ago=ARCHIVE_DAYS + 30)
+        self.assertIsNone(self._wake("full"))
+        self.assertTrue(os.path.isdir(self._skill_dir("manual-old")))
+
+
 if __name__ == "__main__":
     unittest.main()

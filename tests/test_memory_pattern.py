@@ -428,6 +428,7 @@ class TickWiringTest(PatternBase):
     2차 진화는 아무 손도 없었다. 그래서 이 시험은 판정 내용이 아니라 **호출**을 고정한다."""
 
     def test_one_tick_wakes_norn_pattern_and_project_evolve(self):
+        from asgard import skill_curator
         from asgard.commands.memory import run_tick
         from asgard.memory import norn
         from asgard.project_memory import evolve as project_evolve
@@ -436,14 +437,15 @@ class TickWiringTest(PatternBase):
             mock.patch.object(norn, "wake", return_value="노른 줄") as norn_wake,
             mock.patch.object(pattern, "wake", return_value="패턴 줄") as pattern_wake,
             mock.patch.object(project_evolve, "wake", return_value="2차 줄") as project_wake,
+            mock.patch.object(skill_curator, "wake", return_value="스킬 노후 줄") as curator_wake,
             mock.patch("asgard.commands.memory.backends._semantic_nudge_line", return_value=""),
         ):
             with mock.patch("sys.stdout.write") as written:
                 run_tick()
-        for call in (norn_wake, pattern_wake, project_wake):
+        for call in (norn_wake, pattern_wake, project_wake, curator_wake):
             self.assertEqual(call.call_count, 1)
         printed = "".join(str(args[0]) for args, _kw in written.call_args_list)
-        for line in ("노른 줄", "패턴 줄", "2차 줄"):
+        for line in ("노른 줄", "패턴 줄", "2차 줄", "스킬 노후 줄"):
             self.assertIn(line, printed)
 
     def test_one_failing_pass_does_not_silence_the_others(self):
