@@ -15,14 +15,17 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 from unittest import mock
 
+from hookscaffold import deploy_library
+
 from asgard.hooks import git_guard as gg
+from asgard.hooks import script as hook  # setup.py 가 배포본을 쓸 때 부르는 그 함수다
 from asgard.hooks.asgard_hooklib.destructive import consent_given, consent_refusal, consent_token, destructive_reason
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DEPLOYED = os.path.join(ROOT, ".claude", "hooks", "git-guard.py")
 
 
 class TestDestructiveDetection(unittest.TestCase):
@@ -157,16 +160,28 @@ class TestHookSurface(unittest.TestCase):
         self.assertIn("ASGARD_CONSENT", body["agent_message"])
 
     def test_deployed_copy_enforces_the_same_verdict(self):
-        """배포본을 별도 프로세스로 태운다 — 패키지만 고치면 실제로 도는 훅은 안 바뀐다."""
+        """배포본을 별도 프로세스로 태운다 — 패키지만 고치면 실제로 도는 훅은 안 바뀐다.
+
+        배포본을 이 시험이 직접 깐다. 개발자 기계의 `.claude/hooks/` 를 가리키던 판은 그 폴더가
+        gitignore 라 러너의 새 체크아웃에 없었고, 훅이 아니라 파일 부재로 떨어졌다 — 0.10.13 의
+        quality 잡이 그렇게 빨개졌다. 여기서 까는 배치가 곧 배포 계약이다: 훅 한 파일과 그 옆의
+        `asgard_hooklib/`, 그 인접이 스크립트로 실행된 훅의 임포트 경로다."""
         command = "rm -rf /tmp/asgard-test-payload"
-        proc = subprocess.run(
-            [sys.executable, DEPLOYED],
-            input=json.dumps({"tool_input": {"command": command}, "cwd": ROOT}),
-            capture_output=True,
-            text=True,
-            cwd=ROOT,
-            env={**os.environ, "CLAUDE_PROJECT_DIR": ROOT},
-        )
+        with tempfile.TemporaryDirectory() as root:
+            hooks_dir = os.path.join(root, ".claude", "hooks")
+            os.makedirs(hooks_dir)
+            deployed = os.path.join(hooks_dir, "git-guard.py")
+            with open(deployed, "w", encoding="utf-8") as handle:
+                handle.write(hook("git-guard"))
+            deploy_library(hooks_dir)
+            proc = subprocess.run(
+                [sys.executable, deployed],
+                input=json.dumps({"tool_input": {"command": command}, "cwd": root}),
+                capture_output=True,
+                text=True,
+                cwd=root,
+                env={**os.environ, "CLAUDE_PROJECT_DIR": root},
+            )
         self.assertEqual(proc.returncode, 2, proc.stderr)
         self.assertIn(consent_token(command), proc.stderr)
 
