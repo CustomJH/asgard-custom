@@ -7,8 +7,8 @@
 ## Orientation
 
 - Project root: `./`
-- Languages by observed source files: Python (585), JavaScript (6), Rust (2)
-- Evidence scan: 800 files; 36 landmarks
+- Languages by observed source files: Python (705), JavaScript (6), Rust (2)
+- Evidence scan: 943 files; 47 landmarks
 
 ## Landmarks
 
@@ -21,10 +21,14 @@
 - `src/asgard/` — Python package root
 - `src/asgard/agent/` — Python package root
 - `src/asgard/agent/heimdall/` — Python package root
+- `src/asgard/agent/heimdall/bifrost/` — Python package root
 - `src/asgard/agent/heimdall/core/` — Python package root
 - `src/asgard/agent/heimdall/trinity/` — Python package root
+- `src/asgard/agent/huginn/` — Python package root
 - `src/asgard/agent/repl/` — Python package root
+- `src/asgard/agent/session/` — Python package root
 - `src/asgard/agent/tools/` — Python package root
+- `src/asgard/bragi/` — Python package root
 - `src/asgard/cli/` — Python package root
 - `src/asgard/commands/` — Python package root
 - `src/asgard/commands/doctor/` — Python package root
@@ -32,22 +36,29 @@
 - `src/asgard/commands/memory_dashboard/` — Python package root
 - `src/asgard/commands/plan_api/` — Python package root
 - `src/asgard/commands/studio/` — Python package root
+- `src/asgard/commands/tutor/` — Python package root
+- `src/asgard/evolution/` — Python package root
 - `src/asgard/hooks/` — Python package root
 - `src/asgard/hooks/asgard_hooklib/` — Python package root
 - `src/asgard/map_graph/` — Python package root
 - `src/asgard/memory/` — Python package root
+- `src/asgard/memory/norn/` — Python package root
+- `src/asgard/memory/recall/` — Python package root
 - `src/asgard/memory_bridge/` — Python package root
 - `src/asgard/orchestration/` — Python package root
 - `src/asgard/plan/` — Python package root
 - `src/asgard/project_memory/` — Python package root
 - `src/asgard/project_memory_backends/` — Python package root
+- `src/asgard/skill_registry/` — Python package root
 - `src/asgard/studio/` — Python package root
 - `src/asgard/studio/tickets/` — Python package root
 - `src/asgard/templates/` — Python package root
 - `src/asgard/templates/roles/` — Python package root
+- `src/asgard/tutor/` — Python package root
 - `studio-shell/` — project boundary (package.json)
 - `studio-shell/src-tauri/` — project boundary (Cargo.toml)
 - `tests/` — test area
+- `tests/heimdall/` — Python package root
 
 ## Detected verification
 
@@ -73,25 +84,19 @@
 - `benchmarks/hybrid-search/REPORT.md` — doc: 하이브리드 검색 벤치 — 2경로 vs 3경로 · sections: 검색 품질 (hit@k · MRR); 지연 (query() 벽시계)
 - `benchmarks/latency/README.md` — doc: 회수 지연 — k6 부하 시험 · sections: 실행; 실측 (26-07-28 · Apple Silicon · 시맨틱 ON · 100페이지); 읽는 법; 한계
 - `benchmarks/longmemeval/REPORT.md` — doc: LongMemEval — asgard 회수 벤치 · sections: 결과; 유형별 (R@5); 외부 대조 (각 저장소 공개값); 읽는 법; 후속: temporal-reasoning 4-암 실험 (n=133); 구절 리랭크 도입 후 (최종)
-- `benchmarks/map-shortcut/REPORT.md` — doc: map 숏컷 벤치 — 주입면이 명령으로 라우팅하는가 (26-08-01) · sections: 질문; 방법 (harness.py); 고치기 전 (같은 저장소, 26-08-01 실측); 고친 뒤 (results.jsonl); 남은 미스 — 닫힌 사전의 한계가 그 자리다; 정직성 기록 — 사전을 사후에 늘렸다
+- `benchmarks/map-shortcut/REPORT.md` — doc: map 숏컷 벤치 — 주입면이 명령으로 라우팅하는가 (26-08-01 측정 · 26-08-13 회귀 수리) · sections: 질문; 방법 (harness.py); 고치기 전 (같은 저장소, 26-08-01 실측); 고친 뒤 (results.jsonl); 게이트가 한 번 빨간불이 됐다 — 번역 표에 맡긴 도움말 (26-08-12 발견, 26-08-13 수리); 남은 미스 — 닫힌 사전의 한계가 그 자리다
 - `benchmarks/memory-graph/REPORT.md` — doc: 기억 그래프 벤치 — 명시 링크만 vs 파생 간선까지 (26-08-06) · sections: 질문; 방법; 결과; 읽는 법; 이 벤치가 못 재는 것; 대조 — 무엇을 가져왔고 무엇을 안 가져왔나
 - `benchmarks/project-memory/REPORT.md` — doc: 2차(프로젝트) 메모리 회수 벤치 · sections: 레인 1 · 로컬 문서 레인 hit@k (실측 26-08-01); 레인 2 · 관계 1홉 확장은 회수를 **올린다** (깎지 않는다); 레인 3 · 동언어 렉시컬 기권 정밀도; 제품 코드를 고쳐야만 잴 수 있는 것 (안 고쳤다)
 - `benchmarks/shortcut-recall/REPORT.md` — doc: 숏컷 벤치 — recall 주입 on/off A/B (26-07-16, 36런) · sections: 질문; 방법 (harness.py); 결과 (results-36runs.jsonl — 런당 1행 append, 원본 그대로); 판정기 주의 (jsonl 의 _success_ 필드를 그대로 믿지 말 것); 한계
 - `docker/asgard-k6/README.md` — doc: asgard-k6 — 부하 시험 러너 이미지 · sections: 왜 우리 이름의 이미지인가; 볼륨은 프로젝트 것이다; 수동 스택
 - `docker/asgard-project-memory/README.md` — doc: asgard-project-memory — 2차 메모리(프로젝트 메모리) Hindsight 서버 · sections: 기본 구성 (2026-07-23 확정); 백엔드 제약 — 이 구성의 모든 상한이 여기서 나온다; 기동; 뱅크 단위 설정 — compose 가 못 닿는 층; 클라이언트; 설계 결정
 - `tests/load/README.md` — doc: Project memory load harness (k6, Docker) — 실측 기록 · sections: 실행; 실측 (Hindsight 0.8.3 · Docker · M-series · 2026-07-28); 정정 — 원인은 링크 밀도가 아니었다 (26-07-28 3차, 실서버 계측)
-- `src/asgard/assets/k6_kit/README.md` — doc: asgard-k6 · sections: 왜 selftest 가 먼저인가; 시나리오; 표면 뒤의 것들; 도커 쪽 집
-- `src/asgard/templates/roles/asgard-eitri.md` — doc: asgard-eitri — ⚒️ Build/CI/packaging specialist (Delivery)
-- `src/asgard/templates/roles/asgard-freyja.md` — doc: asgard-freyja — UI/UX specialist (Delivery)
-- `src/asgard/templates/roles/asgard-loki.md` — doc: asgard-loki — 🐍 Adversarial specialist (Delivery)
-- `src/asgard/templates/roles/asgard-mimir.md` — doc: asgard-mimir — 🧭 Code-guide specialist (Delivery)
-- `src/asgard/templates/roles/asgard-planner.md` — doc: asgard-planner — 제품 기획 에이전트 · sections: 기본 계약; 진행 방식; 판단 경계
-- `src/asgard/templates/roles/asgard-thinker.md` — doc: asgard-thinker — 🧠 Strategy (Trinity)
-- `src/asgard/templates/roles/asgard-thor-lead.md` — doc: asgard-thor-lead — 🛡 Backend squad lead (Delivery orchestration)
-- `src/asgard/templates/roles/asgard-thor.md` — doc: asgard-thor — ⚡ Backend specialist (Delivery)
-- `src/asgard/templates/roles/asgard-ullr.md` — doc: asgard-ullr — 🏹 Exploration specialist (Delivery)
-- `src/asgard/templates/roles/asgard-verifier.md` — doc: asgard-verifier — ⚖️ Verdict (Trinity) · sections: What PASS costs; Reporting a defect; This repository's rules
-- `src/asgard/templates/roles/asgard-worker.md` — doc: asgard-worker — 🔨 Execution (Trinity)
+- `benchmarks/shortcut-recall/shortcut-mem/SCHEMA.md` — doc: Memory Schema — 개인 위키 규약 · sections: 페이지 규약; 운영 (asgard memory <op>); 불변식
+- `benchmarks/shortcut-recall/shortcut-mem/index.md` — doc: Memory Index
+- `benchmarks/shortcut-recall/shortcut-mem/log.md` — doc: Memory Log
+- `benchmarks/shortcut-recall/shortcut-mem/maps/index.md` — doc: 메모리 지도 · sections: 종류별 — _maps/kind/_
+- `benchmarks/shortcut-recall/shortcut-mem/maps/loose-ends.md` — doc: 끊어진 곳 · sections: 아무도 가리키지 않는 페이지; 죽은 링크
+- `benchmarks/shortcut-recall/shortcut-mem/maps/recent.md` — doc: 최근순
 
 ## Public surfaces
 
@@ -113,7 +118,9 @@
 - `benchmarks/shortcut-recall/harness.py` — public surface: def build_sandbox(); def build_memory(); def precheck(); def run_one(fid, task, judge, arm, rep); def main()
 - `studio-shell/src-tauri/icons/build_icons.py` — public surface: def superellipse(box, n, steps); def body_mask(size); def night(size); def master(); def main()
 - `tests/cli_boundary.py` — public surface: def strip_ansi(text); class Outcome; def run_cli(*argv, stdin)
+- `tests/heimdall/harness.py` — public surface: class FakeSession; class FakeHeimdall; def worker(files, root, text); def verifier(verdict, observed, structural, sig, why, …); def thinker(plan, commands); uses `src/asgard/i18n.py`, `src/asgard/providers.py`
 - `tests/hookscaffold.py` — public surface: def deploy_library(hooks_dir); def deploy_cli(bin_dir); def isolated_home_env(home, **extra); def until(predicate, timeout, step)
+- `tests/memory/memory_base.py` — public surface: def memory_semantic_env(); class MemoryBase
 - `tests/test_activity.py` — public surface: class ActivityEmitCase; class ActivityReadCase; class StudioAbsorbCase; class SessionEmitCase; class StudioLiveRunCase
 - `tests/test_adversarial_gate.py` — public surface: def run(script, args, stdin, cwd, env_extra); class AdversarialBase; class TestAdversarialVectors; class TestEncodingDisarm; class TestSessionIdentityDisarm
 - `tests/test_agent.py` — public surface: class Base; class TestEditor; class TestBash; class TestTruncation; class TestBashDestructiveGuard; uses `src/asgard/agent/quest_bridge.py`
@@ -130,7 +137,7 @@
 - `tests/test_cancellation.py` — public surface: class TestBashCancel; class TestSessionCancel
 - `tests/test_charter.py` — public surface: class TestLoadCharter; class TestNote; uses `src/asgard/charter.py`
 - `tests/test_charter_hook.py` — public surface: class CharterHookBase; class TestCharterHook; uses `src/asgard/charter.py`
-- `tests/test_claude_native.py` — public surface: def tearDownModule(); class TestProfile; class TestNativeClient; class TestTransport; class TestStreaming; uses `src/asgard/agent/session.py`, `src/asgard/providers.py`
+- `tests/test_claude_native.py` — public surface: def tearDownModule(); class TestProfile; class TestNativeClient; class TestTransport; class TestStreaming; uses `src/asgard/providers.py`
 - `tests/test_cli_surface.py` — public surface: class TestMachineOutputNeedsAFlag; class TestQuietOwnsDashQ; class TestJsonCoverage; class TestShortFlagMeansOneThing; class TestOneNamePerBehaviour
 - `tests/test_code_map.py` — public surface: class CodeMapBase; class TestProjectMap; class TestMapCLI; class TestLanguageSurfaceCoverage
 - `tests/test_color_capability.py` — public surface: def test_windows_console_is_color_capable(monkeypatch, _clean_env); def test_windows_console_without_vt_stays_plain(monkeypatch, _clean_env); def test_no_color_wins_on_windows_without_touching_the_console(monkeypatch, _clean_env); def test_redirected_stdout_is_never_colored(monkeypatch, _clean_env); def test_posix_still_treats_unset_term_as_dumb(monkeypatch, _clean_env)
@@ -141,8 +148,6 @@
 - `tests/test_craft_gate_e2e.py` — public surface: class ShippedHookRuns; class RepairLane
 - `tests/test_craft_gate_hook.py` — public surface: class WriteFilter; class MergedJudgement; class RepairLane; class Receipt; class Reason
 - `tests/test_craft_lang.py` — public surface: class ScrubTest; class ExtractTest; class DepthTest; class CMemoryTest; class CBoundsAndCostTest
-- `tests/test_craft_note.py` — public surface: class MetaphorTest; class JargonTest; class DocstringTest; class ExtractionTest; class RatchetTest; uses `src/asgard/craft_rules.py`
-- `tests/test_doctor_shape.py` — public surface: class TestDoctorJsonShape; class TestTrinityRowNames; class TestPiecesStandAlone; class TestHookInterpreterIsExecuted; class TestConfigReading
 
 ## Navigation contract
 
