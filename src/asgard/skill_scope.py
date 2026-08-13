@@ -30,10 +30,41 @@ _EXPEDITION_PAT = re.compile(
     re.IGNORECASE,
 )
 # 기능 표식 — 슬라이스 하나로 안 끝나는 신설 표면. cls 축(deep/parallel)이 이미 잡으면 불필요.
+#
+# 영어 갈래가 둘인 이유 (26-08-13 실측). `new` 바로 뒤에 표면 명사가 붙은 형태는 그대로 잡는다
+# ("we need a new page", "spin up a new service"). 그 사이에 수식어가 끼면 `new` 는 "새로 만든다"가
+# 아니라 명사에 붙은 형용사로 읽히는 쪽이 훨씬 흔해서("fix the new login page bug", "the new
+# payment service is down"), 그 자리에서만 **생성 동사**를 추가로 요구한다. 수식어 허용만 하고
+# 동사를 안 물었을 때는 슬라이스 요청이, 동사만 물고 인접 형태를 버렸을 때는 신설 요청이 각각
+# 반대로 틀렸다 — 두 갈래를 함께 둬야 양쪽이 맞는다. 문장은 benchmarks/skill-uptake 에 있다.
+_SURFACE_KO = r"(?:기능|화면|페이지|엔드포인트|모듈|서비스|api)"
+# 단수만 — 복수형까지 받으면 "the new pages are slow", "document the new modules" 처럼 이미 있는
+# 여러 표면을 가리키는 문장이 신설 요청으로 읽힌다. 신설을 부탁하는 말은 거의 언제나 한 개를
+# 가리킨다.
+_SURFACE_EN = r"(?:feature|page|screen|endpoint|module|service|flow)"
+_MAKE_EN = r"(?:build|create|add|make|ship|scaffold|introduce|stand\s+up|spin\s+up|set\s+up|write|need|want)"
+# 관사는 부정관사만 — `a new page` 는 신설이지만 `the new page` 는 그것이 이미 있다는 뜻이라,
+# need·want·make 처럼 뜻이 넓은 동사와 붙으면 유지보수 요청이 신설로 읽힌다
+# ("I want the new export page fixed", "make the new login page load faster").
+_ARTICLE_EN = r"(?:a|an)?"
+# 한국어에 `{표면}을 새로 {만들|추가|…}` 갈래는 두지 않는다. 26-08-13 에 넣었다가 판정 셋이
+# 연속으로 같은 결함을 잡아 지웠다: 신설을 **거절하는** 문장이 어간까지 글자가 같아서 신설
+# 요청으로 읽힌다 ("페이지를 새로 만들지 말고 기존 걸 고쳐줘", "만들라고 한 적 없어",
+# "만들자는 게 아니라 고치자는 거야"). 거절 어형을 열거해도, 뒤집어서 요청 어미를 요구해도
+# 샜다 — `자`·`야`·`라` 가 요청 전용이 아니라 내포절의 첫 글자이기도 해서다. 요청인지 거절인지는
+# 어간 뒤 두세 어절에서 갈리는데 이 층은 한 글자를 본다.
+#
+# 종결 위치까지 보는 규칙도 돌려 봤다. 비요청문은 다 떨어지지만 뒤에 절이 붙는 진짜 요청
+# ("페이지를 새로 만들자 그리고 배포도 해줘")이 함께 떨어져, 이번엔 미탐 쪽으로 같은 일이 난다.
+# 그래서 이 축은 이 층이 지지 않는다 — `task_class=deep`·`parallel_requested` 가 문구와 무관하게
+# 승격하고, 트리거 낱말이 없는 요청은 모델이 카탈로그 설명을 읽고 고른다. 남은 구멍은
+# benchmarks/skill-uptake 의 `shape_gap` 축이 매 실행 찍는다.
 _FEATURE_PAT = re.compile(
-    r"신규\s*(?:기능|화면|페이지|엔드포인트|모듈|서비스|api)|기능\s*(?:추가|개발|구현|신설)"
+    rf"신규\s*{_SURFACE_KO}|기능\s*(?:추가|개발|구현|신설)"
     r"|화면\s*(?:추가|신설)|페이지\s*(?:추가|신설)|엔드포인트\s*(?:추가|신설)"
-    r"|\bnew\s+(?:feature|page|screen|endpoint|module|service|flow)\b|\bfeature\s+(?:request|work)\b",
+    rf"|\bnew\s+{_SURFACE_EN}\b"
+    rf"|\b{_MAKE_EN}\s+{_ARTICLE_EN}\s*new\s+(?:\w+\s+){{1,2}}{_SURFACE_EN}\b"
+    r"|\bfeature\s+(?:request|work)\b",
     re.IGNORECASE,
 )
 
@@ -110,6 +141,9 @@ _SHAPE_CONTRACT: dict[str, str] = {
         " slices with their blocking edges declared, and prefer an unblocked frontier over a"
         " layer-by-layer split — a horizontal unit that bundles a whole layer is not independently"
         " verifiable. Reuse the vocabulary already fixed in the repository instead of coining new terms."
+        " `/blueprint` writes that spec surface and `/quests` cuts the slices; both are Odin's to"
+        " invoke, so name them as the offer and keep working — producing those artifacts unasked is"
+        " out of scope (Canon 7)."
     ),
     "expedition": (
         "This exceeds one quest: decisions still block a durable spec. Name the destination — the"
