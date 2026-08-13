@@ -2,6 +2,7 @@
 """판정자에게 가는 입력 — 실행 기록 주입, 트랜스크립트 훑기, 실패 누적 에스컬레이션."""
 
 import glob
+import importlib.util
 import json
 import os
 import time
@@ -341,6 +342,193 @@ class TestVerifierContext(TrinityBase):
         self.qlog("append", "--role", "verifier", "--event", "verify", "--verdict", "PASS")
         text = self.context(("Bash", {"command": "true"}, "", False))
         self.assertIn("since the last verdict (turn 3)", text)
+
+
+class TestWhatTheVerdictIsScoredOn(TrinityBase):
+    """판정자가 명령을 고르기 전에 알아야 하는 것 — 채점 기준과 하네스가 이미 돌린 것.
+
+    26-08-13 실측: 판정 130건에서 판정자가 직접 부른 명령 965건 중 253건이 pytest 였고, 하네스는
+    그와 별개로 PASS 마다 프로젝트 베이스라인을 한 번 더 돌렸다 (판정당 median 121.8초). 두 쪽이
+    같은 스위트를 한 트리에 두 번 돌린 것은 판정자가 하네스의 몫을 몰랐기 때문이다."""
+
+    CHECK = "python -m compileall app.py"
+
+    def payload(self, **extra):
+        return json.dumps(
+            {
+                "agent_type": "asgard-verifier",
+                "session_id": "s1",
+                "cwd": self.root,
+                "hook_event_name": "SubagentStart",
+                **extra,
+            }
+        )
+
+    def context(self, *commands):
+        """주입 블록. 명령을 주면 그 호출이 실린 기록 파일을 함께 세운다 — 트리가 안 움직인
+        라운드에서는 명령 기록이 있어야 블록 자체가 뜬다 (`main` 의 침묵 조건)."""
+        path = os.path.join(self.root, "none.jsonl")
+        if commands:
+            rows = []
+            for i, command in enumerate(commands):
+                use = "toolu_%d" % i
+                rows.append(
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": [{"type": "tool_use", "id": use, "name": "Bash", "input": {"command": command}}],
+                        }
+                    }
+                )
+                rows.append(
+                    {
+                        "message": {
+                            "role": "user",
+                            "content": [
+                                {"type": "tool_result", "tool_use_id": use, "content": "ok", "is_error": False}
+                            ],
+                        }
+                    }
+                )
+            path = os.path.join(self.root, "transcript.jsonl")
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows))
+        p = run(VCONTEXT, stdin=self.payload(transcript_path=path), cwd=self.root)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        return json.loads(p.stdout)["hookSpecificOutput"]["additionalContext"] if p.stdout.strip() else ""
+
+    def test_the_declared_contracts_reach_the_verifier(self):
+        """계약이 하네스에만 있으면 판정자는 자기 기준을 새로 세운다 — 채점표를 모르는 채로."""
+        self.open_quest("--criteria", "app runs | verify: %s | artifacts: app.py" % self.CHECK)
+        self.write("app.py", "print('ok')\n")
+        text = self.context()
+        self.assertIn("run       " + self.CHECK, text)
+        self.assertIn("artifacts app.py", text)
+        self.assertIn("[1] app runs", text, "계약이 어느 기준의 것인지 안 적혔다")
+
+    def test_each_contract_keeps_its_own_command_and_artifacts(self):
+        """계약을 짝 없이 이어 적으면 뒤 기준의 산출물이 앞 기준의 명령에 딸린 것으로 읽힌다."""
+        self.open_quest(
+            "--criteria",
+            "first | verify: %s | artifacts: app.py" % self.CHECK,
+            "--criteria",
+            "second | artifacts: other.py",
+        )
+        self.write("app.py", "print('ok')\n")
+        body = self.context().partition("Declared verify contracts")[2].partition("\n\n")[0]
+        first = body.partition("[2]")[0]
+        self.assertIn("artifacts app.py", first)
+        self.assertNotIn("other.py", first, "둘째 기준의 산출물이 첫째 계약 밑에 섰다")
+        self.assertIn("artifacts other.py", body.partition("[2]")[2])
+
+    def test_the_project_baseline_command_reaches_the_verifier(self):
+        """하네스는 PASS 뒤 이 명령을 어차피 돌린다 — 모르면 같은 스위트가 한 트리에 두 번 돈다."""
+        self.policy(baseline_checks=[self.CHECK])
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        text = self.context()
+        self.assertIn("Project baseline — the harness runs this itself when it records a PASS", text)
+        self.assertIn(self.CHECK, text)
+
+    def test_every_baseline_command_the_harness_runs_reaches_the_verifier(self):
+        """주입이 하네스보다 좁게 자르면, 판정자가 한 번도 못 본 명령이 PASS 채점에 남는다.
+
+        26-08-13 codex 독립 판정이 잡은 자리 — 상한이 주입 5, 하네스 10 이라 여섯째부터 갈렸다."""
+        checks = ["python -m compileall app%d.py" % i for i in range(6)]
+        self.policy(baseline_checks=checks)
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        text = self.context()
+        for cmd in checks:
+            self.assertIn(cmd, text, "하네스가 돌리는 명령이 판정자에게 안 갔다: %s" % cmd)
+
+    def test_baseline_commands_beyond_the_harness_cap_are_named_as_dropped(self):
+        """상한을 넘겨 안 도는 명령은 조용히 사라지면 안 된다 — 설정한 사람이 돈다고 믿는다."""
+        checks = ["python -m compileall app%d.py" % i for i in range(12)]
+        self.policy(baseline_checks=checks)
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        text = self.context()
+        self.assertIn("2 more declared, which the harness does not run either", text)
+
+    def test_checks_already_run_are_named_with_the_tree_they_ran_on(self):
+        """이미 돈 검사는 사실이지만 **그때 트리의** 사실이다 — 귀속을 빼면 판정자가 낡은 초록을 읽는다."""
+        self.policy(baseline_checks=[self.CHECK])
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.qlog("append", "--role", "worker", "--event", "work")
+        self.verifier_seat()
+        p = self.qlog("append", "--role", "verifier", "--event", "verify", "--verdict", "PASS")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(jout(p)["verdict"], "PASS", "베이스라인이 안 붙는 판정으로 시험이 헛돈다")
+        self.write("app.py", "print('again')\n")  # 판정 뒤 트리를 움직여야 다음 판정 구간이 생긴다
+        text = self.context()
+        self.assertIn("Checks the harness already ran", text)
+        self.assertIn("exit 0", text)
+        self.assertIn("not on the tree you are judging", text)
+
+    def test_an_untracked_file_counts_as_a_change_and_the_caveat_says_so(self):
+        """주입면의 단서가 하네스 코드와 어긋나면 판정자가 틀린 전제로 판단한다.
+
+        비교는 `current_tree_ref` 로 트리 둘을 짓고 그 트리는 추적 밖 파일까지 담는다. "추적된
+        파일만 본다"고 적던 동안 그 문장은 거짓이었고, 반례가 같은 블록의 변경 목록에 서 있었다
+        (26-08-14 판정자 2회차와 codex 4회차가 각각 잡았다)."""
+        self.policy(baseline_checks=[self.CHECK])
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.qlog("append", "--role", "worker", "--event", "work")
+        self.verifier_seat()
+        self.assertEqual(
+            jout(self.qlog("append", "--role", "verifier", "--event", "verify", "--verdict", "PASS"))["verdict"], "PASS"
+        )
+        self.write("never_added.py", "x = 1\n")  # git add 를 안 한다 — 추적 밖 파일이다
+        text = self.context()
+        self.assertRegex(text, r"[AM]\tnever_added\.py", "추적 밖 파일이 변경 목록에서 빠졌다")
+        self.assertNotIn("only watches tracked files", text, "하네스가 하는 일과 어긋나는 단서다")
+
+    def test_the_unchanged_tree_caveat_names_what_the_comparison_really_drops(self):
+        """변경이 0 일 때의 단서는 참인 것만 적어야 한다 — 빠지는 것은 무시 경로와 지도 밖 .asgard 다."""
+        self.policy(baseline_checks=[self.CHECK])
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.qlog("append", "--role", "worker", "--event", "work")
+        self.verifier_seat()
+        self.qlog("append", "--role", "verifier", "--event", "verify", "--verdict", "PASS")
+        # 트리를 안 움직이고 판정자를 다시 세운다 — 명령 기록만으로 블록이 뜨는 갈래다.
+        text = self.context("python -m compileall app.py")
+        self.assertIn("Changed files (0)", text)
+        self.assertNotIn("not on the tree you are judging", text, "안 움직인 트리를 움직였다고 단언했다")
+        self.assertIn("ignored paths and .asgard/ outside the shared map", text)
+
+    def test_the_verifier_is_never_told_to_skip_a_check(self):
+        """판정 독립성은 판정자가 명령을 직접 돌리는 데서 나온다 — 주입면이 그것을 깎으면 안 된다."""
+        self.policy(baseline_checks=[self.CHECK])
+        self.open_quest("--criteria", "app runs | verify: %s | artifacts: app.py" % self.CHECK)
+        self.write("app.py", "print('ok')\n")
+        text = self.context().lower()
+        # "whether or not you run it" 는 26-08-13 codex 독립 판정 2회차가 잡은 문구다 — 명령형이
+        # 아니라서 위 목록을 다 지나갔는데, 읽는 쪽에는 "안 돌려도 된다" 는 허가로 닿는다.
+        for phrase in (
+            "do not run",
+            "don't run",
+            "no need to run",
+            "skip the",
+            "you may skip",
+            "whether or not you run",
+            "optional",
+        ):
+            self.assertNotIn(phrase, text, "주입면이 판정자에게 검사를 건너뛰어도 된다고 말했다")
+
+    def test_a_check_that_timed_out_is_not_read_as_a_missing_exit_code(self):
+        """상한을 넘긴 검사는 상한을 올리면 답이 나오고, 결과를 못 읽은 검사는 아니다 — 고칠 자리가 다르다."""
+        spec = importlib.util.spec_from_file_location("asgard_verifier_context", VCONTEXT)
+        self.assertIsNotNone(spec, VCONTEXT)
+        assert spec is not None and spec.loader is not None  # ty 는 assertIsNotNone 을 안 좁힌다
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.assertEqual(module.check_mark({"timed_out": True, "exit_code": None}), "timeout")
+        self.assertEqual(module.check_mark({"exit_code": None}), "no exit")
+        self.assertEqual(module.check_mark({"exit_code": 1}), "exit 1")
 
 
 class TestTranscriptSweep(TrinityBase):

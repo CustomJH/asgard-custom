@@ -13,6 +13,11 @@ import time
 from .contracts import criteria_contracts
 from .runners import detect_checks
 
+# 한 판정에서 하네스가 실제로 돌리는 체크의 상한. 판정자 주입면이 같은 수를 세어야 한다
+# (`verifier_context.commitments`) — 한쪽만 늘리면 판정자가 한 번도 못 본 명령이 PASS 채점에
+# 남는다. 상수를 여기 두는 이유가 그것이다: 두 자리에 숫자를 적으면 둘이 갈라진다.
+MAX_CHECKS = 10
+
 
 def fail_lines(stdout: bytes | None, stderr: bytes | None, limit: int = 5) -> list[str]:
     """실패한 체크 출력에서 정형 실패 줄만 추출 — 이유 없는 red를 만들지 않는다 (바운디드 증거).
@@ -150,7 +155,7 @@ def run_baseline(root: str, policy: dict, events: list[dict], diff_hash: str) ->
     auto = not policy.get("baseline_checks")  # 자동 감지 모드 — red 판정을 보수적으로 (아래)
     results: list[dict] = []
     state = "none"
-    for cmd in checks[:10]:
+    for cmd in checks[:MAX_CHECKS]:
         if _timed_out_before(events, cmd):
             results.append({"cmd": cmd[:120], "exit_code": None, "secs": 0.0, "timed_out": True, "memo": True})
             continue

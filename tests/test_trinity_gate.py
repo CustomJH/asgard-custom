@@ -2,6 +2,7 @@
 """완료 게이트 — 판정 없는 종료 차단, write 강제, 오래된 판정, 배포 사본 동일성."""
 
 import hashlib
+import inspect
 import json
 import os
 import subprocess
@@ -444,6 +445,116 @@ class TestMemoryGateIsolation(TrinityBase):
         b, reason = out.get("decision") == "block", out.get("reason", "")
         self.assertTrue(b)
         self.assertIn("stale", reason)
+
+
+class TestVerifierIndependence(TrinityBase):
+    """PASS 를 적은 손이 diff 를 쓴 손과 같은가.
+
+    이 축이 없는 동안 나머지 게이트는 전부 통과할 수 있었다 — 증거도 해시도 계약도 판정 대상이
+    스스로 적을 수 있어서다. 26-08-13 helios-asgard 실측: 전이 함수가 VERIFIER 를 12회 배정했고
+    12회 다 같은 세션이 자기 diff 에 PASS 를 적었으며 서브에이전트 배차는 0건이었다."""
+
+    def blocked(self, p):
+        out = jout(p)
+        return out.get("decision") == "block", out.get("reason", "")
+
+    def test_pass_without_a_verifier_seat_blocks(self):
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.verify(seat=False)
+        b, reason = self.blocked(self.gate())
+        self.assertTrue(b)
+        self.assertIn("verifier-not-independent", reason)
+
+    def test_pass_with_a_verifier_seat_allows(self):
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.verify()  # seat=True — 디스패치 영수증을 남긴다
+        b, reason = self.blocked(self.gate())
+        self.assertFalse(b, reason)
+
+    def test_worker_receipt_is_not_a_verifier_seat(self):
+        """워커를 띄운 것은 판정자를 띄운 것이 아니다 — 영수증이 있다는 사실만으로는 통과 못 한다."""
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.verifier_seat(agent="asgard-worker", agent_id="w1")
+        self.verify(seat=False)
+        b, reason = self.blocked(self.gate())
+        self.assertTrue(b)
+        self.assertIn("verifier-not-independent", reason)
+
+    def test_harness_name_cannot_be_written_by_hand(self):
+        """면제받는 이름을 손으로 못 적는가.
+
+        `role: harness` 는 Stop 게이트에서 판정자 독립성 검사를 면제받는다. 그 이름을 append 로
+        적을 수 있으면 면제가 곧 우회다 — diff 를 쓴 워커가 필드 하나로 자기 PASS 를 하네스
+        판정으로 위장한다. 첫 판본이 정확히 그랬고, 이 시험의 앞 판본이 그 우회를 초록으로
+        고정하고 있었다 (26-08-13 판정 FAIL: forgeable-gate-exemption)."""
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        p = self.qlog(
+            "append",
+            "--verdict",
+            "PASS",
+            "--session",
+            "s1",
+            stdin=json.dumps(
+                {"role": "harness", "event": "verify", "commands": [{"cmd": "python3 app.py", "exit_code": 0}]}
+            ),
+        )
+        self.assertIn("harness", p.stdout + p.stderr)
+        self.assertNotEqual(p.returncode, 0)
+        b, reason = self.blocked(self.gate())
+        self.assertTrue(b, "위조가 거절됐으니 판정 기록이 없다 — 게이트는 여전히 막아야 한다")
+        self.assertIn("no-verdict", reason)
+
+    def test_real_baseline_verdict_is_exempt(self):
+        """하네스가 직접 적은 판정에는 판정자 자리가 없다 — 명령을 고른 것도 돌린 것도 코드다.
+
+        면제가 죽으면 작은 변경이 전부 판정자 턴을 요구한다. 그 회귀는 조용해서(느려질 뿐 안
+        막힌다) 여기서 잡는다."""
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.write("tests/test_ok.py", "def test_ok():\n    assert True\n")
+        # 행위 테스트 러너만 LLM 판정자를 대신할 수 있다 — lint·compile 은 이 레인을 못 세운다
+        # (`runners.gate_first_checks_available`).
+        self.policy(baseline_checks=["python3 -m pytest -q"])
+        p = self.qlog("append", "--role", "worker", "--event", "work")
+        self.assertEqual(jout(p).get("next_role"), "BASELINE_VERIFY", p.stdout)
+        out = jout(self.qlog("verify-baseline"))
+        self.assertEqual(out.get("verdict"), "PASS", out)
+        b, reason = self.blocked(self.gate())
+        self.assertFalse(b, reason)
+
+    def test_native_loop_is_exempt_and_says_so_in_its_payload(self):
+        """네이티브 루프에는 이 물음이 없다 — 판정자 세션을 코드가 만들고 읽기 전용으로 강제한다.
+
+        면제의 통로가 `quest_bridge.gate` 의 페이로드 한 키뿐이라는 것을 함께 고정한다. 그 키가
+        사라지면 네이티브 쓰기 퀘스트가 전부 닫히지 않고, 여기서 걸린다."""
+        from asgard.agent import quest_bridge
+
+        self.assertIn('"native": true', json.dumps({"native": True}))  # 키 이름 자체가 계약
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.verify(seat=False)
+        out = jout(
+            run(
+                GATE,
+                stdin=json.dumps({"session_id": "s1", "cwd": self.root, "native": True, "hook_event_name": "Stop"}),
+                cwd=self.root,
+            )
+        )
+        self.assertNotEqual(out.get("decision"), "block", out.get("reason", ""))
+        self.assertIn("native", quest_bridge.gate.__doc__ or inspect.getsource(quest_bridge.gate))
+
+    def test_policy_can_turn_it_off_for_hosts_without_subagents(self):
+        """서브에이전트를 못 띄우는 호스트(mode A)에서는 이 축이 닫을 수 있는 퀘스트를 없앤다."""
+        self.open_quest()
+        self.policy(verifier_independence=False)
+        self.write("app.py", "print('ok')\n")
+        self.verify(seat=False)
+        b, reason = self.blocked(self.gate())
+        self.assertFalse(b, reason)
 
 
 class TestGateCopyParity(TrinityBase):

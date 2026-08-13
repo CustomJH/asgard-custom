@@ -98,7 +98,31 @@ class TrinityBase(unittest.TestCase):
         with open(os.path.join(self.root, ".asgard", "trinity-policy.json"), "w") as f:
             json.dump(kw, f)
 
-    def verify(self, verdict="PASS", level=None, commands=None, session="s1"):
+    def verifier_seat(self, quest="q1", agent="asgard-verifier", agent_id="v1"):
+        """판정자 자리가 실제로 섰다는 디스패치 영수증.
+
+        살아 있는 세션에서는 `subagent_gate.record_agent_start` 가 SubagentStart 때 이것을 적는다.
+        여기서 손으로 적는 이유는 시험이 훅 하나를 프로세스로 부르지 서브에이전트를 띄우지는
+        않아서고, 영수증이 없으면 Stop 게이트가 그 PASS 를 자기판정으로 본다 (그쪽 축은
+        `TestVerifierIndependence` 가 본다)."""
+        directory = os.path.join(self.root, ".asgard", "quest", "receipts", quest)
+        os.makedirs(directory, exist_ok=True)
+        with open(os.path.join(directory, "agent-%s.json" % agent_id), "w") as f:
+            json.dump(
+                {
+                    "schema": 1,
+                    "quest_id": quest,
+                    "agent_type": agent,
+                    "agent_id": agent_id,
+                    "started_at": 1,
+                    "stopped_at": 2,
+                },
+                f,
+            )
+
+    def verify(self, verdict="PASS", level=None, commands=None, session="s1", seat=True):
+        if seat:
+            self.verifier_seat()
         body = {
             "role": "verifier",
             "event": "verify",

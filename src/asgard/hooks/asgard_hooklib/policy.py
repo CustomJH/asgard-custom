@@ -90,6 +90,12 @@ DEFAULT_POLICY: dict = {
     # 작업이 한 저장소에서는 판정자를 부르고 다른 저장소에서는 안 부른다 — 역할이 실제로
     # 도는 모습을 매번 보려는 저장소가 always 를 켠다. 속도를 판정 턴 한 번과 맞바꾼다.
     "role_dispatch": "auto",
+    # LLM 판정을 판정자 자리에서만 받을지 — true 면 워커가 자기 diff 에 적은 PASS 를 Stop 게이트가
+    # 되돌린다 (디스패치 영수증이 판정 축, `evidence.verifier_dispatched`). 하네스 베이스라인
+    # 판정(`role: harness`)은 판정자 자리가 없는 경로라 언제나 면제다. 서브에이전트를 띄우지
+    # 못하는 호스트에서만 false 로 내린다 — 그 모드에서는 같은 세션이 역할을 순서대로 도는 것이
+    # 규정된 폴백이라(mode A), 참인 채로 두면 닫을 수 있는 퀘스트가 없다.
+    "verifier_independence": True,
     # 닫힌 퀘스트 로그 keep-last-N — 세션 상한 정책. 0 = 정리 없음(무한 누적).
     "quest_retention": 30,
     # 병렬 Worker는 기본적으로 독립 clone에서 실행하고 검증된 patch만 canonical root에 병합.

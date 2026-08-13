@@ -52,7 +52,12 @@ from asgard_hooklib.contracts import (  # noqa: E402
     quest_events_scope,
     unmet_contracts,
 )
-from asgard_hooklib.evidence import evidence_breadth, pass_evidence  # noqa: E402
+from asgard_hooklib.evidence import (  # noqa: E402
+    evidence_breadth,
+    harness_verdict,
+    pass_evidence,
+    verifier_dispatched,
+)
 from asgard_hooklib.firing import event, run  # noqa: E402
 from asgard_hooklib.integrity import EMPTY, ledger_integrity, verification_identity  # noqa: E402
 from asgard_hooklib.paths import git, is_testfile, read_text  # noqa: E402
@@ -156,6 +161,13 @@ GATE_MESSAGES = {
     "micro-pass": (
         "full-verify required (sensitive paths {sensitive}{deleted} / diff {files} files·{lines} lines) "
         "but this is a micro PASS. Re-verify with --level full."
+    ),
+    "verifier-not-independent": (
+        "this PASS was recorded without a verifier seat — no dispatch receipt for an independent verifier "
+        "exists on this quest, so the hand that wrote the diff is the hand that passed it. Dispatch an "
+        "`asgard-verifier` subagent and let it record the verdict. If this host cannot run subagents, set "
+        "trinity_policy.verifier_independence=false in .asgard/asgard-setting-project.json and say so in "
+        "the report."
     ),
 }
 
@@ -507,6 +519,16 @@ def main():
             block(root, sid, "criteria-unverified", unmet="; ".join(map(str, unmet[:3])))
         if not pass_evidence(p, no_change=current == EMPTY):
             block(root, sid, "no-evidence")
+        # 판정자 자리가 실제로 섰는가. 증거·해시·계약을 아무리 조여도 그 전부를 판정 대상이
+        # 스스로 적을 수 있으면 독립성은 산문으로만 남는다 — 이 게이트가 없는 동안 실제로
+        # 그랬다 (26-08-13 helios-asgard: VERIFIER 배정 12회, 서브에이전트 배차 0건).
+        if (
+            policy.get("verifier_independence", True)
+            and not data.get("native")  # 네이티브 루프는 판정자 세션을 코드가 만든다 (quest_bridge.gate)
+            and not harness_verdict(p)
+            and not verifier_dispatched(root, qid)
+        ):
+            block(root, sid, "verifier-not-independent")
         bl = p.get("baseline") or {}
         if bl.get("state") == "red":  # 하네스가 직접 돌린 프로젝트 체크 실패 — 코드가 깨져 있다
             rows = [r for r in (bl.get("results") or []) if isinstance(r, dict)]

@@ -58,6 +58,7 @@ if _HOOK_DIR not in sys.path:
 # 소비처의 임포트 경로가 안 바뀐다. 정의는 전부 `asgard_hooklib` 안이고, 이 블록이 하는 일은
 # "어느 모듈에 사는가"를 호출부에 남기는 것뿐이다 (고칠 곳은 여기가 아니라 그 모듈이다).
 from asgard_hooklib.baseline import (  # noqa: E402
+    MAX_CHECKS,  # noqa: F401
     _parallel_pytest,  # noqa: F401
     _run_check,  # noqa: F401
     baseline_ran,
@@ -415,7 +416,7 @@ def _next_note(root: str, qid: str, events: list[dict], policy: dict, args) -> d
         verdict = transition(state, policy, args, load_priors(root))
     except Exception:
         return {}
-    return {key: verdict[key] for key in ("next_role", "why", "verify_level") if key in verdict}
+    return {key: verdict[key] for key in ("next_role", "why", "verify_level", "how") if key in verdict}
 
 
 def _cmd_open(root: str, args) -> int:
@@ -508,6 +509,16 @@ def _append_rejection(raw: dict) -> str:
                 "ticket runtime transitions require ticket-claim/heartbeat/finish/recover; "
                 "raw append only accepts thinker todo definitions"
             )
+    # `harness` 이름이 붙은 **통과 판정**은 Stop 게이트에서 판정자 독립성 검사를 면제받는다
+    # (`evidence.harness_verdict`). 손으로 적을 수 있게 두면 그 면제가 곧 우회다 — diff 를 쓴
+    # 워커가 필드 하나로 자기 PASS 를 하네스 판정으로 위장한다. 진짜 통과 경로
+    # (`_cmd_verify_baseline`)는 `normalize` 를 직접 불러 여기를 안 지난다.
+    #
+    # FAIL 은 막지 않는다. 면제가 붙는 자리는 게이트가 읽는 마지막 PASS·ESCALATE 하나뿐이고,
+    # 실패를 하네스 이름으로 적어서 얻는 것은 없다. 네이티브 루프가 실제로 그렇게 적는다 —
+    # `trinity/turns.py` 의 `invalid-parallel-plan` 은 코드가 낸 구조 판정이라 그 이름이 맞다.
+    if str(raw.get("role") or "").strip().lower() == "harness" and raw.get("verdict") in ("PASS", "ESCALATE"):
+        return "a harness PASS is written by verify-baseline, not by append — record the verdict under your own role"
     if raw.get("verdict", "NA") not in VERDICTS:
         return "verdict must be one of %s" % sorted(VERDICTS)
     # 오타를 받아 주면 그 칸이 정규화에서 사라져 배차가 succeeded 로 접힌다 — 실패를 적었다고

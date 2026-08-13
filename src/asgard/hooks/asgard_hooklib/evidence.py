@@ -7,6 +7,7 @@ SubagentStop 게이트에서는 증거였다. 판정 술어를 한 자리에 두
 
 from __future__ import annotations
 
+import json
 import os
 import shlex
 
@@ -164,3 +165,49 @@ def evidence_breadth(rec: dict) -> int:
     리팩터가 `python3 test_basic.py` exit 0 하나로 PASS 했다. 계약을 한 줄로 쓰는 건 어려운
     과업일수록 쉬우므로, 있는가만 보는 문턱은 난이도가 올라갈수록 낮아진다."""
     return sum(len(cmds) for cmds in evidence_items(rec).values())
+
+
+# 읽을 수 없는 영수증 두 종 — 파일이 안 열리거나(OSError) JSON 이 아니거나(JSONDecodeError 는
+# ValueError). 이름을 붙여 두는 이유는 `paths.UNREADABLE_RECEIPT` 와 같다: `except Exception` 은
+# 진짜 결함까지 삼키고, 이 함수는 거짓이 정상 답이라 삼킨 자리가 겉으로 안 드러난다. 사본인 것은
+# 두 모듈이 같은 등급이라 서로 임포트하지 않기 때문이다 (배포 계약 — test_architecture 의 등급표).
+# 괄호를 벗기지 않는 이유도 있다: 괄호 없는 형태는 Python 3.14 문법이고, 훅은 사용자 환경의
+# 인터프리터로 도는 자립 파일이다.
+_UNREADABLE = (OSError, ValueError)
+
+
+def harness_verdict(rec: dict) -> bool:
+    """이 판정을 하네스가 적었는가 — `verify-baseline` 이 남기는 `role: harness`.
+
+    하네스 판정에는 판정자 자리가 없다. 명령을 고른 것도 돌린 것도 실행 결과를 읽은 것도 전부
+    코드라, 누가 그것을 적었는지 물을 대상이 없다."""
+    return str(rec.get("role") or "").lower() == "harness"
+
+
+def verifier_dispatched(root: str, qid: str) -> bool:
+    """이 퀘스트에서 판정자 자리가 실제로 따로 섰는가 — 디스패치 영수증이 유일한 증거다.
+
+    로그의 `role` 필드는 이것을 답하지 못한다. 그 값은 이벤트를 적는 쪽이 자기 손으로 채우므로,
+    워커가 `{"role":"VERIFIER"}` 를 적으면 로그상으로는 판정자가 돈 것과 한 글자도 다르지 않다.
+    26-08-13 helios-asgard 실측이 정확히 그 모양이었다 — 전이 함수가 VERIFIER 를 12회 배정했고,
+    12회 다 같은 세션이 자기 diff 에 PASS 를 적었으며, 서브에이전트 배차는 0건이었다.
+
+    영수증(`subagent_gate.record_agent_start`)은 호스트가 서브에이전트를 띄울 때 훅이 적는다.
+    모델이 만질 수 없는 기록이라 이 물음의 답이 된다. 없으면 거짓이다 — 서브에이전트가 없는
+    모드에서도 거짓이고, 그쪽은 `verifier_independence` 정책이 면제한다."""
+    directory = os.path.join(root, ".asgard", "quest", "receipts", qid)
+    try:
+        names = os.listdir(directory)
+    except OSError:
+        return False
+    for name in names:
+        if not name.startswith("agent-"):
+            continue
+        try:
+            with open(os.path.join(directory, name), encoding="utf-8") as handle:
+                record = json.load(handle)
+        except _UNREADABLE:
+            continue  # 못 읽는 영수증은 없는 것으로 — 판정을 막을 근거가 못 된다
+        if str(record.get("agent_type") or "").lower().replace("_", "-").endswith("verifier"):
+            return True
+    return False

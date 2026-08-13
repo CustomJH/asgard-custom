@@ -24,6 +24,14 @@
 # 확인하지 않은 초록을 읽으므로, 그때는 `ran` 으로만 적고 직접 다시 돌리라고 말한다.
 #
 # Fail-open + stdlib-only: 주입이 실패해서 판정 턴이 죽으면 본말전도라 어떤 오류든 조용히 exit 0.
+#
+# `from __future__ import annotations` 는 문법 취향이 아니라 그 fail-open 의 조건이다. 훅은 이
+# 저장소의 venv 가 아니라 그 기계가 내주는 파이썬으로 돌고 바닥은 3.9 다 (test_architecture.py 의
+# `test_hooks_parse_on_old_python`). `list | None` 은 3.9 에서 **파싱은 되고** 함수를 정의하는
+# 순간 TypeError 로 죽는데, 그 죽음은 `main()` 의 예외 처리보다 앞이라 fail-open 이 못 받는다 —
+# 26-08-13 codex 독립 판정이 3.9.6 에서 실제로 그 traceback 을 냈다.
+from __future__ import annotations
+
 import json
 import os
 import sys
@@ -34,9 +42,13 @@ _HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
 if _HOOK_DIR not in sys.path:
     sys.path.append(_HOOK_DIR)
 
+from asgard_hooklib.baseline import MAX_CHECKS  # noqa: E402
+from asgard_hooklib.contracts import contract_criteria, criteria_contracts  # noqa: E402
 from asgard_hooklib.firing import run  # noqa: E402
 from asgard_hooklib.inject import client, emit_context  # noqa: E402
 from asgard_hooklib.paths import git, quest_dir  # noqa: E402
+from asgard_hooklib.policy import load_policy  # noqa: E402
+from asgard_hooklib.runners import detect_checks  # noqa: E402
 from asgard_hooklib.session import active_quest  # noqa: E402
 from asgard_hooklib.transcript import (  # noqa: E402
     FULL,
@@ -67,6 +79,8 @@ WRITE_TOOLS = {"Write", "Edit", "NotebookEdit", "Delete"}
 MAX_FILES = 80
 MAX_COMMANDS = 80
 MAX_WRITES = 60
+MAX_CONTRACTS = 5  # contracts.criteria_contracts 의 상한과 같다 — 넘는 것은 하네스도 안 돌린다
+MAX_CHECK_ROWS = 12
 CMD_CHARS = 200
 
 
@@ -154,6 +168,47 @@ def changed_files(root: str, ref: str) -> list:
     return rows
 
 
+def commitments(root: str, events: list) -> tuple:
+    """판정자가 자기 명령을 고르기 전에 알아야 하는 셋 — `(계약, 베이스라인 명령, 이미 돌린 행, 그 상태)`.
+
+    퀘스트가 선언한 verify 계약과 프로젝트 베이스라인은 이 판정이 무엇으로 채점되는지를 정하는데,
+    지금까지 판정자에게 가는 길이 없었다. 그래서 판정자는 채점 기준을 모르는 채 명령을 골랐고,
+    하네스는 PASS 를 받은 뒤 자기 명령을 따로 돌렸다 — 같은 스위트가 한 트리에 두 번 돌았다
+    (26-08-13 실측: 판정 130건, 판정자가 직접 부른 명령 965건 중 pytest 253건, 그와 별개로
+    하네스 베이스라인이 판정당 median 121.8초).
+
+    넘기는 것은 사실뿐이고 무엇을 돌릴지는 안 정한다. 판정 독립성은 판정자가 명령을 직접
+    돌리는 데서 나오므로, 여기서 "다시 안 돌려도 된다"고 말하면 그 독립성을 이 훅이 깎는다.
+    이미 돌린 행에는 그것이 **어느 트리에서** 나왔는지를 함께 적어 판정자가 스스로 정하게 한다."""
+    contracts = criteria_contracts(contract_criteria(*(e.get("criteria") for e in events)))
+    try:
+        checks = detect_checks(root, load_policy(root))
+    except Exception:
+        checks = []  # 정책을 못 읽는 것이 판정 턴을 막을 이유는 안 된다 (이 훅의 fail-open 규약)
+    rows: list = []
+    state = ""
+    for event in reversed(events):
+        if event.get("event") != "verify":
+            continue
+        baseline = event.get("baseline") or {}
+        rows = [r for r in (baseline.get("results") or []) if isinstance(r, dict)]
+        rows += [r for r in (event.get("criteria_checks") or []) if isinstance(r, dict)]
+        state = str(baseline.get("state") or "")
+        break
+    return contracts, list(checks), rows, state
+
+
+def check_mark(row: dict) -> str:
+    """하네스 실행 행 한 건의 결말 — 명령 표식과 같은 어휘를 쓴다.
+
+    `timeout` 을 종료 코드 없음과 뭉치면 판정자가 "안 끝난 검사"를 "결과를 못 읽은 검사"로 읽는다.
+    앞은 상한을 올리면 답이 나오고 뒤는 아니라, 다음에 고칠 자리가 서로 다르다."""
+    if row.get("timed_out"):
+        return "timeout"
+    code = row.get("exit_code")
+    return "exit %s" % code if code is not None else "no exit"
+
+
 def label(call) -> str:
     """이 호출이 어떻게 끝났는가 — 판정자가 워커의 주장과 맞대 볼 한 낱말.
 
@@ -223,7 +278,75 @@ BLANK_DETAIL = {
 }
 
 
-def render(ref: str, turn: int, files: list, commands: list, writes: list, depth: str = FULL) -> str:
+def render_commitments(
+    lines: list, turn: int, contracts: list, checks: list, rows: list, state: str, moved: int = 0
+) -> None:
+    """이 판정이 무엇으로 채점되는지, 그리고 하네스가 이미 무엇을 돌렸는지를 본문에 붙인다.
+
+    `moved` 는 기준 이후 달라진 파일 수다. 이 값을 안 받고 "네가 판정하는 트리가 아니다"라고
+    적던 동안 그 문장은 하네스가 모르는 것을 단언했다 — 워커가 파일을 안 바꾸고 명령만 다시
+    돌린 라운드에서는 트리가 그대로인데도 같은 문장이 나갔다 (26-08-13 codex 독립 판정 3회차).
+    없는 사실을 주는 것이 침묵보다 나쁘다는 이 파일의 규약은 여기에도 걸린다."""
+    if contracts:
+        lines.append("")
+        lines.append(
+            "Declared verify contracts (%d) — the harness runs these itself, and it refuses a PASS," % len(contracts)
+        )
+        lines.append("a close, and the gate while one of them fails or its artifacts are missing:")
+        # 계약마다 번호와 기준 원문을 머리에 세운다. 명령과 산출물만 이어 적으면 계약 넷의 줄이
+        # 한 덩어리로 붙어, 뒤 계약의 산출물이 앞 계약의 명령에 딸린 것으로 읽힌다 (26-08-13 이
+        # 저장소의 실제 주입에서 그렇게 나왔다 — 기준 2·3 의 산출물이 기준 1 의 명령 밑에 섰다).
+        for index, item in enumerate(contracts[:MAX_CONTRACTS], 1):
+            lines.append("  [%d] %s" % (index, str(item.get("description") or "")[:CMD_CHARS]))
+            if item.get("verify_cmd"):
+                lines.append("      run       %s" % str(item["verify_cmd"])[:CMD_CHARS])
+            if item.get("artifacts"):
+                lines.append("      artifacts %s" % " ".join(str(a) for a in item["artifacts"])[:CMD_CHARS])
+    if checks:
+        # 자르는 수는 하네스가 실제로 돌리는 수와 같아야 한다. 5 로 자르던 동안 여섯째 명령은
+        # PASS 채점에 남는데 판정자는 그 존재를 몰랐다 (26-08-13 codex 독립 판정이 잡은 자리).
+        lines.append("")
+        lines.append("Project baseline — the harness runs this itself when it records a PASS:")
+        lines.extend("  %s" % str(c)[:CMD_CHARS] for c in checks[:MAX_CHECKS])
+        if len(checks) > MAX_CHECKS:
+            lines.append("  … %d more declared, which the harness does not run either" % (len(checks) - MAX_CHECKS))
+    if rows:
+        where = "the verdict at turn %d" % turn if turn else "the quest opening"
+        lines.append("")
+        lines.append("Checks the harness already ran at %s (baseline state: %s):" % (where, state or "none"))
+        lines.extend(
+            "  %-9s %7.1fs  %s"
+            % (check_mark(row), float(row.get("secs") or 0.0), str(row.get("cmd") or "")[:CMD_CHARS])
+            for row in rows[:MAX_CHECK_ROWS]
+        )
+        if len(rows) > MAX_CHECK_ROWS:
+            lines.append("  … %d more" % (len(rows) - MAX_CHECK_ROWS))
+        if moved:
+            lines.append("Those ran on the tree at that anchor, not on the tree you are judging — the %d" % moved)
+            lines.append("changed file(s) above moved after them.")
+        else:
+            # 단서는 참인 것만 적는다. "추적된 파일만 본다" 고 적던 동안 그 문장은 거짓이었다 —
+            # 비교는 `current_tree_ref` 로 트리 둘을 짓고 그 트리는 `git add -A` 와 `ls-files
+            # --others` 로 추적 밖 파일까지 담는다 (tree.py 의 `_STAT_NEUTRAL … add -A`). 반례가
+            # 이 저장소에 서 있었다: `??` 로 뜨는 scope_activate.py 가 변경 목록에 M 으로 실렸다.
+            # 실제로 빠지는 것은 무시 경로와 지도 밖 `.asgard/` 다 (26-08-14 판정 둘이 각각 잡았다).
+            lines.append("Those ran on the tree at that anchor. Nothing shows as changed since, so they may still")
+            lines.append("describe this tree — the comparison covers untracked files too, and leaves out only")
+            lines.append("ignored paths and .asgard/ outside the shared map. Confirm anything that turns on those.")
+
+
+def render(
+    ref: str,
+    turn: int,
+    files: list,
+    commands: list,
+    writes: list,
+    depth: str = FULL,
+    contracts: list | None = None,
+    checks: list | None = None,
+    rows: list | None = None,
+    state: str = "",
+) -> str:
     """판정자가 읽을 블록. 사실만 적고 해석은 안 적는다."""
     where = "the last verdict (turn %d)" % turn if turn else "the quest opening"
     # 구간을 자를 수 있는 것은 기록에 시각이 있을 때뿐이다. Cursor 는 안 적으므로 "이후"라고 쓰면
@@ -241,6 +364,8 @@ def render(ref: str, turn: int, files: list, commands: list, writes: list, depth
     lines.extend("  " + row for row in files[:MAX_FILES])
     if len(files) > MAX_FILES:
         lines.append("  … %d more — read them with git diff --name-status" % (len(files) - MAX_FILES))
+    # 기록을 못 읽는 호스트에서도 채점 기준은 그대로 유효하다 — BLANK_REASON 의 이른 반환보다 앞에 둔다.
+    render_commitments(lines, turn, contracts or [], checks or [], rows or [], state, len(files))
     if depth in BLANK_REASON:
         # 침묵보다 나쁜 것은 없는 사실을 주는 것이다 — 빈 목록은 "안 돌렸다"로 읽힌다.
         lines.append("")
@@ -295,12 +420,18 @@ def main() -> None:
         qid = active_quest(root, str(data.get("session_id") or "") or None)
         if not qid:
             sys.exit(0)  # 퀘스트가 없으면 판정 구간도 없다
-        ref, stamp, turn = anchor(quest_events(root, qid))
+        events = quest_events(root, qid)
+        ref, stamp, turn = anchor(events)
         commands, writes, depth = collect({**data, "_since": stamp})
         files = changed_files(root, ref)
         if not (files or commands or writes):
             sys.exit(0)  # 실을 것이 없으면 아무 말도 안 한다
-        emit_context(client(), render(ref, turn, files, commands, writes, depth), "SubagentStart")
+        contracts, checks, rows, state = commitments(root, events)
+        emit_context(
+            client(),
+            render(ref, turn, files, commands, writes, depth, contracts, checks, rows, state),
+            "SubagentStart",
+        )
     except Exception:
         sys.exit(0)
     sys.exit(0)

@@ -554,6 +554,7 @@ class TestCriteriaContracts(TrinityBase):
             "criteria": [{"id": "c1", "desc": "app.py 정상 실행", "status": "met", "evidence": "실행 확인"}],
             "commands": [{"cmd": "git status", "exit_code": 0}],
         }
+        self.verifier_seat()  # 이 판정을 적은 것이 판정자 자리라는 사실 (TestVerifierIndependence 참고)
         self.qlog("append", "--verdict", "PASS", "--session", "s1", stdin=json.dumps(body))
         ev = json.loads(open(os.path.join(self.root, ".asgard", "quest", "q1.jsonl")).read().splitlines()[-1])
         self.assertEqual(ev["criteria_checks"][0]["exit_code"], 0)  # 계약이 여전히 결속된다

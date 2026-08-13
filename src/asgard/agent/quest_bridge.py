@@ -18,16 +18,17 @@ import threading
 def _ql_timeout(root: str) -> int:
     """append(PASS) 하나가 이 프로세스 안에서 얼마나 오래 걸릴 수 있는가.
 
-    그 호출은 하네스 베이스라인과 계약 명령을 직접 실행한다 (체크당 `baseline_timeout`, 최대 10개).
-    상한을 상수로 적어 두면 정책이 커질 때 조용히 어긋나고, 그때 죽는 것은 **이미 끝난 Verifier 턴
-    전체**다 — 판정을 처음부터 다시 사야 하므로 이 시스템에서 가장 비싼 실패다. 그래서 정책에서
-    계산한다. 마지막 120초는 지도 갱신·트리 해시 두 번 같은 나머지 몫이다."""
-    from ..hooks.quest_log import DEFAULT_POLICY, detect_checks, load_policy
+    그 호출은 하네스 베이스라인과 계약 명령을 직접 실행한다 (체크당 `baseline_timeout`, 최대
+    `MAX_CHECKS` 개). 상한을 상수로 적어 두면 정책이 커질 때 조용히 어긋나고, 그때 죽는 것은
+    **이미 끝난 Verifier 턴 전체**다 — 판정을 처음부터 다시 사야 하므로 이 시스템에서 가장 비싼
+    실패다. 그래서 정책에서 계산하고, 상한은 실제로 도는 자리(`asgard_hooklib.baseline`)에서
+    빌린다. 마지막 120초는 지도 갱신·트리 해시 두 번 같은 나머지 몫이다."""
+    from ..hooks.quest_log import DEFAULT_POLICY, MAX_CHECKS, detect_checks, load_policy
 
     try:
         policy = load_policy(root)
         per_check = int(policy.get("baseline_timeout") or 120)
-        checks = min(len(detect_checks(root, policy)), 10) or 1
+        checks = min(len(detect_checks(root, policy)), MAX_CHECKS) or 1
     except Exception:  # 정책을 못 읽어도 append 는 돌아야 한다 — 내장 기본값으로 계산
         per_check, checks = int(DEFAULT_POLICY["baseline_timeout"]), 1
     return per_check * (checks + 1) + 120
@@ -94,7 +95,12 @@ def gate(root: str, session: str = "native") -> tuple[bool, str]:
 
     p = subprocess.run(
         [sys.executable, "-m", "asgard.hooks.verifier_gate"],
-        input=_json.dumps({"session_id": session, "cwd": root}),
+        # `native: true` 는 판정자 독립성 검사 하나를 끈다. 그 검사는 "모델이 정말 판정자를
+        # 띄웠는가"를 디스패치 영수증으로 묻는 장치인데, 네이티브 루프에는 그 물음이 없다 —
+        # 판정자 세션을 코드가 직접 만들고 읽기 전용 도구로 강제해서(trinity/verdict.py 의
+        # `mk_verifier`), 워커가 그 자리를 대신 앉을 수 있는 경로 자체가 없다. 나머지 게이트는
+        # 전부 그대로 돈다. 모델이 이 값을 못 넣는 것이 요점이다: 이 페이로드는 루프가 쓴다.
+        input=_json.dumps({"session_id": session, "cwd": root, "native": True}),
         capture_output=True,
         text=True,
         cwd=root,

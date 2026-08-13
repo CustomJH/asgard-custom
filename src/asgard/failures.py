@@ -60,6 +60,13 @@ GATE_MESSAGES: dict[str, str] = {
         "full-verify required (sensitive paths {sensitive}{deleted} / diff {files} files·{lines} lines) "
         "but this is a micro PASS. Re-verify with --level full."
     ),
+    "verifier-not-independent": (
+        "this PASS was recorded without a verifier seat — no dispatch receipt for an independent verifier "
+        "exists on this quest, so the hand that wrote the diff is the hand that passed it. Dispatch an "
+        "`asgard-verifier` subagent and let it record the verdict. If this host cannot run subagents, set "
+        "trinity_policy.verifier_independence=false in .asgard/asgard-setting-project.json and say so in "
+        "the report."
+    ),
 }
 
 # 하네스가 직접 찍는 failure_sig — 게이트 코드와 같은 어휘 공간 (퀘스트 로그에 영속)

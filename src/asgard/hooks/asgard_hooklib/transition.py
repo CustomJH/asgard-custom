@@ -254,6 +254,40 @@ UNCHANGED_SINCE_FAIL = (
 )
 
 
+# 역할 → 그 역할을 **어떻게 세우는가**. 배정만으로는 배차가 일어나지 않는다: 호스트 모드에서
+# 매 턴 모델에게 실제로 도착하는 신호는 이 응답 한 줄뿐이라, 여기에 "누가 도는가"만 있고 "어디에
+# 세우는가"가 없으면 같은 세션이 그 역할을 연기한다. 26-08-13 helios-asgard 실측: 전이 함수가
+# VERIFIER 를 12회 배정했고 12회 다 워커가 자기 diff 를 자기가 PASS 로 적었다 (서브에이전트 배차
+# 0건). 워커를 인라인으로 도는 것은 합법이고 판정자를 인라인으로 도는 것은 아니라서, 두 문장을
+# 함께 둔다 — 경계가 한 자리에서 보여야 지켜진다.
+DISPATCH_HOW = {
+    "VERIFIER": (
+        "dispatch an independent verifier subagent (Claude Code / Cursor: `asgard-verifier`) — the hand that"
+        " wrote this diff must not record its own verdict. Only when the host provides no subagents may the"
+        " same session record it, and then it judges request + criteria + diff alone, ignoring its own notes."
+    ),
+    "THINKER": (
+        "dispatch a thinker subagent (`asgard-thinker`) — planning is a separate seat from execution, and it"
+        " reads the repository itself instead of inheriting the executor's account of it."
+    ),
+    "THINKER_REPLAN": (
+        "dispatch a thinker subagent (`asgard-thinker`) to replan — the hand that hit the failure is the one"
+        " least able to see past its own hypothesis (Canon 9)."
+    ),
+    "WORKER": (
+        "plan and execute inline as MAIN_WORKER, or hand it to an `asgard-worker` subagent when the work wants"
+        " a context of its own. Either is legal; the verdict that follows is not."
+    ),
+    "WORKER_RETRY": (
+        "the same Worker seat repairs it — inline or `asgard-worker`. Reassign only the unfinished units."
+    ),
+    "BASELINE_VERIFY": (
+        "no subagent — run `quest-log.py verify-baseline` with the same risk flags and let the harness record"
+        " the verdict."
+    ),
+}
+
+
 def transition(s: dict, policy: dict, flags, priors: dict | None = None) -> dict:
     """다음에 누가 도는가 — 결정 테이블. 물음 셋을 순서대로 묻고 첫 답을 그대로 쓴다."""
     axes = _transition_axes(s, policy, flags)
@@ -264,4 +298,7 @@ def transition(s: dict, policy: dict, flags, priors: dict | None = None) -> dict
     # 이 문장이 없으면 다음 사유가 "연속 FAIL" 이라 원인을 접근 탓으로 잘못 적는다.
     if s.get("unchanged_since_fail"):
         why = "%s. Note: %s" % (why, UNCHANGED_SINCE_FAIL)
-    return {"next_role": role, "verify_level": axes["level"], "why": why, "features": axes["features"]}
+    verdict = {"next_role": role, "verify_level": axes["level"], "why": why, "features": axes["features"]}
+    if how := DISPATCH_HOW.get(role):
+        verdict["how"] = how
+    return verdict
