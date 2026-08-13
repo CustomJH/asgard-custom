@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "asgard-workflows",
-  "version": "4",
+  "version": "5",
   "description": "Explicit planning workflows, scope-sized design discipline, and reusable domain language",
   "skills": [
     "council",
@@ -11,10 +11,34 @@
     "domain-modeling",
     "prototype",
     "codebase-design",
-    "merge-resolution"
+    "merge-resolution",
+    "inquiry",
+    "lost",
+    "escort"
   ],
   "routing": {
     "council": {"triggers": ["council", "grill", "작전회의"], "agents": ["worker"]},
+    "inquiry": {
+      "triggers": ["inquiry", "questionnaire", "설문", "질의서"],
+      "agents": ["worker"]
+    },
+    "lost": {"triggers": ["lost", "wait what", "다시 설명"], "agents": ["worker"]},
+    "escort": {
+      "triggers": [
+        "escort",
+        "wizard",
+        "provision",
+        "api key",
+        "ci secret",
+        "third-party setup",
+        "마법사",
+        "프로비저닝",
+        "발급",
+        "시크릿 설정"
+      ],
+      "defaults": ["worker", "eitri"],
+      "agents": ["worker", "eitri", "thor"]
+    },
     "prototype": {
       "triggers": ["prototype", "spike", "프로토타입", "throwaway"],
       "agents": ["worker"]
@@ -23,7 +47,17 @@
     "quests": {"triggers": ["quests", "tickets", "vertical slice", "퀘스트"], "agents": ["worker"]},
     "expedition": {"triggers": ["expedition", "wayfinder", "multi-session", "원정"], "agents": ["worker"]},
     "domain-modeling": {
-      "triggers": ["domain model", "ubiquitous language", "context.md", "adr", "도메인 용어", "결정 기록"],
+      "triggers": [
+        "domain model",
+        "ubiquitous language",
+        "glossary",
+        "context.md",
+        "adr",
+        "도메인 용어",
+        "용어 정리",
+        "용어 통일",
+        "결정 기록"
+      ],
       "agents": ["worker"]
     },
     "codebase-design": {

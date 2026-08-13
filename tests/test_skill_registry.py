@@ -647,7 +647,7 @@ class RegistryTest(unittest.TestCase):
 
         prompt = skill_registry.invoked_skill_prompt(self.root, "/council checkout flow")
         self.assertIn('<user_invoked_skill name="council">', prompt or "")
-        self.assertIn("Ask exactly one decision question per turn", prompt or "")
+        self.assertIn("Put the **whole frontier** to the user in one message", prompt or "")
         self.assertIn("Arguments: checkout flow", prompt or "")
         for route in ("prototype", "domain-modeling", "blueprint", "quests", "expedition"):
             self.assertIn(route, prompt or "")

@@ -170,16 +170,37 @@ its own with `asgard skills disable|enable`. A plugin contains `plugin.json` and
 
 The skill list reports `model` or `user` invocation. Standard `disable-model-invocation: true`
 skills remain manually loadable but stay out of model discovery; Codex adapters also receive the
-matching `agents/openai.yaml` policy. The bundled `asgard-skillcraft` skill applies the same
-trigger/structure/steering/pruning discipline when authoring or reducing skills.
+matching `agents/openai.yaml` policy. The bundled `asgard-skillcraft` skill carries the writing
+discipline for any document an agent reads — a skill, an `AGENTS.md`, a doc behind a pointer.
 
-Inside `asgard start`, `/skills` lists only explicit user workflows and
+### Workflow skills
+
+Inside `asgard start`, `/skills` lists only the user-invoked workflows and
 `/<skill-name> [arguments]` loads exactly that canonical body for the current turn. Built-in
 commands keep priority, disabled skills cannot be invoked through this path, and user workflows
-never enter model discovery. The bundled `/grill-me`, `/to-spec`, `/to-tickets`, and `/wayfinder`
-flows cover decision clarification, work sizing, and durable multi-session handoffs; the
-model-invoked `domain-modeling` and `prototype` skills carry reusable domain vocabulary and
-throwaway design-question artifacts into any of them.
+never enter model discovery — they cost nothing per turn, and only you can start one.
+
+```bash
+/council      # work the decision tree in frontier rounds — every question answerable now, in one round
+/blueprint    # freeze that conversation into one executable spec
+/quests       # cut the spec into vertical slices with their blocking edges declared
+/expedition   # hold the map of a decision-heavy effort that will not fit one session
+/inquiry      # turn a decision you cannot answer alone into a document for the person who can
+/lost         # that last message did not land — one word, and it gets pitched again
+```
+
+The model-invoked ones need no command: the agent reaches for them when the request calls for it.
+`domain-modeling` fixes reusable vocabulary, `prototype` answers a design question with throwaway
+runnable code, `codebase-design` places module boundaries, `merge-resolution` resolves conflicts by
+intent, and `escort` generates an interactive script for the steps only a human can take. Reach any
+of them by hand with `asgard skills show <name>`.
+
+`benchmarks/skill-uptake/harness.py` measures whether that routing actually fires:
+
+```bash
+uv run --no-project python benchmarks/skill-uptake/harness.py          # reach · precision · load · latency
+uv run --no-project python benchmarks/skill-uptake/harness.py --check  # exit 2 on a regression
+```
 
 Routing can be declared centrally under `plugin.json`'s `routing` object, or with the legacy
 `triggers`, `agent` (default assignment), and optional `agents` fields in frontmatter. Resource

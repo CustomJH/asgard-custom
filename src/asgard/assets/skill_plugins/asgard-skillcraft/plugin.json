@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "name": "asgard-skillcraft",
-  "version": "1",
-  "description": "Low-context skill authoring and pruning discipline",
+  "version": "2",
+  "description": "Low-context authoring and pruning discipline for any document an agent reads",
   "skills": ["asgard-skillcraft"],
   "routing": {
     "asgard-skillcraft": {
@@ -11,11 +11,17 @@
         "agent skill",
         "skill authoring",
         "skill refactor",
+        "agents.md",
+        "claude.md",
         "context load",
+        "context pointer",
+        "progressive disclosure",
         "no-op test",
         "스킬 작성",
         "스킬 리팩터링",
+        "에이전트 문서",
         "컨텍스트 부하",
+        "점진 공개",
         "무동작 테스트"
       ],
       "agents": ["worker"]

@@ -1,52 +1,49 @@
 # Skillcraft checklist
 
-## 1. Trigger
+How to prove the document does what `SKILL.md` asks of it. The rules live there; the packaging rules
+live in `MECHANICS.md`. This file is the evidence pass.
 
-- Decide who bears the load. Model invocation spends context on every turn; user invocation spends the operator's memory.
-- A model-facing description names the job and distinct trigger branches. Synonyms for one branch are duplication.
-- A user-facing description is a short picker label. Set `disable-model-invocation: true`; Codex also needs `agents/openai.yaml` with `policy.allow_implicit_invocation: false`.
-- If manual commands become hard to remember, add one user-invoked router rather than making every command model-invoked.
+## Before you return
 
-Done when the chosen mode matches both Claude/Cursor `SKILL.md` discovery and Codex metadata, and the opposite mode cannot load it implicitly.
+- **Trigger** — the pointer names the job and one trigger per distinct branch, and the chosen
+  invocation matches how the skill actually gets started.
+- **Structure** — an ordinary run loads only the common path, every optional branch can retrieve its
+  own resource, and each step ends on a criterion you could check from the outside.
+- **Steering** — the behaviour you asked for shows up in outputs or tool choices. Private reasoning
+  text is not a test oracle.
+- **Size** — catalog characters and canonical body characters, before and after. Smaller counts as a
+  result only when trigger recall and the process checks still pass.
 
-## 2. Structure
+## The deletion test
 
-- Separate ordered steps from supporting reference.
-- Every step ends in a checkable completion criterion.
-- Inline material every branch needs. Put branch-only templates, glossaries, examples, and large rule tables in a sibling file.
-- The context pointer says when to read a resource, not merely where it exists.
-- Keep one source of truth. Cross-skill copies drift; invoke the owning skill or load its resource.
-
-Done when a normal run loads only the common path and each optional branch can retrieve its own resource without path escape.
-
-## 3. Steering
-
-- Prefer a pretrained leading word such as `red-green`, `vertical slice`, `tight loop`, or `fog of war` over a paragraph that restates it.
-- Reuse the same word in description, process, tests, and project vocabulary where it is genuinely the same concept.
-- Positive target behavior beats a list of prohibited alternatives; retain explicit negatives only for safety guardrails.
-- If a visible future step causes premature completion, first sharpen the current completion criterion. Split the sequence only when observed rushing remains.
-
-Done when the behavior appears in outputs or tool choices; private reasoning text is not a required test oracle.
-
-## 4. Pruning and deletion tests
-
-Run the test sentence by sentence for behavior-bearing prose:
+A sentence is a no-op only when behaviour says so. Run it sentence by sentence over prose that
+claims to bear on behaviour:
 
 1. Pick 3-5 representative prompts, including one non-trigger and one edge branch.
-2. Capture observable process signals: selected skill, tool sequence, artifacts, validation command, and final constraint compliance.
-3. Run the canonical skill, then a temporary variant with one sentence removed under the same model/settings where practical.
-4. Delete the sentence only when the observable process remains equivalent across the cases. Keep it when the sample is inconclusive or the sentence is a safety boundary.
-5. Remove the temporary variant. Record the eval cases as the smallest regression that can catch future drift.
+2. Capture observable process signals: which skill was selected, the tool sequence, the artifacts,
+   the validation command, and whether the final output honoured the constraint.
+3. Run the canonical skill, then a temporary variant with one sentence removed, under the same model
+   and settings where practical.
+4. Delete the sentence only when the observable process stays equivalent across the cases. Keep it
+   when the sample is inconclusive, or when the sentence is a safety boundary.
+5. Remove the temporary variant, and record the cases as the smallest regression that would catch
+   this drift again.
 
-For an approved learned skill, reuse `asgard evolve bench` for whole-skill OFF/ON measurement. Sentence-level deletion still requires a temporary variant because the existing bench toggles a complete skill, not one line.
+For an approved learned skill, `asgard evolve bench` measures a whole skill OFF against ON.
+Sentence-level work still needs the temporary variant, because that bench toggles a complete skill
+rather than one line.
 
-Do not claim that prose is a no-op because it sounds generic. A deletion test is behavioral evidence, not word-count preference.
+Prose is not a no-op because it sounds generic. That judgement is a preference about word count
+until a run backs it.
 
-## 5. Asgard checks
+## Surface checks
 
-- `asgard skills list` reports `model` or `user` invocation.
-- A user-invoked skill remains available through `asgard skills show <name>` but is absent from native `<available_skills>` and deterministic `skills resolve` results.
-- In `asgard start`, an exact `/<name> [arguments]` invocation expands the canonical body for that turn; `/skills` lists the zero-context user-invoked choices.
-- Resource reads use `asgard skills show <name> --resource <relative-path>` or native `load_skill`; absolute paths, symlinks, and `..` escapes fail closed.
-- Client adapters contain no policy body. `asgard sync` updates generated adapters without overwriting user-owned files.
-- Compare catalog characters and canonical body characters before/after. Smaller is a result only when trigger recall and process checks still pass.
+- `asgard skills list` reports the invocation as `model` or `user`, matching the frontmatter.
+- A user-invoked skill still answers `asgard skills show <name>`, and is absent from the native
+  `<available_skills>` block and from deterministic `asgard skills resolve` results.
+- In `asgard start`, an exact `/<name> [arguments]` invocation expands the canonical body for that
+  turn, and `/skills` lists the zero-context user-invoked choices.
+- `asgard skills show <name> --resource <relative-path>` reads the sibling file; absolute paths,
+  symlinks, and `..` escapes fail closed.
+- `asgard sync` refreshes the generated adapters without overwriting user-owned files, and the
+  adapters still carry no policy body.
