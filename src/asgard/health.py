@@ -727,7 +727,7 @@ GATE_METRICS = ("severe_files", "cycles")
 #     한다. CI 체크아웃은 기본 depth 1 이라 비교 대상 커밋이 아예 없다.
 #   · 태그 기준(직전 릴리스 재스캔) — 위와 같은 비용에 더해, 태그 사이에 쌓인 악화가 릴리스
 #     시점에 한꺼번에 터진다. 막는 자리가 고치기 가장 비싼 자리가 된다.
-#   · `.asgard/health/history.jsonl` — 이 저장소의 .gitignore 가 `.asgard/*` 를 통째로
+#   · `.asgard/health/history.jsonl` — `.asgard/.gitignore` 의 `*` 가 이 갈래를 통째로
 #     무시해서 CI 는 이 파일을 못 본다. 기계마다 다른 이력이 기준선이 되면 같은 변경이
 #     사람마다 다르게 판정된다.
 #

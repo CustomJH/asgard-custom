@@ -300,9 +300,16 @@ class TestVaultSourceContract(unittest.TestCase):
         self.assertIn("vault.mjs purge", skill)
 
     def test_repo_gitignore_needs_no_entry_for_the_vault(self):
-        """리포 .gitignore는 금고 때문에 한 줄도 늘지 않는다 — `**/.asgard/`가 이미 덮는다."""
+        """리포 .gitignore는 금고 때문에 한 줄도 늘지 않는다 — `.asgard/.gitignore` 의 `*` 가 이미 덮는다."""
+        asgard_rules = [
+            line.strip() for line in (_REPO / ".asgard" / ".gitignore").read_text(encoding="utf-8").splitlines()
+        ]
+        self.assertIn("*", asgard_rules)
+        self.assertFalse(
+            [line for line in asgard_rules if line.startswith("!") and "vanadis" in line],
+            "금고가 `.asgard/.gitignore` 예외 목록에 올라 추적 대상이 됐다",
+        )
         lines = [line.strip() for line in (_REPO / ".gitignore").read_text(encoding="utf-8").splitlines()]
-        self.assertIn("**/.asgard/", lines)
         rules = [line for line in lines if line and not line.startswith("#")]
         self.assertFalse(
             [line for line in rules if "freyja" in line or "folkvangr" in line],
