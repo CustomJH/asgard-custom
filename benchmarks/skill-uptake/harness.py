@@ -177,6 +177,98 @@ SHAPE_GAP: tuple[dict, ...] = (
     {"req": "신규 정산 화면 하나 만들어줘", "lang": "ko"},
 )
 
+# 전문가 배차 — 워커가 이 표면을 넘길 자리가 있다고 듣는가. 스킬 이름 도달과 다른 축이다:
+# 워커에게는 전문가 스킬이 하나도 안 열려 있어서 `resolve_skills` 는 언제나 빈 목록이고,
+# 화면에서 그것은 "아무것도 안 걸렸다"와 구분되지 않는다 (`skill_scope._matching_specialists`).
+#
+# 사례는 전부 26-08-13 helios-asgard 세션의 **원문**이다. 지어낸 문장을 쓰면 트리거에 맞춰
+# 쓰게 되고, 그 배터리는 자기가 자기를 잰다. 그날 대시보드 위젯 작업 18건이 돌았고 Freyja 는
+# 한 번도 안 불렸다 — 그 세션의 지시가 여기 그대로 있다.
+SPECIALIST_CASES: tuple[dict, ...] = (
+    {"req": "1440에서도 넘치지 않게 하려는거임 시작", "lang": "ko", "want": "freyja"},
+    {
+        "req": "폰트랑 내부 위젯들 기준 브레이크 포인트별로 단계별로 알맞게 세팅까지 같이 진행도해줘",
+        "lang": "ko",
+        "want": "freyja",
+    },
+    {
+        "req": "위젯들 안줄어 들었는데? 확인해봐 1440 기준으로 차트 크기도 같이 다 해서 해줘",
+        "lang": "ko",
+        "want": "freyja",
+    },
+    {"req": "co2 reduction 쪽 차트 내부 폰트도 적용해줘 거기 계속 커", "lang": "ko", "want": "freyja"},
+    {
+        "req": "옆에 필터들? 위젯 오른쪽 거기도 크기들 배정이 필요해 내부 컨텐츠도 이어서 다 진행해",
+        "lang": "ko",
+        "want": "freyja",
+    },
+    {"req": "뱃지 컴포넌트 쪽도 반응형되야함", "lang": "ko", "want": "freyja"},
+    {"req": "한번해줘바 현재 1920 1080으로 위젯들 딱 핏하게 나오는데 진행해봐", "lang": "ko", "want": "freyja"},
+    {
+        "req": "helios-application의 dashboard에서 원래 특정 해상도까지의 기준으로는 해상도를 핏하게 유지하게 했는데 조금 깨진거같아. 해상도 부분 패치 한번 잘해봐",
+        "lang": "ko",
+        "want": "freyja",
+    },
+    {"req": "다른 위젯들도 모두 점검해서 다 적용될수 있게 세팅해줘", "lang": "ko", "want": "freyja"},
+    # 백엔드 쪽 회귀 감시 — 이쪽은 이 변경 전에도 걸렸다. 프론트 어휘를 넓히다 이 축이 흔들리면 걸린다.
+    {"req": "refactor the API endpoint and database query", "lang": "en", "want": "thor"},
+    {"req": "결제 API 응답 스키마를 바꾸고 마이그레이션도 같이 해줘", "lang": "ko", "want": "thor"},
+    {"req": "이 잡이 큐에서 두 번 소비되는 것 같아", "lang": "ko", "want": "thor"},
+)
+
+# 전문가 오배차 감시 — 프론트 어휘를 넓히면 여기가 먼저 무너진다. 화면과 무관한 요청이
+# Freyja 로 가면 워커가 자기 표면을 남에게 넘기고, 넘겨받은 쪽은 읽을 화면이 없다.
+SPECIALIST_DENY: tuple[dict, ...] = (
+    {"req": "이 함수 이름만 바꿔줘", "lang": "ko", "deny": ("freyja",)},
+    {"req": "타임아웃 상수를 30초로 올려줘", "lang": "ko", "deny": ("freyja",)},
+    {"req": "훅 배선을 세 호스트에 다 넣어줘", "lang": "ko", "deny": ("freyja",)},
+    {"req": "퀘스트 로그 전이 함수에 역할 하나 더 붙여줘", "lang": "ko", "deny": ("freyja",)},
+    {"req": "bump the version and tag the release", "lang": "en", "deny": ("freyja",)},
+    {"req": "이 테스트가 가끔 깨지는데 원인 좀 찾아줘", "lang": "ko", "deny": ("freyja",)},
+    {"req": "로그 회전 주기를 하루로 바꿔줘", "lang": "ko", "deny": ("freyja",)},
+    # 사진·문서의 해상도와 화면 해상도는 다른 말이다. 이 낱말을 트리거로 쓰면 여기서 걸린다.
+    {"req": "업로드한 사진 해상도를 절반으로 줄여서 저장해줘", "lang": "ko", "deny": ("freyja",)},
+    # 굴절 꼬리가 남의 낱말을 먹는 자리. 트리거 매칭이 뒤 경계를 `er` 까지 늦추므로 `chart` 는
+    # `charter` 를 먹는다 — 이 저장소에는 그 이름의 기능이 있다 (프로젝트 북극성).
+    {"req": "charter 에 이번 분기 목표를 적어줘", "lang": "en", "deny": ("freyja",)},
+    {"req": "프로젝트 차터를 갱신해줘", "lang": "ko", "deny": ("freyja",)},
+    # 한국어 트리거는 낱말 경계가 없다 — 교착어라 조사와 활용이 붙어서 경계를 그을 수 없고,
+    # 그래서 부분 문자열 그대로 본다 (`skill_registry.resolve._trigger_hits`). 짧은 UI 낱말을
+    # 넣으면 남의 합성어 안쪽에 그대로 걸린다. 아래 여섯이 26-08-13 판정이 찾아낸 실물이다.
+    {"req": "멀티모달 입력을 붙여줘", "lang": "ko", "deny": ("freyja",)},
+    {"req": "메모리 레이아웃을 바꿔서 캐시 적중률을 올려줘", "lang": "ko", "deny": ("freyja",)},
+    {"req": "테마별 설정 파일을 분리해줘", "lang": "ko", "deny": ("freyja",)},
+    {"req": "스크롤 로그를 적재하는 배치를 고쳐줘", "lang": "ko", "deny": ("freyja",)},
+    {"req": "다크 런치로 배포해줘", "lang": "ko", "deny": ("freyja",)},
+    {"req": "optimize the profit margin calculation", "lang": "en", "deny": ("freyja",)},
+    # 낱말이 두 뜻인 자리 — 부분 문자열 문제가 아니라 어휘 자체가 화면 밖에서도 쓰인다.
+    # 앞의 여섯을 고친 회차의 판정이 배터리 밖에서 다시 찾아냈다.
+    {"req": "add PKCS7 padding to the cipher block", "lang": "en", "deny": ("freyja",)},
+    {"req": "set a breakpoint in the parser and step through", "lang": "en", "deny": ("freyja",)},
+    {"req": "the queue consumer is not responsive under load", "lang": "en", "deny": ("freyja",)},
+    # 이 저장소 대화에서 가장 흔한 한 마디. `감사` 는 디자인 감사(audit)를 노린 트리거였는데
+    # 인사말에 그대로 걸렸다 — 그 뜻은 `design`·`디자인` 이 이미 잡는다.
+    {"req": "감사합니다 도움이 됐어요", "lang": "ko", "deny": ("freyja",)},
+    # 라틴 트리거를 `_ASCII_TRIGGER` 에 안 걸리게 적으면(점·대문자로 시작) 낱말 경계 레인을
+    # 못 타고 한국어용 부분 문자열 레인으로 떨어진다. `.step` 이 그렇게 들어왔다가 학습 루프의
+    # 가장 흔한 두 줄을 Freyja 로 보냈다 — 이 저장소는 임베더·리랭커 층을 싣고 있어 그 코드가
+    # 실제로 여기 있다.
+    {"req": "optimizer.step() 호출 순서를 고쳐줘", "lang": "ko", "deny": ("freyja",)},
+    {"req": "call scheduler.step after the warmup epochs", "lang": "en", "deny": ("freyja",)},
+    {"req": "rename config.steps to config.stages", "lang": "en", "deny": ("freyja",)},
+    # 로봇 링크를 노린 트리거가 웹 링크를 문다. 로봇 문맥은 조인트·urdf·kinematics 가 잡는다.
+    {"req": "하이퍼링크를 새 탭으로 열게 해줘", "lang": "ko", "deny": ("freyja",)},
+    {"req": "딥링크 라우팅을 고쳐줘", "lang": "ko", "deny": ("freyja",)},
+)
+
+# CAD 표면은 Freyja 가 맞다 — 오탐을 좁히다 이쪽을 잃으면 이 배터리가 잡는다. 세 문장 모두
+# 낱말 경계를 타는 트리거로 걸린다 (`step 파일`·`step file`·`stp`).
+SPECIALIST_CAD_CASES: tuple[dict, ...] = (
+    {"req": "step 파일로 내보내줘", "lang": "ko", "want": "freyja"},
+    {"req": "export it as a STEP file", "lang": "en", "want": "freyja"},
+    {"req": "stp 파일 변환 좀 해줘", "lang": "ko", "want": "freyja"},
+)
+
 ROLES = ("worker", "thor", "freyja", "eitri", "mimir")
 NEW_SKILLS = ("escort", "inquiry", "lost")
 
@@ -184,6 +276,11 @@ NEW_SKILLS = ("escort", "inquiry", "lost")
 FLOORS = {
     "reach": 1.0,
     "precision": 1.0,
+    # 전문가 도달은 1.0 이 아니다. 배터리가 실제 지시 원문이라 그중 하나("1440에서도 넘치지
+    # 않게")에는 화면을 가리키는 낱말이 아예 없고, 낱말 매칭 층은 그것을 원리상 못 잡는다.
+    # 하한을 1.0 으로 걸려면 그 사례를 배터리에서 빼야 하는데, 그러면 남은 구멍이 안 보인다.
+    "specialist_reach": 0.9,
+    "specialist_precision": 1.0,
     "shape_naming": 1.0,
     "shape_precision": 1.0,
     "shape_recall": 1.0,
@@ -221,6 +318,34 @@ def measure_reach(root: str) -> dict:
         "precision": 1.0 - (misfires / denials if denials else 0.0),
         "cases": total + denials,
         "rows": rows,
+    }
+
+
+def measure_specialists(root: str) -> dict:
+    """워커가 이 표면을 넘길 자리를 듣는가 — `_matching_specialists` 가 내는 역할 이름으로 잰다."""
+    from asgard.skill_scope import _matching_specialists
+
+    def roles(request: str) -> list[str]:
+        return [role for role, _ in _matching_specialists(root, request)]
+
+    rows, hits, total, misfires, denials = [], 0, 0, 0, 0
+    for case in SPECIALIST_CASES + SPECIALIST_CAD_CASES:
+        got = roles(case["req"])
+        ok = case["want"] in got
+        hits += ok
+        total += 1
+        rows.append({"req": case["req"], "lang": case["lang"], "want": case["want"], "got": got, "ok": ok})
+    for case in SPECIALIST_DENY:
+        got = roles(case["req"])
+        bad = [role for role in case["deny"] if role in got]
+        denials += 1
+        misfires += bool(bad)
+        rows.append({"req": case["req"], "lang": case["lang"], "deny": list(case["deny"]), "got": got, "ok": not bad})
+    return {
+        "specialist_reach": hits / total if total else 0.0,
+        "specialist_precision": 1.0 - (misfires / denials if denials else 0.0),
+        "specialist_cases": total + denials,
+        "specialist_rows": rows,
     }
 
 
@@ -306,6 +431,7 @@ def measure_latency(root: str, iters: int = 12) -> dict:
 def run(root: str) -> dict:
     result = {
         **measure_reach(root),
+        **measure_specialists(root),
         **measure_semantic(root),
         **measure_shape(root),
         **measure_load(root),
@@ -320,14 +446,16 @@ def run(root: str) -> dict:
 
 
 def _print(result: dict) -> None:
-    total = (
-        result["cases"] + len(SEMANTIC_CASES) + len(SHAPE_CASES) + len(SHAPE_DENY) + len(SHAPE_WANT) + len(SHAPE_GAP)
-    )
+    shape_total = len(SHAPE_CASES) + len(SHAPE_DENY) + len(SHAPE_WANT) + len(SHAPE_GAP)
+    total = result["cases"] + result["specialist_cases"] + len(SEMANTIC_CASES) + shape_total
     print(
-        f"\n  스킬 도달 실측 — 사례 {total}건 (트리거 {result['cases']} · 의미 {len(SEMANTIC_CASES)} · 형상 {len(SHAPE_CASES) + len(SHAPE_DENY) + len(SHAPE_WANT) + len(SHAPE_GAP)})\n"
+        f"\n  스킬 도달 실측 — 사례 {total}건 (트리거 {result['cases']} · 전문가 {result['specialist_cases']}"
+        f" · 의미 {len(SEMANTIC_CASES)} · 형상 {shape_total})\n"
     )
     print(f"  reach      {result['reach']:.0%}   (ko {result['reach_ko']:.0%} · en {result['reach_en']:.0%})")
     print(f"  precision  {result['precision']:.0%}   비트리거에서 새 스킬이 뜨지 않는 비율")
+    print(f"  spec-reach {result['specialist_reach']:.0%}   실제 지시가 넘길 전문가에 닿는 비율")
+    print(f"  spec-prec  {result['specialist_precision']:.0%}   화면 밖 요청이 Freyja 로 안 가는 비율")
     print(f"  semantic   {result['semantic_reach']:.0%}   트리거 낱말 없는 요청 (하한 아님 — 결정론 층의 천장)")
     print(f"  shape      {result['shape_naming']:.0%}   형상 노트가 사용자 호출 스킬 이름을 대는 비율")
     print(f"  shape-prec {result['shape_precision']:.0%}   한 조각짜리 요청이 feature 로 안 올라가는 비율")

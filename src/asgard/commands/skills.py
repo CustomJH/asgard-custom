@@ -129,7 +129,7 @@ def run_skills_show(name: str, body_only: bool = True, resource: str | None = No
     return 0
 
 
-def run_skills_resolve(agent: str, task: str | None, json_out: bool = False) -> int:
+def run_skills_resolve(agent: str, task: str | None, json_out: bool = False, *, scope_only: bool = False) -> int:
     if agent not in ("worker", "freyja", "thor", "thor-lead", "eitri", "mimir", "verifier", "loki"):
         print("invalid agent", file=sys.stderr)
         return 2
@@ -137,7 +137,10 @@ def run_skills_resolve(agent: str, task: str | None, json_out: bool = False) -> 
     if not task.strip():
         print("task is required", file=sys.stderr)
         return 2
-    rows = resolve_skills(os.getcwd(), task, agent)
+    # `--scope-only` 는 프롬프트 주입면이 부르는 얇은 출력이다. 스킬 본문은 합쳐서 16,000자까지
+    # 나오는데, 그것을 매 요청에 싣는 것은 이 층이 하려는 일이 아니다 — 여기서 필요한 것은 형상과
+    # "이 표면은 전문가에게 넘겨라" 한 줄이고, 본문은 그 전문가가 자기 자리에서 읽는다.
+    rows = [] if scope_only else resolve_skills(os.getcwd(), task, agent)
     # 범위 형상 — 판정 표면(verifier/loki)에는 붙이지 않는다: 게이트에 advisory 지식 무주입 규율.
     # 외부 호스트(Codex·Cursor)는 이 출력이 유일한 스킬 통로라 네이티브와 같은 사이징을 여기서 준다.
     shape: dict | None = None

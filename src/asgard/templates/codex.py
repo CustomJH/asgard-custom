@@ -88,6 +88,12 @@ command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/agent-activate.py
 type = "command"
 command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/map-activate.py" codex'
 
+# Work shape and the delivery surface this request belongs to. The judgement is deterministic and
+# already existed; until now only the native loop and a hand-typed CLI call could reach it.
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/scope-activate.py" codex'
+
 # Dispatch-ledger mailbox — mail another session or a `siege serve` process addressed to this one.
 # An empty mailbox costs one read-only sqlite query; the CLI is spawned only when mail is waiting.
 [[hooks.UserPromptSubmit.hooks]]
@@ -192,6 +198,11 @@ command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/agent-activate.py
 [[hooks.SubagentStart.hooks]]
 type = "command"
 command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/map-activate.py" codex'
+
+# The dispatched role's planning discipline. The hook excludes the judging surfaces itself.
+[[hooks.SubagentStart.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/scope-activate.py" codex'
 
 # Verifier input — the harness-observed record of what ran since the last verdict. No matcher here:
 # this block has none, so the hook checks the agent name itself and exits for everyone else.

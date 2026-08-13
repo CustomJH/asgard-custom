@@ -169,6 +169,12 @@ def cc_settings() -> str:
                                     "type": "command",
                                     "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/map-activate.py"',
                                 },
+                                # 이 요청의 작업 형상과, 넘길 전문가가 있는지. 계획 규율은 결정론으로
+                                # 정해져 있었지만 세 호스트 모드에는 그것이 오는 길이 없었다.
+                                {
+                                    "type": "command",
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/scope-activate.py"',
+                                },
                                 # 배차 장부 우편함 — 다른 세션이나 `siege serve` 가 이 세션 앞으로
                                 # 보낸 메일. 받을 것이 없으면 sqlite 조회 하나로 끝난다.
                                 {
@@ -209,6 +215,12 @@ def cc_settings() -> str:
                                 {
                                     "type": "command",
                                     "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/map-activate.py"',
+                                },
+                                # 배차받은 역할의 형상 규율. 판정 표면(verifier·loki)은 훅이 스스로
+                                # 제외한다 — advisory 지식은 판정자에게 가지 않는다.
+                                {
+                                    "type": "command",
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/scope-activate.py"',
                                 },
                                 # What a dispatched agent needs to reach the ledger it is already on:
                                 # its own address, where to leave a question it cannot settle, and how

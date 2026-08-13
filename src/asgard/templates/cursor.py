@@ -82,6 +82,8 @@ def cursor_hooks_json() -> str:
                         {"command": f"{py} .cursor/hooks/lagom-tracker.py cursor"},
                         {"command": f"{py} .cursor/hooks/memory-activate.py cursor"},
                         {"command": f"{py} .cursor/hooks/map-activate.py cursor"},
+                        # 이 요청의 작업 형상과 넘길 전문가 — Cursor 는 `additional_context` 로 받는다.
+                        {"command": f"{py} .cursor/hooks/scope-activate.py cursor"},
                         # 되짚기의 앞쪽 절반 — 주입 통로가 없어도 `user_message`로 **사용자에게**는
                         # 닿는다. 원래 모델에 넣지 않을 층이라 이 제약이 여기서는 제약이 아니다.
                         {"command": f"{py} .cursor/hooks/tutor-note.py cursor brief"},
@@ -109,6 +111,10 @@ def cursor_hooks_json() -> str:
                         {
                             "matcher": "Task",
                             "command": f"{py} .cursor/hooks/map-activate.py cursor",
+                        },
+                        {
+                            "matcher": "Task",
+                            "command": f"{py} .cursor/hooks/scope-activate.py cursor",
                         },
                         # Canon 4 + 통제 표면 보호 — 판정에 역할 신원이 필요 없는 규율만 여기서 돈다
                         # (preToolUse 페이로드엔 agent_type이 없다; 읽기전용 역할은 에이전트

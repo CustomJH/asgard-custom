@@ -743,5 +743,52 @@ class RegistryTest(unittest.TestCase):
             skill_registry.install_plugin(source)
 
 
+class TriggerLaneTest(unittest.TestCase):
+    """트리거가 어느 레인을 타는가 — 라틴은 낱말 경계, 한국어는 부분 문자열.
+
+    두 레인을 가르는 것은 `_ASCII_TRIGGER` 하나다. 통과하지 못한 트리거는 경계 없이 도는데, 그
+    레인은 조사와 활용이 붙어 경계를 그을 수 없는 교착어를 위한 것이다. 라틴 트리거를 그 관문에
+    안 걸리게 적으면 조용히 그쪽으로 떨어진다 — 26-08-13 에 `.step` 이 그렇게 들어와
+    `optimizer.step()`·`config.steps` 를 3D 스킬로 보냈다. 손으로 목록을 적지 않고 전수를 보는
+    이유는 그 목록이 낡기 때문이다: 새 플러그인이 같은 실수를 하는 순간 여기서 걸린다."""
+
+    def _bundled_triggers(self):
+        from asgard.skill_registry.bundles import bundled_plugins
+
+        for plugin in bundled_plugins().values():
+            for skill, route in (plugin.get("routing") or {}).items():
+                for trigger in route.get("triggers") or ():
+                    yield plugin.get("name", "?"), skill, trigger
+
+    def test_ascii_only_triggers_take_the_word_boundary_lane(self):
+        from asgard.skill_registry.resolve import _ASCII_TRIGGER, _trigger_pattern
+
+        offenders = [
+            (plugin, skill, trigger)
+            for plugin, skill, trigger in self._bundled_triggers()
+            if trigger.isascii() and not _ASCII_TRIGGER.match(trigger)
+        ]
+        self.assertEqual(offenders, [], "ASCII 트리거가 부분 문자열 레인으로 떨어진다")
+        # 관문을 통과한 것은 실제로 경계 패턴을 받아야 한다 — 통과와 컴파일이 갈리면 위 대조는
+        # 참인데 매칭은 여전히 부분 문자열이다.
+        for plugin, skill, trigger in self._bundled_triggers():
+            if trigger.isascii():
+                self.assertIsNotNone(_trigger_pattern(trigger), f"{plugin}/{skill}: {trigger!r}")
+
+    def test_the_boundary_lane_still_matches_a_dotted_identifier_segment(self):
+        """경계 레인은 `optimizer.step` 의 `step` 을 **독립 낱말로 본다** — 점이 경계다.
+
+        그래서 이 부류를 막는 것은 매칭 규칙이 아니라 어휘 선택이다: 흔한 식별자 조각과 같은
+        낱말은 단독 트리거로 쓰지 않고 구로 적는다 (`step file`). 이 시험은 그 사실을 고정한다 —
+        여기가 뒤집히면 `.step` 을 되살려도 안전하다고 잘못 읽게 된다."""
+        from asgard.skill_registry.resolve import _trigger_hits
+
+        self.assertTrue(_trigger_hits("step", "optimizer.step() 호출 순서를 고쳐줘"))
+        self.assertFalse(_trigger_hits("step file", "optimizer.step() 호출 순서를 고쳐줘"))
+        self.assertTrue(_trigger_hits("step file", "export it as a step file"))
+        self.assertTrue(_trigger_hits("ports & adapters", "apply ports & adapters here"))
+        self.assertFalse(_trigger_hits("cad", "the cascade is wrong"))  # 앞 경계 — 낱말 안쪽은 안 잡는다
+
+
 if __name__ == "__main__":
     unittest.main()

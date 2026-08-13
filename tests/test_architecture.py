@@ -46,6 +46,8 @@ from __future__ import annotations
 
 import ast
 import os
+import shutil
+import subprocess
 import unittest
 
 SRC = os.path.join(os.path.dirname(__file__), "..", "src", "asgard")
@@ -753,6 +755,7 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
                     "quest_log",
                     "readonly_guard",
                     "release_guard",
+                    "scope_activate",
                     "secret_guard",
                     "siege_inbox",
                     "subagent_gate",
@@ -1347,6 +1350,121 @@ class TestLayeredArchitecture(unittest.TestCase):
             broken,
             f"훅이 python {floor[0]}.{floor[1]} 에서 파싱되지 않는다 (조용히 죽는다):\n" + "\n".join(broken),
         )
+
+    def test_hooks_do_not_evaluate_new_union_syntax_at_import(self):
+        """문법 바닥의 두 번째 축 — 파싱되는데 **정의될 때** 죽는 어노테이션.
+
+        위 시험은 `ast.parse` 로 문법만 본다. `str | None` 은 3.9 에서 문법으로는 멀쩡히 파싱되고
+        함수를 정의하는 순간 `TypeError: unsupported operand type(s) for |` 로 죽는다. 죽는 자리가
+        모듈 임포트 시점이라 훅의 fail-open(`main()` 의 except)보다 앞이고, 그래서 훅 계약이
+        약속한 조용한 exit 0 대신 traceback 과 exit 1 이 나간다.
+
+        26-08-13 에 그 자리가 둘 있었다 — codex 독립 판정이 3.9.6 에서 실제로 재현했다. 위 시험은
+        그동안 초록이었다: 두 시험이 보는 것이 문법과 평가로 서로 다르다.
+
+        고치는 법은 하나다: `from __future__ import annotations`. 그러면 어노테이션이 문자열로
+        남아 평가되지 않는다. 그것을 쓴 모듈은 여기서 면제된다."""
+        hooks_dir = os.path.join(SRC, "hooks")
+        library_dir = os.path.join(hooks_dir, HOOK_LIBRARY)
+        listing = [(hooks_dir, f) for f in sorted(os.listdir(hooks_dir)) if f.endswith(".py")]
+        listing += [(library_dir, f) for f in sorted(os.listdir(library_dir)) if f.endswith(".py")]
+        offenders: list[str] = []
+        for directory, name in listing:
+            path = os.path.join(directory, name)
+            tree = ast.parse(open(path, encoding="utf-8").read())
+            deferred = any(
+                isinstance(node, ast.ImportFrom)
+                and node.module == "__future__"
+                and any(alias.name == "annotations" for alias in node.names)
+                for node in tree.body
+            )
+            if deferred:
+                continue
+            rel = os.path.relpath(path, hooks_dir).replace(os.sep, "/")
+            for node in ast.walk(tree):
+                spots = []
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    args = node.args
+                    spots = [a.annotation for a in (*args.posonlyargs, *args.args, *args.kwonlyargs) if a.annotation]
+                    spots += [a.annotation for a in (args.vararg, args.kwarg) if a is not None and a.annotation]
+                    spots += [node.returns] if node.returns else []
+                elif isinstance(node, ast.AnnAssign):
+                    spots = [node.annotation]
+                for annotation in spots:
+                    if any(isinstance(n, ast.BinOp) and isinstance(n.op, ast.BitOr) for n in ast.walk(annotation)):
+                        offenders.append(f"hooks/{rel}:{annotation.lineno} — {ast.unparse(annotation)}")
+        self.assertFalse(
+            offenders,
+            "훅 어노테이션이 임포트 시점에 평가되어 낡은 파이썬에서 죽는다 "
+            "(`from __future__ import annotations` 를 넣어라):\n" + "\n".join(offenders),
+        )
+
+    def test_hooks_import_on_the_floor_interpreter_when_one_is_installed(self):
+        """위 둘이 못 보는 나머지 — 실제로 바닥 인터프리터에 태워 본다.
+
+        앞의 두 시험은 각자 구멍이 있다. `ast.parse` 는 문법만 보고, 어노테이션 검사는 어노테이션
+        자리만 본다. 모듈 수준 별칭(`MaybeText = str | None`)은 둘 다 지나가면서 3.9 임포트에서
+        TypeError 로 죽는다 — 26-08-13 codex 독립 판정 3회차가 이 구멍을 만들어 보였다. 패턴을
+        넓혀 잡으려 하면 `A | B` 가 집합 연산인 멀쩡한 줄까지 잡거나 다시 구멍이 난다 (이 저장소가
+        가드 정규식에서 세 턴 연속 겪은 진동). 그래서 패턴을 넓히는 대신 **실행**으로 판정한다.
+
+        임포트만 하고 `main()` 은 안 돈다 — 훅은 `if __name__ == "__main__"` 뒤에 있어서 부작용이
+        없고, 죽는 자리는 정의 시점이라 임포트로 잡힌다.
+
+        바닥 인터프리터가 없는 기계에서는 건너뛴다. 건너뛴 시험은 가드가 아니므로 위 둘을 지운
+        대신이 아니라 그 위에 얹는 층이다."""
+        floor = self._floor_interpreter()
+        if not floor:
+            self.skipTest("python 3.9 인터프리터가 이 기계에 없다 — 위 두 정적 시험만 선다")
+        hooks_dir = os.path.join(SRC, "hooks")
+        # `sys.modules` 등록은 생략하면 안 된다 — 3.9 의 dataclasses 는 필드 타입을 풀 때
+        # `sys.modules.get(cls.__module__)` 를 거치고, 등록 안 된 모듈에서는 그것이 None 이라
+        # 멀쩡한 훅이 AttributeError 로 죽는다. 실제 호스트는 훅을 `__main__` 으로 돌려 그 자리가
+        # 없으므로, 등록을 빼면 시험만 빨개진다 (budget_guard 가 실제로 그렇게 걸렸다).
+        probe = (
+            "import importlib.util,os,sys\n"
+            "h=sys.argv[1]\n"
+            "sys.path.insert(0,h)\n"
+            "bad=[]\n"
+            "for f in sorted(os.listdir(h)):\n"
+            "    if not f.endswith('.py'): continue\n"
+            "    name='hk_'+f[:-3].replace('-','_')\n"
+            "    s=importlib.util.spec_from_file_location(name,os.path.join(h,f))\n"
+            "    m=importlib.util.module_from_spec(s)\n"
+            "    sys.modules[name]=m\n"
+            # `Exception` 만 잡으면 `SystemExit` 이 그물을 빠져나간다 — 그것은 `BaseException` 이라
+            # 탐침 프로세스를 조용히 끝내고, stdout 만 보던 판정은 초록을 냈다 (26-08-14 codex
+            # 독립 판정이 import 시점 `SystemExit(7)` 로 그 구멍을 만들어 보였다). 종료 코드도 함께
+            # 본다: 탐침이 끝까지 못 간 것과 훅이 멀쩡한 것은 서로 다른 사실이다.
+            "    except BaseException as e: bad.append('%s: %s: %s'%(f,type(e).__name__,e))\n"
+            "print('\\n'.join(bad))\n"
+        )
+        p = subprocess.run([floor, "-c", probe, hooks_dir], capture_output=True, text=True, cwd=SRC)
+        self.assertEqual(
+            p.returncode,
+            0,
+            "바닥 인터프리터(%s) 탐침이 끝까지 못 갔다 — 훅 임포트 판정을 못 세운다:\n%s"
+            % (floor, (p.stderr or p.stdout).strip()[-800:]),
+        )
+        self.assertFalse(
+            p.stdout.strip(),
+            "훅이 바닥 인터프리터(%s) 임포트에서 죽는다 — fail-open 보다 앞이라 조용하지도 않다:\n%s"
+            % (floor, p.stdout.strip()),
+        )
+
+    @staticmethod
+    def _floor_interpreter() -> str | None:
+        """이 기계에 있는 3.9 인터프리터 — 없으면 None. 정본 경로(uv)가 아니라 폴백 경로를 흉내낸다."""
+        for candidate in ("python3.9", "/usr/bin/python3"):
+            path = shutil.which(candidate) if not candidate.startswith("/") else candidate
+            if not path or not os.path.exists(path):
+                continue
+            probe = subprocess.run(
+                [path, "-c", "import sys;print('%d.%d' % sys.version_info[:2])"], capture_output=True, text=True
+            )
+            if probe.returncode == 0 and probe.stdout.strip() == "3.9":
+                return path
+        return None
 
 
 class TestRoleContract(unittest.TestCase):

@@ -32,7 +32,12 @@ def _resolve_bundled(root: str, task: str, agent: str) -> list[tuple[str, str]]:
     return hits
 
 
-_ASCII_TRIGGER = re.compile(r"^[a-z0-9][a-z0-9 ._+-]*$")
+# 이 관문을 통과하는 트리거만 낱말 경계로 매칭된다. 통과하지 못한 것은 부분 문자열 레인으로
+# 떨어지는데, 그 레인은 조사와 활용이 붙어 경계를 그을 수 없는 한국어를 위한 것이다. 그래서
+# 라틴 트리거가 여기 안 걸리게 적히면 조용히 한국어 레인을 탄다 — 26-08-13 에 `.step` 이 그렇게
+# 들어와 `optimizer.step()` 을 3D 스킬로 보냈다. `&` 를 받는 이유가 그것이다: 그 글자 하나 때문에
+# `ports & adapters` 가 경계 없이 돌고 있었다. 새 위반은 `test_skill_registry` 의 전수 대조가 잡는다.
+_ASCII_TRIGGER = re.compile(r"^[a-z0-9][a-z0-9 &._+-]*$")
 _TRIGGER_TAIL = r"(?:s|es|ing|ed|er|ers)?"
 
 

@@ -61,10 +61,13 @@ def skills_resolve(
     task: str = typer.Argument(None, help="the task at hand (read from stdin if you leave it out)"),
     agent: str = typer.Option("worker", "--agent", help="worker|freyja|thor|eitri|mimir"),
     json_: bool = typer.Option(False, "--json"),
+    scope_only: bool = typer.Option(
+        False, "--scope-only", help="work shape and specialist match only — no skill bodies (prompt injection)"
+    ),
 ) -> None:
     from ..commands.skills import run_skills_resolve
 
-    raise typer.Exit(run_skills_resolve(agent, task, json_))
+    raise typer.Exit(run_skills_resolve(agent, task, json_, scope_only=scope_only))
 
 
 @skills_app.command(

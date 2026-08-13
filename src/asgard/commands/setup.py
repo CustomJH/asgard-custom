@@ -353,6 +353,8 @@ def hook_files(hooks_dir: str, client: str = "claude-code") -> list[tuple[str, s
         (j(hooks_dir, "manual-activate.py"), hook("manual-activate")),
         (j(hooks_dir, "agent-activate.py"), hook("agent-activate")),
         (j(hooks_dir, "map-activate.py"), hook("map-activate")),
+        # 작업 형상과 전문가 표면 — 이 요청을 넘길 자리가 있는지 (UserPromptSubmit/SubagentStart).
+        (j(hooks_dir, "scope-activate.py"), hook("scope-activate")),
         # 판정자 입력 — 하네스가 관측한 실행 기록. 배선은 판정자 서브에이전트가 있는 호스트에만.
         (j(hooks_dir, "verifier-context.py"), hook("verifier-context")),
         # 배차받은 쪽의 통로 — 자기 배차 주소, 막혔을 때 남기는 질문, 실패를 적는 자리 (SubagentStart).
