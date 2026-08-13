@@ -7,8 +7,8 @@
 ## Orientation
 
 - Project root: `./`
-- Languages by observed source files: Python (705), JavaScript (6), Rust (2)
-- Evidence scan: 943 files; 47 landmarks
+- Languages by observed source files: Python (707), JavaScript (6), Rust (2)
+- Evidence scan: 923 files; 47 landmarks
 
 ## Landmarks
 
@@ -88,15 +88,22 @@
 - `benchmarks/memory-graph/REPORT.md` — doc: 기억 그래프 벤치 — 명시 링크만 vs 파생 간선까지 (26-08-06) · sections: 질문; 방법; 결과; 읽는 법; 이 벤치가 못 재는 것; 대조 — 무엇을 가져왔고 무엇을 안 가져왔나
 - `benchmarks/project-memory/REPORT.md` — doc: 2차(프로젝트) 메모리 회수 벤치 · sections: 레인 1 · 로컬 문서 레인 hit@k (실측 26-08-01); 레인 2 · 관계 1홉 확장은 회수를 **올린다** (깎지 않는다); 레인 3 · 동언어 렉시컬 기권 정밀도; 제품 코드를 고쳐야만 잴 수 있는 것 (안 고쳤다)
 - `benchmarks/shortcut-recall/REPORT.md` — doc: 숏컷 벤치 — recall 주입 on/off A/B (26-07-16, 36런) · sections: 질문; 방법 (harness.py); 결과 (results-36runs.jsonl — 런당 1행 append, 원본 그대로); 판정기 주의 (jsonl 의 _success_ 필드를 그대로 믿지 말 것); 한계
+- `benchmarks/skill-uptake/REPORT.md` — doc: 스킬 도달 실측 — 배차가 새 스킬에 닿는가 (2026-08-13) · sections: 결과; 돌리는 법; 이 실측이 찾아낸 것; 이 벤치가 못 재는 것
 - `docker/asgard-k6/README.md` — doc: asgard-k6 — 부하 시험 러너 이미지 · sections: 왜 우리 이름의 이미지인가; 볼륨은 프로젝트 것이다; 수동 스택
 - `docker/asgard-project-memory/README.md` — doc: asgard-project-memory — 2차 메모리(프로젝트 메모리) Hindsight 서버 · sections: 기본 구성 (2026-07-23 확정); 백엔드 제약 — 이 구성의 모든 상한이 여기서 나온다; 기동; 뱅크 단위 설정 — compose 가 못 닿는 층; 클라이언트; 설계 결정
 - `tests/load/README.md` — doc: Project memory load harness (k6, Docker) — 실측 기록 · sections: 실행; 실측 (Hindsight 0.8.3 · Docker · M-series · 2026-07-28); 정정 — 원인은 링크 밀도가 아니었다 (26-07-28 3차, 실서버 계측)
-- `benchmarks/shortcut-recall/shortcut-mem/SCHEMA.md` — doc: Memory Schema — 개인 위키 규약 · sections: 페이지 규약; 운영 (asgard memory <op>); 불변식
-- `benchmarks/shortcut-recall/shortcut-mem/index.md` — doc: Memory Index
-- `benchmarks/shortcut-recall/shortcut-mem/log.md` — doc: Memory Log
-- `benchmarks/shortcut-recall/shortcut-mem/maps/index.md` — doc: 메모리 지도 · sections: 종류별 — _maps/kind/_
-- `benchmarks/shortcut-recall/shortcut-mem/maps/loose-ends.md` — doc: 끊어진 곳 · sections: 아무도 가리키지 않는 페이지; 죽은 링크
-- `benchmarks/shortcut-recall/shortcut-mem/maps/recent.md` — doc: 최근순
+- `src/asgard/assets/k6_kit/README.md` — doc: asgard-k6 · sections: 왜 selftest 가 먼저인가; 시나리오; 표면 뒤의 것들; 도커 쪽 집
+- `src/asgard/templates/roles/asgard-eitri.md` — doc: asgard-eitri — ⚒️ Build/CI/packaging specialist (Delivery)
+- `src/asgard/templates/roles/asgard-freyja.md` — doc: asgard-freyja — UI/UX specialist (Delivery)
+- `src/asgard/templates/roles/asgard-loki.md` — doc: asgard-loki — 🐍 Adversarial specialist (Delivery)
+- `src/asgard/templates/roles/asgard-mimir.md` — doc: asgard-mimir — 🧭 Code-guide specialist (Delivery)
+- `src/asgard/templates/roles/asgard-planner.md` — doc: asgard-planner — 제품 기획 에이전트 · sections: 기본 계약; 진행 방식; 판단 경계
+- `src/asgard/templates/roles/asgard-thinker.md` — doc: asgard-thinker — 🧠 Strategy (Trinity)
+- `src/asgard/templates/roles/asgard-thor-lead.md` — doc: asgard-thor-lead — 🛡 Backend squad lead (Delivery orchestration)
+- `src/asgard/templates/roles/asgard-thor.md` — doc: asgard-thor — ⚡ Backend specialist (Delivery)
+- `src/asgard/templates/roles/asgard-ullr.md` — doc: asgard-ullr — 🏹 Exploration specialist (Delivery)
+- `src/asgard/templates/roles/asgard-verifier.md` — doc: asgard-verifier — ⚖️ Verdict (Trinity) · sections: What PASS costs; Reporting a defect; This repository's rules
+- `src/asgard/templates/roles/asgard-worker.md` — doc: asgard-worker — 🔨 Execution (Trinity)
 
 ## Public surfaces
 
@@ -116,6 +123,7 @@
 - `benchmarks/project-memory/corpus.py` — public surface: def build(root)
 - `benchmarks/project_memory_projection.py` — public surface: def local_benchmark(files); def live_benchmark(); def main(); uses `src/asgard/memory_context.py`
 - `benchmarks/shortcut-recall/harness.py` — public surface: def build_sandbox(); def build_memory(); def precheck(); def run_one(fid, task, judge, arm, rep); def main()
+- `benchmarks/skill-uptake/harness.py` — public surface: def measure_reach(root); def measure_semantic(root); def measure_shape(root); def measure_load(root); def measure_latency(root, iters)
 - `studio-shell/src-tauri/icons/build_icons.py` — public surface: def superellipse(box, n, steps); def body_mask(size); def night(size); def master(); def main()
 - `tests/cli_boundary.py` — public surface: def strip_ansi(text); class Outcome; def run_cli(*argv, stdin)
 - `tests/heimdall/harness.py` — public surface: class FakeSession; class FakeHeimdall; def worker(files, root, text); def verifier(verdict, observed, structural, sig, why, …); def thinker(plan, commands); uses `src/asgard/i18n.py`, `src/asgard/providers.py`
@@ -147,7 +155,6 @@
 - `tests/test_craft_fix.py` — public surface: class RepairTest; class TableTest; class NotACommentTest; class EncodingTest; class ApplyTest; uses `src/asgard/commands/craft.py`
 - `tests/test_craft_gate_e2e.py` — public surface: class ShippedHookRuns; class RepairLane
 - `tests/test_craft_gate_hook.py` — public surface: class WriteFilter; class MergedJudgement; class RepairLane; class Receipt; class Reason
-- `tests/test_craft_lang.py` — public surface: class ScrubTest; class ExtractTest; class DepthTest; class CMemoryTest; class CBoundsAndCostTest
 
 ## Navigation contract
 
