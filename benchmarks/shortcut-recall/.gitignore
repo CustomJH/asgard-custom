@@ -1,0 +1,4 @@
+# harness.py 가 매 실행마다 지우고 다시 만드는 산출물. shortcut-sandbox 는 자체 .git 을
+# 가진 저장소라 추적하면 URL 없는 gitlink 로 들어간다.
+shortcut-sandbox/
+shortcut-mem/
