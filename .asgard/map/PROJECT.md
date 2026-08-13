@@ -7,8 +7,8 @@
 ## Orientation
 
 - Project root: `./`
-- Languages by observed source files: Python (707), JavaScript (6), Rust (2)
-- Evidence scan: 923 files; 47 landmarks
+- Languages by observed source files: Python (709), JavaScript (6), Rust (2)
+- Evidence scan: 925 files; 47 landmarks
 
 ## Landmarks
 
@@ -123,7 +123,7 @@
 - `benchmarks/project-memory/corpus.py` — public surface: def build(root)
 - `benchmarks/project_memory_projection.py` — public surface: def local_benchmark(files); def live_benchmark(); def main(); uses `src/asgard/memory_context.py`
 - `benchmarks/shortcut-recall/harness.py` — public surface: def build_sandbox(); def build_memory(); def precheck(); def run_one(fid, task, judge, arm, rep); def main()
-- `benchmarks/skill-uptake/harness.py` — public surface: def measure_reach(root); def measure_semantic(root); def measure_shape(root); def measure_load(root); def measure_latency(root, iters)
+- `benchmarks/skill-uptake/harness.py` — public surface: def measure_reach(root); def measure_specialists(root); def measure_semantic(root); def measure_shape(root); def measure_load(root)
 - `studio-shell/src-tauri/icons/build_icons.py` — public surface: def superellipse(box, n, steps); def body_mask(size); def night(size); def master(); def main()
 - `tests/cli_boundary.py` — public surface: def strip_ansi(text); class Outcome; def run_cli(*argv, stdin)
 - `tests/heimdall/harness.py` — public surface: class FakeSession; class FakeHeimdall; def worker(files, root, text); def verifier(verdict, observed, structural, sig, why, …); def thinker(plan, commands); uses `src/asgard/i18n.py`, `src/asgard/providers.py`
