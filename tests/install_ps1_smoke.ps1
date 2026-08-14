@@ -227,15 +227,17 @@ function Main {
 '@
 $env:ASGARD_FORCE_UI = '1'
 $env:ASGARD_ASCII = '1'
+$env:NO_COLOR = ''
 $s = Run-Scenario $spinFake '1'
 $env:ASGARD_FORCE_UI = $prevUi
 $env:ASGARD_ASCII = $prevAscii
+$env:NO_COLOR = $prevNoColor
 
 Check 'a spun step reports its exit code' ($s.Out -match 'SPINRC=5') $s.Out
 Check 'a spun step keeps the child stdout' ($s.Out -match 'SPINOUT=[^\r\n]*spaced ok') $s.Out
 Check 'a spun step keeps the child stderr' ($s.Out -match 'SPINOUT=[^\r\n]*err line') $s.Out
 $esc = [char]27
-$frames = @($s.Out -split "`n" | Where-Object { $_ -match 'slow step in flight' } |
+$frames = @($s.Out -split '[\r\n]+' | Where-Object { $_ -match 'slow step in flight' } |
     ForEach-Object { $_ -replace ($esc + '\[[0-9;]*m'), '' })
 Check 'the spinner redraws while the step runs' ($frames.Count -ge 3) ("frames drawn: " + $frames.Count)
 $wheel = @($frames | ForEach-Object { if ($_ -match '^\s*(\S)\s') { $Matches[1] } } | Sort-Object -Unique)
@@ -243,7 +245,7 @@ Check 'the spinner actually turns' ($wheel.Count -ge 2) ("distinct frames: '" + 
 # The frames end in a carriage return, not a newline. If the line is not wiped when the step ends,
 # whatever prints next lands ON TOP of the last frame - the result mark would read
 # "  / installing asgard...OK asgard". Cleared, SPINRC starts its own line; uncleared, it does not.
-Check 'the spinner line is wiped before the next line prints' ($s.Out -match '(?m)^\s*SPINRC=5') $s.Out
+Check 'the spinner line is wiped before the next line prints' ($s.Out -match '(?:^|[\r\n])\s*SPINRC=5') $s.Out
 
 # Redirected output (CI, `> log.txt`) cannot animate. The step must still announce itself and still
 # report honestly - a silent success there reads exactly like a hang.
