@@ -422,6 +422,20 @@ class TestStandardTransition(TrinityBase):
         self.work()
         self.assertEqual(self.nxt()["next_role"], "BASELINE_VERIFY")
 
+    def test_write_expected_empty_diff_requires_verifier_and_rejects_baseline(self):
+        self.open_quest()
+        self.work()
+        self.assertEqual(self.nxt()["next_role"], "VERIFIER")
+        vb = self.qlog("verify-baseline", "--write-expected")
+        self.assertEqual(vb.returncode, 1)
+        self.assertEqual(json.loads(vb.stderr)["next_role"], "VERIFIER")
+
+    def test_unflagged_empty_diff_keeps_tree_observation_path(self):
+        self.open_quest()
+        self.work()
+        self.assertEqual(jout(self.qlog("next"))["next_role"], "BASELINE_VERIFY")
+        self.assertEqual(jout(self.qlog("verify-baseline"))["verdict"], "PASS")
+
     def test_role_dispatch_always_keeps_the_llm_verifier_on_a_small_write(self):
         """저장소마다 판정자가 떴다 안 떴다 하는 원인이 이 임계값이다 — always 가 그것을 끈다."""
         self.policy(baseline_checks=["python3 -m pytest -q"], role_dispatch="always")

@@ -234,13 +234,18 @@ def _next_step(s: dict, flags, axes: dict) -> tuple[str, str]:
     if s["last_event"] != "work":
         return "WORKER", "single Worker autonomous plan/execute — Thinker replans on failure"
     if s["diff_hash"] == EMPTY:
+        if flags.write_expected:
+            return (
+                "VERIFIER",
+                "write expected but no change observed — independently verify that the requested outcome already holds",
+            )
         # 무변경 관측 — Worker가 돌았는데 물리 diff 0 (risk_write는 분류 시점 기대치라
         # 판정 축이 아니다 — 물리 관측이 정본). '변경 없음' 주장의 올바른 검증은 트리 관측
         # 그 자체다 (pass_evidence의 no_change=inspection 원칙) — LLM Verifier를 소환해
         # 반증 불가능한 기준을 재량 검증시키지 않고, 하네스가 관측을 기록해 판정한다
         # (0-LLM). 오분류로 Trinity에 들어온 무변경 요청의 결정론 출구 (26-07-21 "안녕"
-        # 계열 — 잔여 낭비 경로 봉합). 한계(수용): 변경이 필요했는데 Worker가 안 한 경우도
-        # 통과한다 — 최종 보고의 변경 0 관측이 그 사실을 드러낸다.
+        # 계열 — 잔여 낭비 경로 봉합). 명시적으로 쓰기를 기대한 요청은 위에서 Verifier로 보내
+        # 이미 충족된 요청과 Worker가 변경을 누락한 경우를 tree observation 하나로 합치지 않는다.
         return "BASELINE_VERIFY", "no-change observed — harness tree-observation verdict (0-LLM)"
     if axes["standard_ok"] and s.get("checks_available"):
         return "BASELINE_VERIFY", "small, non-sensitive change — harness baseline takes priority"

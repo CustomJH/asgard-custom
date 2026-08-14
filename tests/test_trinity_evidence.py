@@ -107,7 +107,7 @@ class TestNoChangeEvidence(TrinityBase):
 
 
 class TestNoChangeBaselineVerify(TrinityBase):
-    """무변경(diff EMPTY) work의 0-LLM 하네스 판정 출구 — 전이가 BASELINE_VERIFY를 배정하고
+    """명시적 쓰기 기대가 없는 무변경(diff EMPTY) work의 0-LLM 하네스 판정 출구 — 전이가 BASELINE_VERIFY를 배정하고
     verify-baseline이 트리 관측(git status)으로 판정을 기록한다. LLM Verifier가 반증 불가능한
     합성 기준을 재량 검증하던 잔여 낭비 경로 봉합 (26-07-23 감사)."""
 
@@ -115,10 +115,10 @@ class TestNoChangeBaselineVerify(TrinityBase):
         path = os.path.join(self.root, ".asgard", "quest", "q1.jsonl")
         return [json.loads(line) for line in open(path, encoding="utf-8")]
 
-    def test_transition_routes_nochange_work_to_baseline_verify(self):
+    def test_transition_routes_unflagged_nochange_work_to_baseline_verify(self):
         self.open_quest()
         self.qlog("append", "--role", "worker", "--event", "work")
-        nxt = jout(self.qlog("next", "--write-expected"))
+        nxt = jout(self.qlog("next"))
         self.assertEqual(nxt["next_role"], "BASELINE_VERIFY")
         self.assertIn("no-change", nxt["why"])
 
