@@ -7,8 +7,8 @@
 ## Orientation
 
 - Project root: `./`
-- Languages by observed source files: Python (709), JavaScript (6), Rust (2)
-- Evidence scan: 925 files; 47 landmarks
+- Languages by observed source files: Python (723), JavaScript (6), Rust (2)
+- Evidence scan: 956 files; 47 landmarks
 
 ## Landmarks
 
@@ -79,6 +79,18 @@
 - `benchmarks/conductor/REPORT.md` — doc: Conductor 대조 + trinity-orchestrator.html §8 재검증 — 2026-08-06 · sections: 1. 정책 롤아웃 — 0-LLM (_policy_rollout.py_); 2. 결정론 마이크로벤치 — HEAD 재확인; 3. 라이브 대조 — 3아암 × 3과업 × 2반복 (18세션); 4. DIRECT 무세금 — §8 S5 재측정; 5. 하네스 레이턴시 — §8 표 재측정 (회귀); 6. 문서 §8 주장 대조표
 - `benchmarks/continual-harness/REPORT.md` — doc: Continual Harness 대조 — 실측 (2026-08-12) · sections: 결과; 축별로 읽는 법; 이 벤치가 못 재는 것; 남는 경합 하나; 이 변경이 안 만들었지만 판정이 찾아 준 것; 미해결
 - `benchmarks/core-loop/README.md` — doc: Asgard core loop A/B · sections: What this harness cannot measure: system-prompt size
+- `benchmarks/cpu-profile/README.md` — doc: 훅 바깥 CPU·디스크 표면 — 실측 (2026-08-14) · sections: 상주 프로세스; Docker; 디스크 상태; 판정
+- `benchmarks/cpu-profile/REPORT.md` — doc: Asgard CPU·메모리 소비 — 계측과 점검 (2026-08-14) · sections: 규모 — 한 턴이 태우는 값; 층별로 어디가 비싼가; 메모리; 최적화 후보; 이 계측이 못 잰 것; 정정 이력 — 판정자가 잡은 것
+- `benchmarks/cpu-profile/findings-hooktax.md` — doc: 훅 프로세스 세금 — 실측 (2026-08-14) · sections: 이벤트별 합계 (웜 기준); 스크립트별 (콜드 = ___pycache___ 지운 뒤 첫 호출, 웜 = 그 뒤 반복의 중앙값); 도구 호출 1회가 띄우는 프로세스; 턴 세금 (Bash 를 대표 도구로); 아무 출력 없이 끝나는 훅; 이 하네스가 못 재는 것
+- `benchmarks/cpu-profile/findings-hotpath.md` — doc: 훅 4종 지배항 — cProfile + importtime 실측 (2026-08-14) · sections: 결과 표; 훅별 상위 함수 5개 (cProfile, cumtime 기준); 4개 모두 공통 — 훅이 아니라 asgard CLI 자체가 무겁다; SQLite·파일 시스템 순회; 부록 — map-activate가 신선도 마커 없이 돌면 무엇이 잡히는가; 가장 큰 한 덩어리
+- `benchmarks/cpu-profile/findings-item2-cli-lazy.md` — doc: 항목 2 — CLI 명령 그룹 지연 로딩 (2026-08-14) · sections: 무엇을 했나; 기준선과 변경 후; 지연이 실제로 먹었는가 — 직접 증거; _--help_ 대조; 재수출; 완성(completion)
+- `benchmarks/cpu-profile/findings-item3-budget-cap.md` — doc: 항목 3 — budget-guard 트랜스크립트 증분 스캔 (2026-08-14) · sections: 무엇을 바꿨나; 배포본 동기화; 측정; 집계 동일성 — 이 항목의 안전 조건; 되돌아가는 조건 (전량 재스캔); 돌린 것과 exit code
+- `benchmarks/cpu-profile/findings-item4-import-defer.md` — doc: 항목 4 — 기억 명령 파사드 임포트 지연 (2026-08-14) · sections: 먼저 물은 것: _scope-activate_ 가 왜 _project_memory_ 까지 타는가; 실제로 끊은 것; 줄어든 것 / 그대로인 것; 직접 증거 — 훅이 부르는 명령마다 _sys.modules_; 회수가 실제로 되는가; 검증
+- `benchmarks/cpu-profile/findings-item5-tutor-fanout.md` — doc: 항목 5 — tutor 의 git 팬아웃 (2026-08-14) · sections: 무엇이 틀려 있었나; 고친 것 — 사다리 ① (필요 없는 호출을 안 한다); 실측; 출력 대조 — 설명이 얕아지지 않았나; 회귀; 남는 것 — 이 항목 밖, 다음 후보
+- `benchmarks/cpu-profile/findings-item67-design.md` — doc: 항목 6·7 — 위험 분석과 설계 (2026-08-14) · sections: 항목 6 — MCP 세션 프로세스는 새지 않는다 (앞선 판단 정정); 항목 7 — 훅 디스패처 통합; 이 문서가 안 잰 것
+- `benchmarks/cpu-profile/findings-item7-dispatcher.md` — doc: 항목 7 — 주입 훅 디스패처 (2026-08-14) · sections: 출력 동일성 — 배선의 선행 조건; 실측 — 구현했으므로 전후를 잰다; 도중에 드러난 것 셋; 배선 표와 다르게 한 것 하나; fail-open — 합치면 공짜가 아니다; _asgard sync_ 가 같이 깐 것 — 범위 밖으로 번졌다
+- `benchmarks/cpu-profile/findings-memory.md` — doc: 메모리 실측 — Asgard 훅·프로세스 (u3-memory, cpu-profile-260814) · sections: 핵심 숫자 5줄; 1. 훅별 최대 RSS (RUSAGE_CHILDREN, macOS 바이트→MB); 2. 임포트 표면 RSS 계단 (RUSAGE_SELF, 단계마다 새 인터프리터); 3. tracemalloc 상위 할당 지점 (인프로세스, 훅 본문만); 4. 상주 프로세스 (_asgard-serve.mjs_, PID 44444); 5. 런타임 상태의 전체 로드 경로
+- `benchmarks/cpu-profile/findings-semantic-lane.md` — doc: 시맨틱 레인 — 1.9GB 는 무엇을 사는가 (2026-08-14) · sections: 1. 플래그가 소스에서 무엇을 가르는가; 2. 품질 대조 — 12질의, 이 저장소의 실제 개인 기억 40페이지·벡터 40행 전수; 3. 자원 — 전/후 번갈아, _/usr/bin/time -l_; 4. 1.9GB 의 내역 — 임포트 계단 (_HF_HUB_OFFLINE=1_, 3회 최솟값); 5. 훅 경로 점검; 6. 못 잰 것
 - `benchmarks/dispatch-parity/REPORT.md` — doc: 병렬 배차 실측 — worker 가 딜리버리 전문가를 부르는 길 (2026-08-12) · sections: 결과; 돌리는 법; 위임 경계 — 165조합; 실팬아웃 — 장부가 적은 것; 모드 B — 이 형상에서는 열리지 않는다; 이 벤치가 못 재는 것
 - `benchmarks/grounding/REPORT.md` — doc: 근거 대조 벤치 — 어간 하한 __stem_floor_ · sections: 결과 (실측 26-08-01); 읽는 법; 권고; 이 벤치가 못 재는 것
 - `benchmarks/hybrid-search/REPORT.md` — doc: 하이브리드 검색 벤치 — 2경로 vs 3경로 · sections: 검색 품질 (hit@k · MRR); 지연 (query() 벽시계)
@@ -87,6 +99,7 @@
 - `benchmarks/map-shortcut/REPORT.md` — doc: map 숏컷 벤치 — 주입면이 명령으로 라우팅하는가 (26-08-01 측정 · 26-08-13 회귀 수리) · sections: 질문; 방법 (harness.py); 고치기 전 (같은 저장소, 26-08-01 실측); 고친 뒤 (results.jsonl); 게이트가 한 번 빨간불이 됐다 — 번역 표에 맡긴 도움말 (26-08-12 발견, 26-08-13 수리); 남은 미스 — 닫힌 사전의 한계가 그 자리다
 - `benchmarks/memory-graph/REPORT.md` — doc: 기억 그래프 벤치 — 명시 링크만 vs 파생 간선까지 (26-08-06) · sections: 질문; 방법; 결과; 읽는 법; 이 벤치가 못 재는 것; 대조 — 무엇을 가져왔고 무엇을 안 가져왔나
 - `benchmarks/project-memory/REPORT.md` — doc: 2차(프로젝트) 메모리 회수 벤치 · sections: 레인 1 · 로컬 문서 레인 hit@k (실측 26-08-01); 레인 2 · 관계 1홉 확장은 회수를 **올린다** (깎지 않는다); 레인 3 · 동언어 렉시컬 기권 정밀도; 제품 코드를 고쳐야만 잴 수 있는 것 (안 고쳤다)
+- `benchmarks/roundtable/REPORT.md` — doc: 원탁 대조 벤치 — 좌석 여럿이 모델 하나보다 결함을 더 짚는가 (2026-08-14) · sections: 결과 — 중립 좌석으로 돌린 24짝; 첫 회차는 무효다 — 좌석이 답을 알고 있었다; 이 벤치가 찾아낸 제품 결함 둘; 기능 점검 — 실물로 확인한 것; 어떻게 쟀나; 이 벤치를 만들며 잡힌 것
 - `benchmarks/shortcut-recall/REPORT.md` — doc: 숏컷 벤치 — recall 주입 on/off A/B (26-07-16, 36런) · sections: 질문; 방법 (harness.py); 결과 (results-36runs.jsonl — 런당 1행 append, 원본 그대로); 판정기 주의 (jsonl 의 _success_ 필드를 그대로 믿지 말 것); 한계
 - `benchmarks/skill-uptake/REPORT.md` — doc: 스킬 도달 실측 — 배차가 새 스킬에 닿는가 (2026-08-13) · sections: 결과; 돌리는 법; 이 실측이 찾아낸 것; 이 벤치가 못 재는 것
 - `docker/asgard-k6/README.md` — doc: asgard-k6 — 부하 시험 러너 이미지 · sections: 왜 우리 이름의 이미지인가; 볼륨은 프로젝트 것이다; 수동 스택
@@ -96,14 +109,6 @@
 - `src/asgard/templates/roles/asgard-eitri.md` — doc: asgard-eitri — ⚒️ Build/CI/packaging specialist (Delivery)
 - `src/asgard/templates/roles/asgard-freyja.md` — doc: asgard-freyja — UI/UX specialist (Delivery)
 - `src/asgard/templates/roles/asgard-loki.md` — doc: asgard-loki — 🐍 Adversarial specialist (Delivery)
-- `src/asgard/templates/roles/asgard-mimir.md` — doc: asgard-mimir — 🧭 Code-guide specialist (Delivery)
-- `src/asgard/templates/roles/asgard-planner.md` — doc: asgard-planner — 제품 기획 에이전트 · sections: 기본 계약; 진행 방식; 판단 경계
-- `src/asgard/templates/roles/asgard-thinker.md` — doc: asgard-thinker — 🧠 Strategy (Trinity)
-- `src/asgard/templates/roles/asgard-thor-lead.md` — doc: asgard-thor-lead — 🛡 Backend squad lead (Delivery orchestration)
-- `src/asgard/templates/roles/asgard-thor.md` — doc: asgard-thor — ⚡ Backend specialist (Delivery)
-- `src/asgard/templates/roles/asgard-ullr.md` — doc: asgard-ullr — 🏹 Exploration specialist (Delivery)
-- `src/asgard/templates/roles/asgard-verifier.md` — doc: asgard-verifier — ⚖️ Verdict (Trinity) · sections: What PASS costs; Reporting a defect; This repository's rules
-- `src/asgard/templates/roles/asgard-worker.md` — doc: asgard-worker — 🔨 Execution (Trinity)
 
 ## Public surfaces
 
@@ -112,6 +117,7 @@
 - `benchmarks/conductor/aggregate.py` — public surface: def med(xs); def fmt(v, spec); def main()
 - `benchmarks/continual-harness/harness.py` — public surface: def axis_mining_yield(); def axis_retry_diagnosis(); def axis_decision_survival(); def axis_remine_after_archive(); def main()
 - `benchmarks/core-loop/harness.py` — public surface: def main()
+- `benchmarks/cpu-profile/dispatch_check.py` — public surface: def payload_for(name); def channels(text); def run(argv, payload); def peak_rss(argv, payload); def before_argvs(name)
 - `benchmarks/dispatch-parity/collect.py` — public surface: def role_of(role, agent); def collect(db_path, run); def main()
 - `benchmarks/grounding/harness.py` — public surface: def floor_default(word); def floor_min(n); def floor_ratio(r); def floor_suffix(n); def floor_script(latin_suffix)
 - `benchmarks/hybrid-search/harness.py` — public surface: def build_wiki(d, extra_distractors); def score_mode(d, semantic_on); def latency_mode(d, semantic_on, iters); def main(); def print_summary(rec)
@@ -122,6 +128,7 @@
 - `benchmarks/norn-evolution/harness.py` — public surface: def build_wiki(d); def run_norn(d, truth); def evaluate(d, truth, insight_slugs); def run_replicate(rep); def main()
 - `benchmarks/project-memory/corpus.py` — public surface: def build(root)
 - `benchmarks/project_memory_projection.py` — public surface: def local_benchmark(files); def live_benchmark(); def main(); uses `src/asgard/memory_context.py`
+- `benchmarks/roundtable/harness.py` — public surface: def seat_root(); def deterministic_hit(text, keys); def solo(case, provider, model); def table(case, backends, rounds); def judge(root, case, answer, provider, model, …)
 - `benchmarks/shortcut-recall/harness.py` — public surface: def build_sandbox(); def build_memory(); def precheck(); def run_one(fid, task, judge, arm, rep); def main()
 - `benchmarks/skill-uptake/harness.py` — public surface: def measure_reach(root); def measure_specialists(root); def measure_semantic(root); def measure_shape(root); def measure_load(root)
 - `studio-shell/src-tauri/icons/build_icons.py` — public surface: def superellipse(box, n, steps); def body_mask(size); def night(size); def master(); def main()
@@ -141,7 +148,7 @@
 - `tests/test_automations.py` — public surface: class TestDueComputation; class TestStoreAndOutcome; class TestAutomationCLI
 - `tests/test_bragi.py` — public surface: class TestLanguageDetection; class TestDetection; class TestFalsePositiveGuards; class TestStatisticalFeatures; class TestGrading
 - `tests/test_bridge.py` — public surface: class TestScaffold; class TestSkillBody
-- `tests/test_budget_guard.py` — public surface: class TestLedger; class TestCostUnits; class TestVerdict; class TestWarnThresholdIsAShareOfTheCeiling; class TestHookProtocol; uses `src/asgard/commands/budget.py`
+- `tests/test_budget_guard.py` — public surface: class TestLedger; class TestIncrementalScan; class TestCostUnits; class TestVerdict; class TestWarnThresholdIsAShareOfTheCeiling; uses `src/asgard/commands/budget.py`
 - `tests/test_cancellation.py` — public surface: class TestBashCancel; class TestSessionCancel
 - `tests/test_charter.py` — public surface: class TestLoadCharter; class TestNote; uses `src/asgard/charter.py`
 - `tests/test_charter_hook.py` — public surface: class CharterHookBase; class TestCharterHook; uses `src/asgard/charter.py`
@@ -153,8 +160,6 @@
 - `tests/test_container_agent.py` — public surface: def machine(tmp_path, monkeypatch); def test_container_gets_the_agent_home_as_a_container_path(machine, monkeypatch); def test_container_mounts_the_agent_home(machine, monkeypatch); def test_host_path_never_leaks_into_the_container_env(machine, monkeypatch); def test_profile_name_does_not_ride_along(machine, monkeypatch)
 - `tests/test_craft.py` — public surface: class UnitShapeTest; class ResourceLifetimeTest; class CostTest; class RatchetTest; class MoveTest
 - `tests/test_craft_fix.py` — public surface: class RepairTest; class TableTest; class NotACommentTest; class EncodingTest; class ApplyTest; uses `src/asgard/commands/craft.py`
-- `tests/test_craft_gate_e2e.py` — public surface: class ShippedHookRuns; class RepairLane
-- `tests/test_craft_gate_hook.py` — public surface: class WriteFilter; class MergedJudgement; class RepairLane; class Receipt; class Reason
 
 ## Navigation contract
 

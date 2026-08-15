@@ -4,14 +4,14 @@
 > Asgard managed relation catalog. Regenerate with `asgard map scan`; do not hand-edit.
 > `?` marks candidate evidence — verify at the cited source before asserting.
 
-- Evidence summary: commands 204 · db 3 · calls 6 · uses 2
+- Evidence summary: commands 205 · db 3 · calls 6 · uses 2
 
 ## Coverage boundaries
 
 > Named scanner gaps are evidence too. They weaken absence and blast-radius claims; details live in `map scan --json`.
 
 - Coverage status: partial · 2 named limits
-- test_sources_excluded [repository] — 218 test source files are outside the production relation graph · files 218
+- test_sources_excluded [repository] — 222 test source files are outside the production relation graph · files 222
 - unsupported_source_suffix [.rs] — no relation extractor is configured for Rust (.rs) · files 2
 
 ## Commands
@@ -135,6 +135,7 @@
 - `asgard siege reclaim` — take back attempts whose worker vanished without settling them
 - `asgard siege refresh` — work out every task's status from its dependencies again
 - `asgard siege reset` — wipe the siege record — it is all rebuilt from elsewhere, and the quest log stays
+- `asgard siege roundtable` — sit several models at one agenda and let them argue it out over rounds
 - `asgard siege send` — put a message in the run's mailbox — a finished report goes through 'done' instead
 - `asgard siege serve` — stand at the mailbox as <name> and let a model answer what arrives for it
 - `asgard siege settle` — close an attempt from the coordinator's side, when the worker left no report
@@ -228,16 +229,16 @@
 - `src/asgard/studio/projects.py` — db: conn.execute?×59
 - `src/asgard/studio/teams.py` — db: conn.execute?×49
 - `src/asgard/cli/memory.py` — commands: yggdrasil add, yggdrasil approve, yggdrasil ask, yggdrasil autosave, yggdrasil backup, yggdrasil connect, yggdrasil contradiction-seen, yggdrasil contradictions, yggdrasil discard, yggdrasil episodes, yggdrasil export-okf, yggdrasil graph, yggdrasil ingest, yggdrasil lint, yggdrasil mcp, yggdrasil merge, yggdrasil norn, yggdrasil norn-restore, yggdrasil obsidian, yggdrasil path, yggdrasil pattern, yggdrasil project-approve, yggdrasil project-evolve, yggdrasil project-ingest, yggdrasil project-learn, yggdrasil project-recall, yggdrasil project-reflect, yggdrasil project-rehydrate, yggdrasil project-retain, yggdrasil project-scan, yggdrasil project-sync, yggdrasil proposals, yggdrasil provider, yggdrasil query, yggdrasil recall, yggdrasil reindex, yggdrasil remove, yggdrasil semantic, yggdrasil show, yggdrasil snapshot, yggdrasil sync, yggdrasil sync-turn, yggdrasil tick
-- `src/asgard/cli/siege.py` — commands: siege add, siege answer, siege ask, siege blocked, siege check, siege close, siege decide, siege done, siege escalate, siege force, siege gate, siege gates, siege heartbeat, siege inbox, siege mark, siege mirror, siege note, siege open, siege plan, siege ready, siege reclaim, siege refresh, siege reset, siege send, siege serve, siege settle, siege show, siege start, siege unnote, siege watch, siege waves
+- `src/asgard/cli/siege.py` — commands: siege add, siege answer, siege ask, siege blocked, siege check, siege close, siege decide, siege done, siege escalate, siege force, siege gate, siege gates, siege heartbeat, siege inbox, siege mark, siege mirror, siege note, siege open, siege plan, siege ready, siege reclaim, siege refresh, siege reset, siege roundtable, siege send, siege serve, siege settle, siege show, siege start, siege unnote, siege watch, siege waves
 - `src/asgard/orchestration/board.py` — db: conn.execute?×30
 - `src/asgard/memory/index.py` — db: conn.execute?×24, conn.executemany?×2
 - `src/asgard/orchestration/dispatch.py` — db: conn.execute?×26
 - `src/asgard/studio/tickets/crud.py` — db: conn.execute?×25
 - `src/asgard/studio/tickets/views.py` — db: conn.execute?×24
 - `src/asgard/cli/ticket.py` — commands: open map, open memory, open studio, ticket board, ticket comment, ticket cycle, ticket delete, ticket doc, ticket doctor, ticket evidence, ticket import, ticket link, ticket list, ticket milestone, ticket move, ticket new, ticket project, ticket set, ticket show, ticket team, ticket triage, ticket update
+- `src/asgard/orchestration/mail.py` — db: conn.execute?×19, conn.executemany?
 - `src/asgard/cli/agent.py` — commands: auth login, auth logout, auth status, einherjar bind, einherjar config, einherjar create, einherjar delete, einherjar describe, einherjar export, einherjar identity, einherjar import, einherjar list, einherjar open, einherjar rename, einherjar show, einherjar unbind, einherjar use, einherjar where, einherjar windows
 - `src/asgard/cli/root.py` — commands: budget?, completions?, craft?, doctor?, freyja-gate?, health?, humanize?, init?, manual?, orchestrate?, run?, start?, surface?, sync?, thor?, trinity?, tutor?, uninstall?, update?
-- `src/asgard/orchestration/mail.py` — db: conn.execute?×18, conn.executemany?
 - `src/asgard/cli/k6.py` — commands: automations add, automations disable, automations due, automations enable, automations history, automations list, automations remove, k6 baseline clear, k6 baseline set, k6 baseline show, k6 doctor, k6 gate, k6 report, k6 run, k6 scenarios, k6 selftest, k6 sync
 - `src/asgard/orchestration/store.py` — db: conn.execute?×15
 - `src/asgard/cli/evolve.py` — commands: evolve approve, evolve archive, evolve bench, evolve curate, evolve list, evolve nudge, evolve polish, evolve reject, evolve reset, evolve restore, evolve scan, evolve show
@@ -260,6 +261,7 @@
 - `src/asgard/commands/studio/load.py` — calls: count?, failed?, rate_per_s?
 - `src/asgard/io_sqlite.py` — db: conn.execute?×3
 - `src/asgard/openai_codex.py` — calls: httpx.get?, httpx.post? · uses: openai
+- `benchmarks/cpu-profile/resident.py` — db: conn.execute?×2
 - `src/asgard/agent/session/client.py` — uses: anthropic, openai
 - `benchmarks/dispatch-parity/collect.py` — db: conn.execute?
 - `benchmarks/dispatch-parity/overlap_probe.py` — db: con.execute?
@@ -271,7 +273,7 @@
 
 > Exact node ids — copy into `asgard map trace --from <id>` or `asgard map impact <id>`.
 
-- commands: `command:auth_login` · `command:auth_logout` · `command:auth_status` · `command:automations_add` · `command:automations_disable` · `command:automations_due` · `command:automations_enable` · `command:automations_history` · `command:automations_list` · `command:automations_remove` · `command:budget` · `command:completions` · `command:craft` · `command:doctor` · `command:einherjar_bind` · `command:einherjar_config` · `command:einherjar_create` · `command:einherjar_delete` · `command:einherjar_describe` · `command:einherjar_export` · `command:einherjar_identity` · `command:einherjar_import` · `command:einherjar_list` · `command:einherjar_open` · `command:einherjar_rename` · `command:einherjar_show` · `command:einherjar_unbind` · `command:einherjar_use` · `command:einherjar_where` · `command:einherjar_windows` · `command:evolve_approve` · `command:evolve_archive` · `command:evolve_bench` · `command:evolve_curate` · `command:evolve_list` · `command:evolve_nudge` · `command:evolve_polish` · `command:evolve_reject` · `command:evolve_reset` · `command:evolve_restore` (+164 more — `asgard map list --kind command`)
+- commands: `command:auth_login` · `command:auth_logout` · `command:auth_status` · `command:automations_add` · `command:automations_disable` · `command:automations_due` · `command:automations_enable` · `command:automations_history` · `command:automations_list` · `command:automations_remove` · `command:budget` · `command:completions` · `command:craft` · `command:doctor` · `command:einherjar_bind` · `command:einherjar_config` · `command:einherjar_create` · `command:einherjar_delete` · `command:einherjar_describe` · `command:einherjar_export` · `command:einherjar_identity` · `command:einherjar_import` · `command:einherjar_list` · `command:einherjar_open` · `command:einherjar_rename` · `command:einherjar_show` · `command:einherjar_unbind` · `command:einherjar_use` · `command:einherjar_where` · `command:einherjar_windows` · `command:evolve_approve` · `command:evolve_archive` · `command:evolve_bench` · `command:evolve_curate` · `command:evolve_list` · `command:evolve_nudge` · `command:evolve_polish` · `command:evolve_reject` · `command:evolve_reset` · `command:evolve_restore` (+165 more — `asgard map list --kind command`)
 
 ## Navigation contract
 
