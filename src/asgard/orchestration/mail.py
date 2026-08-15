@@ -255,6 +255,25 @@ def _claim(root: str, run_id: str, types: tuple[str, ...] | None, recipient: str
         }
 
 
+def thread(root: str, run_id: str, thread_id: str, *, limit: int = 20) -> list[dict]:
+    """한 실에 걸린 메일을 오래된 것부터 — 좌석이 자기 앞 회차를 다시 읽는 자리.
+
+    빈 `thread_id` 는 빈 목록이다. 실 이름을 안 준 메일은 그 칸이 빈 문자열이라(`send`),
+    빈 값으로 조회하면 실에 안 걸린 메일이 전부 한 대화로 뭉친다.
+
+    `limit` 은 **가장 최근** 그만큼을 남기고 앞을 버린다. 대화가 길어질수록 지금 답할 것에
+    가까운 쪽이 중요하고, 넘겨받는 쪽은 컨텍스트 상한이 있다.
+    """
+    if not thread_id:
+        return []
+    with connect(root) as conn:
+        rows = conn.execute(
+            "SELECT * FROM messages WHERE run_id=? AND thread_id=? ORDER BY created_at DESC LIMIT ?",
+            (run_id, thread_id, max(1, limit)),
+        ).fetchall()
+    return [_message_dict(row) for row in reversed(rows)]
+
+
 def inbox(root: str, run_id: str, *, limit: int = 50) -> list[dict]:
     """확인 여부와 무관한 최근 메일 — 읽기 전용 이력이며 재생 계약을 건드리지 않는다."""
     with connect(root) as conn:
@@ -278,6 +297,7 @@ def ask(
     recipient: str = "",
     task_id: str = "",
     dispatch_id: str = "",
+    thread_id: str = "",
     timeout_ms: int = 0,
 ) -> dict:
     """막힌 워커가 코디네이터에게 묻는다.
@@ -291,6 +311,9 @@ def ask(
 
     `recipient` 를 주면 그 이름을 지키는 쪽(`siege serve`)에게만 간다. 그 조합이 모델 하나를
     상대로 하는 왕복이다 — 묻고 `timeout_ms` 만큼 기다리면 답이 반환값으로 돌아온다.
+
+    `thread_id` 를 같은 값으로 계속 주면 그 왕복이 한 대화가 된다. 답하는 쪽(`siege serve`)이
+    같은 실의 앞 메시지를 읽고 답하므로, 회차를 거듭해도 상대가 자기가 무엇을 주장했는지 안다.
     """
     message = send(
         root,
@@ -302,6 +325,7 @@ def ask(
         recipient=recipient,
         task_id=task_id,
         dispatch_id=dispatch_id,
+        thread_id=thread_id,
         payload={"options": list(options or [])},
     )
     if timeout_ms > 0:

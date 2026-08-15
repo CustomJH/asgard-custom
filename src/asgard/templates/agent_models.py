@@ -63,7 +63,13 @@ AGENT_MODEL_DEFAULTS = {
 
 
 def agent_model(root: str, host: str, role: str) -> dict[str, str]:
-    """Resolve built-in default < global override < project override."""
+    """Resolve built-in default < global override < project override.
+
+    Read once, when an agent file is written — every host bakes the result in, so an `agent_models`
+    edit reaches a project only after `asgard sync` rewrites those files. `inherit` is the single
+    value that keeps tracking the session model afterwards; the fixed names above (loki, ullr,
+    mimir on Claude Code, and every Codex and Cursor role) are frozen at write time.
+    """
     role = role.removeprefix("asgard-")
     resolved = dict(AGENT_MODEL_DEFAULTS[host][role])
     for config in (load_global(), load_project(root)):

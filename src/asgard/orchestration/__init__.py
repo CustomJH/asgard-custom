@@ -52,6 +52,7 @@ from .mail import (
     pending_questions,
     reply,
     send,
+    thread,
     wait_answer,
     worker_done,
 )
@@ -126,6 +127,7 @@ __all__ = [
     "task_show",
     "task_status_for",
     "task_update",
+    "thread",
     "topo_waves",
     "wait_answer",
     "worker_done",

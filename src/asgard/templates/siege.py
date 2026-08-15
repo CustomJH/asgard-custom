@@ -136,7 +136,7 @@ Look before you write:
 ## Coordination — the half you always drive
 
     asgard siege ask <run_id> "<question>" [--option <a>]… [--sender <who>] [--task <task_id>]
-        [--dispatch <dispatch_id>] [--wait-ms <n>] [--json]
+        [--dispatch <dispatch_id>] [--recipient <who>] [--thread <id>] [--wait-ms <n>] [--json]
 
 A stuck worker asks the coordinator. With `--wait-ms` it blocks for the answer; the default `0`
 records the question and returns at once. Canon 8 still applies — ask only when no default is
@@ -200,10 +200,21 @@ a local ollama — so the pair below is one round trip with a model of your choo
     asgard siege ask <run_id> "does this migration need a backfill?" --recipient codex-1 --wait-ms 60000
 
 The asking call blocks and returns the answer, so a host that has no cross-session messaging of its
-own still gets one. Two limits are worth knowing before you lean on it. A model that cannot be
-called leaves an `escalation` in the mailbox instead of an invented answer — the asker times out
-with no answer, and the reason is in `siege inbox`. And a `serve` process holds no conversation:
-each message is answered on its own, with the run objective as the only shared context.
+own still gets one. A model that cannot be called leaves an `escalation` in the mailbox instead of
+an invented answer — the asker times out with no answer, and the reason is in `siege inbox`.
+
+Give the same `--thread <id>` on every round and the exchange becomes one conversation: the seat
+rereads that thread before answering, so it knows what it argued last round. Without a thread each
+message is answered on its own, with the run objective as the only shared context. A seat still
+reads no files — everything it knows about the work has to be in the message you send.
+
+    asgard siege roundtable "<agenda>" [--seat <name[=role][:backend[:model]]>]… [--rounds <n>]
+        [--auto-cli] [--quest <quest_id>] [--run <run_id>] [--no-record] [--json]
+
+Sits several models at one agenda and runs the rounds for you — positions first, then each seat
+answers what the others argued. `--auto-cli` seats the agent CLIs this machine has, which read the
+repository. Use it when a decision has more than one defensible answer and you want the objections
+before you build. The `asgard-roundtable` skill carries the protocol.
 
 ## The spine — only when it is yours
 
@@ -322,7 +333,109 @@ dispatch from — it accounts for what has actually settled, and `waves` does no
   agent that can edit the diff it is judging.
 """
 
-SIEGE_SKILLS: list[tuple[str, str]] = [("asgard-siege", SIEGE_SKILL_MD)]
+ROUNDTABLE_SKILL_MD = """\
+---
+name: asgard-roundtable
+description: Convene a round table — sit several models at one agenda, have them argue it over rounds, and read the positions back. Load when a decision has more than one defensible answer, when a design needs its objections found before it is built, or when the user asks for a round table, a debate, or other opinions.
+allowed-tools: Bash(asgard siege *)
+---
+
+# asgard-roundtable — several models on one agenda
+
+A round table is not a vote and not a verdict. It is a way to hear the objections to a plan
+**before** you build it, from models that did not write the plan and cannot see your reasoning.
+You are the moderator: you set the agenda, you read the transcript, and the decision stays yours.
+
+    asgard siege roundtable "<agenda>" [--seat <name[=role][:backend[:model]]>]… [--rounds <n>]
+        [--auto-cli] [--quest <quest_id>] [--run <run_id>] [--no-record] [--json]
+
+One call runs the whole thing. Round 1 is independent: every seat answers the agenda without
+seeing the others. Round 2 and after are cross-discussion: each seat gets what the others argued
+plus what it itself said, and answers them. Seats are called side by side, so a round takes about
+as long as its slowest seat — but it costs one model call per seat, every round.
+
+## When to convene
+
+Convene when the answer is genuinely contested — two designs both defensible, a migration whose
+risk you cannot size, a decision that is expensive to reverse. Do not convene to look thorough. A
+question the repository can answer is not an agenda; look it up (Canon 5), and if a fact is
+missing, dispatch `asgard-ullr` rather than asking the table to guess.
+
+Skip it when the work is a slice with one obvious shape, when tests would settle it faster, or when
+the user already decided. `prototype` beats a debate for anything running code can show.
+
+## The agenda carries everything
+
+**No seat sees this conversation, and an API seat cannot open a file either.** A CLI seat can read
+the repository it runs in, but it still does not know which part you mean. Write the agenda as a
+brief in both cases:
+
+- the decision, stated as a question with the options you are actually choosing between
+- the constraints that are not negotiable — the stack, the invariants, what already shipped
+- the evidence: the interface, the failing case, the measurement, quoted inline
+- what you currently intend to do, so there is something to attack
+
+An agenda under a paragraph produces generic answers, and generic answers are what a round table is
+supposed to save you from.
+
+## Seats
+
+`--seat` takes `name[=role][:backend[:model]]`. The backend is either an agent CLI — `cc` (Claude
+Code), `codex`, `cursor` — or a provider `providers` resolves (`openai`, `ollama`, `anthropic`, …).
+The named roles are `researcher`, `critic`, `challenger`, `verifier`, `advocate`, `strategist`; a
+name matching none of them still sits, as itself.
+
+With no `--seat`, three seats — researcher, critic, challenger — take this project's configured
+model, and any agent CLI found on this machine is **named, not seated**: the line tells you what is
+there and that `--auto-cli` would seat it. Three seats on one model is not three perspectives, it
+is one model asked three times, and the command says so rather than letting the tally imply
+otherwise.
+
+Put different vendors in different seats. Two seats on one model agree with each other more than
+they disagree, and agreement you paid for twice is worth nothing. Three seats and two rounds is the
+working default; past five seats the transcript costs more to read than the decision is worth.
+
+### CLI seats keep their own session — and see your files
+
+A CLI seat runs as a real session of that tool: the first round starts it, every later round
+resumes the same session id, so the seat remembers its own argument without being told it again. It
+runs where you are, read-only — `codex exec --sandbox read-only`, `claude --permission-mode plan`,
+`cursor-agent --mode ask` — so unlike an API seat it can open the files under discussion. That is
+the reason to want one when the agenda is about this repository.
+
+It is also the reason `--auto-cli` is a flag and not the default. A CLI seat reads this repository
+and what it reads goes to that vendor, so an installed CLI is not on its own a decision to send
+anything. Ask before you turn it on for someone else's repository.
+
+The other cost is time. A CLI seat thinks with tools, so a round takes minutes rather than seconds,
+and a CLI that is installed but not logged in fails that seat with the login step named.
+
+## Reading the result
+
+Cross rounds end with one line, `STANCE: MAINTAIN | MODIFY | WITHDRAW`, and only that line is
+tallied. A seat that wrote no stance line is reported as silent, never as agreeing — do not infer
+one from its prose, and do not describe a split table as a consensus.
+
+Report to the user what changed your plan and what you are doing about it. A finding nobody acts on
+was not worth the call. Say plainly when the table found nothing new.
+
+**A round table is not evidence.** It never closes a quest, never substitutes for the Verifier, and
+never lowers a gate. What it produces is objections; what closes the work is still a passing check.
+
+## After the table
+
+The transcript lands on the dispatch ledger unless you passed `--no-record`, so
+`asgard siege inbox <run_id>` reads it back later, one thread per seat. Bind it to the quest with
+`--quest <quest_id>` when the discussion belongs to work already open.
+
+If a seat could not be called, its failure is printed and the rest of the table carries on. A table
+where every seat failed exits 2 — treat that as no discussion having happened, not as agreement.
+"""
+
+SIEGE_SKILLS: list[tuple[str, str]] = [
+    ("asgard-siege", SIEGE_SKILL_MD),
+    ("asgard-roundtable", ROUNDTABLE_SKILL_MD),
+]
 
 # 조율을 실제로 부르는 말만 넣는다. 배차·게이트·질문은 이 장부 말고 갈 곳이 없으므로 잡아도
 # 손해가 없지만, 흔한 코드 어휘를 잡으면 단독 작업에도 계약이 붙어 값이 죽는다.
@@ -359,13 +472,53 @@ _WORD_RE: tuple[str, ...] = (
 )
 
 
+# 토론을 부르는 말. 배차 어휘와 따로 두는 이유는 값이다 — 병렬 작업 지시마다 원탁 본문이
+# 딸려 오면 부르지도 않을 계약이 매번 컨텍스트를 먹는다. 원탁은 "의견을 듣고 싶다"는 말에만
+# 선다. `논의`·`토의` 는 `논의하다`·`토의한다` 를 부분 일치로 함께 잡는다.
+_TABLE_SUBSTR: tuple[str, ...] = (
+    "원탁",
+    "토론",
+    "논의",
+    "토의",
+    "갑론을박",
+    "의견을",
+    "의견 수렴",
+    "다양한 관점",
+    "반대 의견",
+    "round table",
+    "roundtable",
+    "debate",
+    "deliberat",
+    "second opinion",
+    "other opinions",
+    "devil's advocate",
+)
+# 짧은 낱말은 경계를 요구한다 — `argue` 를 부분 일치로 잡으면 argument 를 다루는 코드 작업이
+# 전부 원탁으로 읽힌다.
+_TABLE_WORD_RE: tuple[str, ...] = (
+    r"\bargue\b",
+    r"\bdissent\b",
+    r"\bcritique[sd]?\b",
+)
+
+
+def _hit(text: str, substrings: tuple[str, ...], patterns: tuple[str, ...]) -> bool:
+    return any(k in text for k in substrings) or any(re.search(p, text) for p in patterns)
+
+
 def resolve_siege_skills(task: str) -> list[tuple[str, str]]:
     """조율 어휘가 있는 과업 → 배차 계약 (이름, frontmatter 제거 본문) — 0-LLM 휴리스틱.
 
     일치가 없으면 빈 목록이다 (fail-open). 장부를 안 쓰는 작업에 이 계약이 붙으면 25종짜리
     본문이 값 없이 컨텍스트를 먹으므로, 넓게 잡는 쪽보다 안 잡는 쪽으로 기운다.
+
+    원탁은 배차와 따로 걸린다. 둘은 같은 명령 표면을 쓰지만 부르는 자리가 다르다 — 배차는
+    일을 나눌 때, 원탁은 답이 하나가 아닐 때다.
     """
     text = task.lower()
-    if not (any(k in text for k in _SUBSTR) or any(re.search(p, text) for p in _WORD_RE)):
-        return []
-    return [(name, body.split("---", 2)[2].lstrip()) for name, body in SIEGE_SKILLS]
+    picked = [
+        (name, body)
+        for name, body in SIEGE_SKILLS
+        if (_hit(text, _TABLE_SUBSTR, _TABLE_WORD_RE) if name == "asgard-roundtable" else _hit(text, _SUBSTR, _WORD_RE))
+    ]
+    return [(name, body.split("---", 2)[2].lstrip()) for name, body in picked]

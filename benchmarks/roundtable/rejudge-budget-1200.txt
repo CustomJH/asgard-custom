@@ -1,0 +1,30 @@
+판정 예산 1,200토큰으로 돈 --rejudge 의 원본 출력 (2026-08-14).
+
+results.jsonl 의 hit_judge2 는 예산 2,400토큰 회차의 값이다. 1,200 회차는 24행 중 4행에서
+판정에 못 닿아 빈 값을 남겼고, 그 빈 칸을 메우려 전 행을 2,400으로 다시 돌렸다. 두 회차가
+갈린 자리를 REPORT 가 인용하므로 원본을 여기 남긴다 — 지우면 그 문단을 재확인할 수 없다.
+
+  baseline-timeout/A → YES
+  baseline-timeout/B → YES
+  guard-text-match/A → YES
+  guard-text-match/B → YES
+  partial-lookup-guard/A → YES
+  partial-lookup-guard/B → -
+  hook-regex-backtracking/A → YES
+  hook-regex-backtracking/B → YES
+  repr-as-content/A → YES
+  repr-as-content/B → YES
+  session-keyed-lane/A → NO
+  baseline-timeout/C → -
+  guard-text-match/C → YES
+  partial-lookup-guard/C → YES
+  hook-regex-backtracking/C → YES
+  repr-as-content/C → -
+  session-keyed-lane/B → NO
+  session-keyed-lane/C → NO
+  verifier-input-native-only/A → -
+  verifier-input-native-only/B → NO
+  verifier-input-native-only/C → NO
+  artifacts-under-harness-state/A → YES
+  artifacts-under-harness-state/B → YES
+  artifacts-under-harness-state/C → YES

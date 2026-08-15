@@ -272,6 +272,7 @@ def siege_ask(
     recipient: str = typer.Option("", "--recipient", help="ask one named participant — a `serve` process, say"),
     task_id: str = typer.Option("", "--task", help="the task this question came out of"),
     dispatch_id: str = typer.Option("", "--dispatch", help="the attempt this question came out of"),
+    thread: str = typer.Option("", "--thread", help="keep one discussion — the answering seat rereads this thread"),
     wait_ms: int = typer.Option(0, "--wait-ms", help="wait this long for an answer — 0 returns straight away"),
     json_: bool = typer.Option(False, "--json"),
 ) -> None:
@@ -286,6 +287,7 @@ def siege_ask(
             recipient=recipient,
             task_id=task_id,
             dispatch_id=dispatch_id,
+            thread_id=thread,
             wait_ms=wait_ms,
             json_out=json_,
         )
@@ -368,6 +370,41 @@ def siege_serve(
             model=model,
             once=once,
             idle_timeout=idle_timeout,
+            json_out=json_,
+        )
+    )
+
+
+@siege_app.command("roundtable", help="sit several models at one agenda and let them argue it out over rounds")
+def siege_roundtable(
+    agenda: str = typer.Argument(..., metavar="<agenda>"),
+    seat: list[str] = typer.Option(
+        None,
+        "--seat",
+        help="name[=role][:backend[:model]] — backend is cc|codex|cursor or a provider; omit to seat what this machine has",
+    ),
+    rounds: int = typer.Option(2, "--rounds", help="how many rounds — 1 is positions only, no cross-discussion"),
+    auto_cli: bool = typer.Option(
+        False,
+        "--auto-cli",
+        help="seat the agent CLIs found here — they read this repository, so it is off unless you say so",
+    ),
+    quest_id: str = typer.Option("", "--quest", help="record the transcript on this quest's run"),
+    run_id: str = typer.Option("", "--run", help="record the transcript on this existing run"),
+    no_record: bool = typer.Option(False, "--no-record", help="do not write the transcript to the ledger"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from ..commands.roundtable import run_roundtable
+
+    raise typer.Exit(
+        run_roundtable(
+            agenda,
+            seats=list(seat or []),
+            rounds=rounds,
+            auto_cli=auto_cli,
+            quest_id=quest_id,
+            run_id=run_id,
+            record=not no_record,
             json_out=json_,
         )
     )

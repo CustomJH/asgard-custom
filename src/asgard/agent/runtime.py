@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import threading
 import time
@@ -81,7 +82,20 @@ class TurnResult:
         return self.outcome == "completed"
 
 
-PeerKind: TypeAlias = Literal["cc", "codex"]
+PeerKind: TypeAlias = Literal["cc", "codex", "cursor"]
+PEER_KINDS: tuple[str, ...] = ("cc", "codex", "cursor")
+# peer 이름 → PATH 에서 찾을 실행 파일. 새 에이전트 CLI 를 붙이는 자리가 여기 한 줄이다.
+PEER_BINARIES: dict[str, str] = {"cc": "claude", "codex": "codex", "cursor": "cursor-agent"}
+
+
+def peers_present() -> tuple[str, ...]:
+    """이 기계의 PATH 에 실제로 있는 peer CLI — 선언이 아니라 조회다.
+
+    로그인 여부는 안 본다. 여기서 인증까지 확인하려면 CLI 를 한 번씩 띄워야 하는데, 그 값이
+    이 조회를 부르는 자리(좌석 배정·준비 상태 표시)마다 든다. 못 부르는 CLI 는 부른 쪽이
+    `UpstreamError` 로 받는다.
+    """
+    return tuple(kind for kind in PEER_KINDS if shutil.which(PEER_BINARIES[kind]))
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,10 +145,10 @@ class CliPeerRuntime:
 
     def turn(self, spec: PeerSpec, prompt: str, session_id: str = "") -> PeerTurnResult:
         """한 peer 턴을 실행하고 같은 세션을 재개할 수 있는 결과를 반환한다."""
-        if spec.runtime not in ("cc", "codex"):
+        if spec.runtime not in PEER_KINDS:
             raise errors.InvalidInput(
                 f"지원하지 않는 peer runtime이에요: {spec.runtime}",
-                remedy="--cc 또는 --codex 중 하나를 선택하세요.",
+                remedy="cc·codex·cursor 중 하나를 선택하세요.",
             )
         if not prompt.strip():
             raise errors.InvalidInput(
@@ -197,6 +211,18 @@ class CliPeerRuntime:
             command.append(prompt)
             return command
 
+        if spec.runtime == "cursor":
+            # `--mode ask` 는 읽기 전용 질의응답이다. `--trust` 는 쓰기를 여는 것이 아니라 이
+            # 디렉터리를 믿느냐는 물음을 건너뛴다 — 그 물음은 대화형으로만 답할 수 있어서,
+            # 없으면 비대화형 호출이 매번 그 안내문만 내고 끝난다.
+            command = ["cursor-agent", "-p", "--output-format", "json", "--mode", "ask", "--trust"]
+            if session_id:
+                command.extend(("--resume", session_id))
+            if spec.model:
+                command.extend(("--model", spec.model))
+            command.append(prompt)
+            return command
+
         command = ["codex", "exec"]
         if session_id:
             command.append("resume")
@@ -216,7 +242,9 @@ class CliPeerRuntime:
 
     def _parse(self, runtime: PeerKind, output: str, prior_session: str) -> tuple[str, str]:
         try:
-            if runtime == "cc":
+            # cursor-agent 의 `--output-format json` 은 claude 와 같은 한 덩어리다
+            # ({"result": ..., "session_id": ...}). codex 만 줄 단위 이벤트 스트림이다.
+            if runtime in ("cc", "cursor"):
                 payload = json.loads(output)
                 if not isinstance(payload, dict):
                     raise ValueError("Claude result is not an object")
@@ -259,6 +287,8 @@ class CliPeerRuntime:
     def _remedy(runtime: PeerKind) -> str:
         if runtime == "cc":
             return "Claude Code를 설치하고 `claude /login`으로 인증하세요."
+        if runtime == "cursor":
+            return "Cursor CLI를 설치하고 `cursor-agent login`으로 인증하세요."
         return "Codex CLI를 설치하고 `codex login`으로 인증하세요."
 
 

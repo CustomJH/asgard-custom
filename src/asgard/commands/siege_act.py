@@ -645,6 +645,7 @@ def run_ask(
     recipient: str = "",
     task_id: str = "",
     dispatch_id: str = "",
+    thread_id: str = "",
     wait_ms: int = 0,
     json_out: bool = False,
 ) -> int:
@@ -656,6 +657,9 @@ def run_ask(
 
     `--recipient` 로 이름을 대면 그 이름을 지키는 쪽에게만 간다. `siege serve` 가 그 이름으로
     서 있으면 답은 모델이 달고, `--wait-ms` 를 준 이 호출의 반환값으로 돌아온다.
+
+    `--thread` 를 같은 값으로 계속 주면 그 왕복이 한 대화가 된다 — 답하는 좌석이 같은 실의 앞
+    회차를 다시 읽으므로, 회차를 거듭해도 자기가 무엇을 주장했는지 안다.
 
     Returns:
         0 이면 물었고, 2 면 도메인이 거절했다(없는 Run).
@@ -671,6 +675,7 @@ def run_ask(
             recipient=recipient,
             task_id=task_id,
             dispatch_id=dispatch_id,
+            thread_id=thread_id,
             timeout_ms=wait_ms,
         )
     except orc.OrchestrationError as exc:

@@ -36,6 +36,8 @@ _MAX_TOKENS = 2000
 _POLL_MS = 2000
 _BODY_CAP = 8000  # 모델에게 넘기는 본문 상한 — 한 메일이 컨텍스트를 다 먹지 않게
 _SUBJECT_CAP = 200
+_HISTORY_CAP = 12  # 프롬프트에 다시 넣는 앞 회차의 수 — 넘으면 오래된 쪽부터 버린다
+_TURN_CAP = 1500  # 앞 회차 한 개의 본문 상한. 회차가 쌓여도 지금 물음이 밀리지 않게
 # 답할 것이 없는 종류. heartbeat 는 살아 있다는 신호일 뿐이라 모델을 부르면 값만 든다.
 _SKIP_TYPES = frozenset({"heartbeat", "worker_done"})
 
@@ -146,7 +148,7 @@ def _handle(root: str, run_id: str, rp, who: str, objective: str, message: dict)
     if message.get("type") == "question" and message.get("answered_at") is not None:
         return None  # 사람이 이미 답한 질문 — 두 번째 답은 어느 것을 읽었는지 알 수 없게 만든다
     try:
-        answer = _ask_model(rp, root, who, objective, message)
+        answer = _ask_model(rp, root, run_id, who, objective, message)
     except Exception as exc:  # provider·네트워크·인증 — 무엇이든 이 메일 하나의 실패다
         _note_failure(root, run_id, who, message, exc)
         return {"id": message["id"], "answered": False, "error": f"{type(exc).__name__}: {exc}"}
@@ -154,12 +156,48 @@ def _handle(root: str, run_id: str, rp, who: str, objective: str, message: dict)
     return {"id": message["id"], "answered": True, "chars": len(answer)}
 
 
-def _ask_model(rp, root: str, who: str, objective: str, message: dict) -> str:
+def _ask_model(rp, root: str, run_id: str, who: str, objective: str, message: dict) -> str:
     from ..agent.oneshot import complete_with
 
     system = _SYSTEM.format(who=who, objective=str(objective)[:_SUBJECT_CAP])
-    answer = complete_with(rp, root, system, _user_prompt(message), max_tokens=_MAX_TOKENS)
+    prompt = _user_prompt(message)
+    history = _history(root, run_id, who, message)
+    if history:
+        prompt = f"{history}\n\n{prompt}"
+    answer = complete_with(rp, root, system, prompt, max_tokens=_MAX_TOKENS)
     return (answer or "").strip() or "(빈 응답)"
+
+
+def _history(root: str, run_id: str, who: str, message: dict) -> str:
+    """이 좌석이 같은 실에서 앞서 주고받은 것 — 실 이름이 없으면 빈 문자열.
+
+    프로세스는 메일 한 통마다 새로 부르므로 대화가 남는 자리는 장부뿐이다. 같은 `thread_id`
+    로 계속 물으면 여기서 앞 회차가 다시 실려, 좌석이 자기가 무엇을 주장했는지 알고 답한다.
+
+    지금 답할 메일 자신은 뺀다 — `check` 가 그것을 이미 넣어 두었고, 두 번 넣으면 모델이
+    같은 질문을 두 번 읽는다.
+    """
+    thread_id = str(message.get("thread_id") or "")
+    if not thread_id:
+        return ""
+    try:
+        rows = orc.thread(root, run_id, thread_id, limit=_HISTORY_CAP)
+    except Exception:  # 장부 조회 실패는 이 메일의 실패가 아니다 — 기억 없이 답한다
+        return ""
+    lines = []
+    for row in rows:
+        if row.get("id") == message.get("id"):
+            continue
+        speaker = "you" if (row.get("sender") or "") == who else (row.get("sender") or "(unnamed)")
+        body = str(row.get("body") or "")[:_TURN_CAP]
+        lines.append(f"[{speaker}] {body}")
+        answer = str(row.get("answer") or "")
+        if answer:
+            # 질문에 달린 답은 그 질문을 받은 쪽, 곧 이 좌석이 한 말이다.
+            lines.append(f"[you] {answer[:_TURN_CAP]}")
+    if not lines:
+        return ""
+    return "Earlier turns of this same discussion, oldest first:\n" + "\n\n".join(lines)
 
 
 def _user_prompt(message: dict) -> str:

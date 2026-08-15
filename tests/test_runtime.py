@@ -297,5 +297,74 @@ class TestRunPromptAdapter(unittest.TestCase):
         self.assert_activity_events(emit)
 
 
+class TestCursorPeer(unittest.TestCase):
+    """cursor-agent 좌석 — 읽기 전용으로 서고, 세션 id 로 같은 대화를 이어받는다."""
+
+    def runtime(self, outputs):
+        from types import SimpleNamespace
+
+        from asgard.agent.runtime import CliPeerRuntime
+
+        self.calls: list[list[str]] = []
+        stream = iter(outputs)
+
+        def runner(argv, **kwargs):
+            self.calls.append(list(argv))
+            return SimpleNamespace(returncode=0, stdout=next(stream), stderr="")
+
+        return CliPeerRuntime("/tmp/rt", runner=runner)
+
+    def test_first_turn_is_read_only_and_returns_the_session(self):
+        import json as jsonlib
+
+        from asgard.agent.runtime import PeerSpec
+
+        peer = self.runtime([jsonlib.dumps({"result": "커서 답", "session_id": "chat-1"})])
+        turn = peer.turn(PeerSpec("cursor", model="gpt-5"), "안건을 봐줘")
+
+        self.assertEqual((turn.text, turn.session_id), ("커서 답", "chat-1"))
+        self.assertEqual(self.calls[0][0], "cursor-agent")
+        for flag in ("-p", "--output-format", "json", "--mode", "ask"):
+            self.assertIn(flag, self.calls[0])
+        self.assertIn("--model", self.calls[0])
+        self.assertNotIn("--force", self.calls[0])  # 쓰기를 여는 플래그는 좌석에 없다
+        self.assertNotIn("--resume", self.calls[0])
+
+    def test_second_turn_resumes_the_same_chat(self):
+        import json as jsonlib
+
+        from asgard.agent.runtime import PeerSpec
+
+        peer = self.runtime(
+            [
+                jsonlib.dumps({"result": "1회차", "session_id": "chat-1"}),
+                jsonlib.dumps({"result": "2회차", "session_id": "chat-1"}),
+            ]
+        )
+        first = peer.turn(PeerSpec("cursor"), "입장을 말해줘")
+        second = peer.turn(PeerSpec("cursor"), "반박에 답해줘", first.session_id)
+
+        self.assertEqual(second.text, "2회차")
+        self.assertEqual(self.calls[1][self.calls[1].index("--resume") + 1], "chat-1")
+
+    def test_a_missing_cli_names_the_install_step(self):
+        from asgard import errors
+        from asgard.agent.runtime import CliPeerRuntime, PeerSpec
+
+        def runner(argv, **kwargs):
+            raise FileNotFoundError(argv[0])
+
+        peer = CliPeerRuntime("/tmp/rt", runner=runner)
+        with self.assertRaises(errors.UpstreamError) as caught:
+            peer.turn(PeerSpec("cursor"), "안건")
+        self.assertIn("cursor-agent", str(caught.exception.remedy))
+
+    def test_peers_present_reports_only_what_is_on_path(self):
+        from asgard.agent import runtime
+
+        with mock.patch.object(runtime.shutil, "which", lambda name: "/bin/" + name if name == "codex" else None):
+            self.assertEqual(runtime.peers_present(), ("codex",))
+
+
 if __name__ == "__main__":
     unittest.main()
