@@ -476,13 +476,18 @@ def _signature(sig: object) -> str:
 def _symbol_terms(
     root: str, base: str, scope: set[str], seen: dict
 ) -> tuple[list[Term], list[tuple[str, str]], list[str]]:
-    """새 공개 심볼 → (용어, 못 본 자리, 심볼 이름). 좌표를 못 만든 심볼은 용어로 안 만든다(계약 ①)."""
+    """새 공개 심볼 → (용어, 못 본 자리, 심볼 이름). 좌표를 못 만든 심볼은 용어로 안 만든다(계약 ①).
+
+    표면 대조는 `scope` 안에서만 돌린다. 아래에서 쓰는 것은 전부 `path in scope` 로 거른 뒤라
+    나무 전체를 대조하면 그 결과를 버리려고 파일마다 `git show` 를 부르는 꼴이 된다. 호출부
+    후보(`obligations`)도 여기서는 안 읽으므로 끄고 부른다 — 켜면 나무의 .py 를 전부 연다.
+    """
     try:
-        diff = surface.diff(root, base)
+        diff = surface.diff(root, base, with_candidates=False, scope=tuple(sorted(scope)))
     except Exception:
         return ([], [("(public surface)", "표면 대조를 돌리지 못해서 새 심볼을 못 봤어요")], [])
     gaps = [(path, "구문을 못 읽어서 표면 대조에서 빠졌어요") for path in diff.unparsed if path in scope]
-    gaps.extend(_unstaged_gaps(root, base, scope, seen))
+    gaps.extend(_unstaged_gaps(scope, seen, set(diff.paths)))
     terms: list[Term] = []
     names: list[str] = []
     docs: dict[str, dict[str, str]] = {}  # 경로마다 한 번만 파싱한다 (`_doclines` 와 같은 이유)
@@ -507,17 +512,16 @@ def _symbol_terms(
     return (terms, gaps, names)
 
 
-def _unstaged_gaps(root: str, base: str, scope: set[str], seen: dict) -> list[tuple[str, str]]:
+def _unstaged_gaps(scope: set[str], seen: dict, tracked: set[str]) -> list[tuple[str, str]]:
     """`surface`는 추적되는 변경만 본다 — 인덱스에 없는 새 파일은 새 심볼도 확인 명령도 못 낸다.
 
     실측으로 잡힌 자리다: 방금 만든 파일 둘로 `explain`을 돌리면 읽는 순서는 40자리가 나오는데
     용어와 확인 명령이 통째로 0건이었고, 화면 어디에도 그 이유가 없었다. 조용한 0건은 "없다"로
     읽힌다(계약 ⑤).
+
+    `tracked` 는 부르는 쪽이 이미 받아 둔 `SurfaceDiff.paths` 다 — 같은 `git diff` 를 여기서 다시
+    부르면 tutor 한 번이 같은 답을 두 번 받으려고 git 프로세스를 하나 더 띄운다.
     """
-    try:
-        tracked = set(surface.changed_python(root, base))
-    except Exception:
-        return []
     return [
         (rel, "`git add` 전이라 표면 대조에서 빠졌어요 — 새 심볼과 확인 명령을 못 만들었어요")
         for rel in sorted(seen)

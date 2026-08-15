@@ -56,6 +56,7 @@ REGISTRY: dict[str, str] = {
     "verifier-context": "verifier_context",  # 판정자 입력 — SubagentStart, 하네스 관측 실행 기록 (메모리는 여전히 차단)
     "dispatch-context": "dispatch_context",  # 배차받은 쪽의 통로 — SubagentStart, 배차 주소·질문·실패 보고
     "siege-inbox": "siege_inbox",  # 배차 장부 우편함 — 이 세션 앞으로 온 메일을 턴 머리에 주입
+    "hook-dispatch": "hook_dispatch",  # 주입 훅 묶음 실행 — 이벤트당 프로세스 하나 (가드·증거 훅 제외)
 }
 
 

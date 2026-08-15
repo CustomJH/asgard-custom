@@ -201,6 +201,10 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 # 자기 SQLite 를 소유하고 규칙만 진다. 실행은 위층(agent.heimdall)이 하고, 이
                 # 계층은 무엇이 배차됐고 무엇이 답을 기다리는지만 안다.
                 "orchestration",
+                # roundtable — 좌석 여럿을 한 안건에 앉히고 회차를 돌리는 규칙. orchestration
+                # 옆이다: 전사를 그 장부에 적고, 그 위의 무엇도 안 본다. 모델 호출(providers·
+                # agent.oneshot)은 상향이라 plan 과 같은 규율으로 함수 안 lazy 로만 부른다.
+                "roundtable",
                 # engines — 이 자리에 설정된 엔진이 **지금 실제로 닿는가**. providers(해석)만 보고
                 # 도메인 형제를 안 본다. 자동 배치가 이걸 근거로 삼는다: 닿지 않는 엔진에 역할을
                 # 앉히면 그건 배치가 아니라 지연된 실패다.
@@ -313,6 +317,9 @@ SUBTIERS: dict[str, list[tuple[str, frozenset[str]]]] = {
                     "k6_selftest",
                     "sessions",
                     "tutor_model",
+                    # roundtable — 자립층의 orchestration 하나를 얹는다(전사를 그 장부에 적는다).
+                    # k6_live 와 같은 이유로 여기다: 이름이 표여서가 아니라 부등호가 그렇다.
+                    "roundtable",
                 }
             ),
         ),
@@ -630,6 +637,9 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
                     "siege",
                     "siege_act",
                     "siege_serve",
+                    # roundtable — 좌석을 앉히고 전사를 찍는 표면. siege 삼형제와 같은 자리다:
+                    # 저장소 뿌리를 health 에서 직접 받고, 토론 자체는 도메인(roundtable)이 한다.
+                    "roundtable",
                     "studio",
                     "surface",
                     "sync",
@@ -767,6 +777,11 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
                 }
             ),
         ),
+        # 훅을 **부르는** 훅 하나. 한 이벤트의 주입 훅들을 프로세스 하나에서 돌리므로 위 등급
+        # 위에 선다. 형제를 이름으로 임포트하지는 않는다 — 배선이 준 파일 경로로 올리므로 배포
+        # 계약(형제 임포트 금지)은 그대로고, 그래서 이 방향은 엣지 추출기에 안 보인다.
+        # 표가 적어 두는 이유가 그것이다.
+        ("묶음 실행", frozenset({"hook_dispatch"})),
         ("파사드", frozenset({"__init__"})),
     ),
     # 훅이 함께 지고 다니는 공용 라이브러리. 여기 등급은 실측 임포트 방향의 위상 정렬 그대로다
@@ -1436,6 +1451,7 @@ class TestLayeredArchitecture(unittest.TestCase):
             # 탐침 프로세스를 조용히 끝내고, stdout 만 보던 판정은 초록을 냈다 (26-08-14 codex
             # 독립 판정이 import 시점 `SystemExit(7)` 로 그 구멍을 만들어 보였다). 종료 코드도 함께
             # 본다: 탐침이 끝까지 못 간 것과 훅이 멀쩡한 것은 서로 다른 사실이다.
+            "    try: s.loader.exec_module(m)\n"
             "    except BaseException as e: bad.append('%s: %s: %s'%(f,type(e).__name__,e))\n"
             "print('\\n'.join(bad))\n"
         )

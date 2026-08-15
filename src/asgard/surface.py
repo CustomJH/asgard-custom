@@ -77,6 +77,7 @@ class SurfaceDiff:
     files_compared: int = 0
     unparsed: tuple[str, ...] = ()  # 파싱 실패 — 미판정으로 명기 (fail-closed)
     obligations: dict[str, tuple[str, ...]] = field(default_factory=dict)  # qualname → 호출부 후보
+    paths: tuple[str, ...] = ()  # 대조 대상으로 고른 .py — 부르는 쪽이 같은 것을 git 에게 다시 안 묻게 넣는다
 
     @property
     def breaking(self) -> tuple[Change, ...]:
@@ -229,9 +230,14 @@ def is_surface_path(path: str) -> bool:
     return not (name.startswith("test_") or name.endswith("_test.py") or name == "conftest.py")
 
 
-def changed_python(root: str, base: str) -> tuple[str, ...]:
-    """기준 대비 변경·추가·삭제된 **표면** .py 목록 (rename은 양쪽 경로로 나온다)."""
-    code, out = _git(root, "diff", "--name-only", base, "--", "*.py")
+def changed_python(root: str, base: str, scope: tuple[str, ...] = ()) -> tuple[str, ...]:
+    """기준 대비 변경·추가·삭제된 **표면** .py 목록 (rename은 양쪽 경로로 나온다).
+
+    `scope`가 있으면 git 에게 그 경로만 묻는다. 부르는 쪽이 볼 자리를 이미 아는데 나무 전체를
+    돌려받으면, 이 목록을 받아 파일마다 `git show`를 부르는 `diff()`의 호출 수가 **묻지도 않은
+    파일 수**에 비례해 늘어난다 (실측: 미커밋 .py 50개일 때 tutor 한 번이 git 을 108회 불렀다).
+    """
+    code, out = _git(root, "diff", "--name-only", base, "--", *(scope or ("*.py",)))
     if code != 0:
         return ()
     found = {line.strip() for line in out.splitlines() if line.strip().endswith(".py")}
@@ -290,16 +296,18 @@ def candidates(root: str, qualnames: object, exclude: object = ()) -> dict[str, 
     return {name: tuple(sorted(paths)[:_MAX_CANDIDATE_FILES]) for name, paths in hits.items() if paths}
 
 
-def diff(root: str, base: str = "HEAD", *, with_candidates: bool = True) -> SurfaceDiff:
+def diff(root: str, base: str = "HEAD", *, with_candidates: bool = True, scope: tuple[str, ...] = ()) -> SurfaceDiff:
     """기준 대비 공개 표면 변화 + 각 파괴적 변화의 호출부 후보.
 
-    변경된 .py만 대조한다 — 나무 전체 표면을 뜨는 것은 이 질문에 필요하지 않다.
+    변경된 .py만 대조한다 — 나무 전체 표면을 뜨는 것은 이 질문에 필요하지 않다. `scope`를 주면
+    그 경로 안에서만 묻는다: 결과를 나중에 걸러내는 것과 값이 같지만, 걸러낼 파일마다 도는
+    `git show` 를 아예 안 부른다.
     """
-    paths = changed_python(root, base)
+    targets = changed_python(root, base, scope)
     changes: list[Change] = []
     unparsed: list[str] = []
     compared = 0
-    for path in paths:
+    for path in targets:
         old_text = _at_ref(root, base, path)
         new_text = _worktree(root, path)
         old = extract(old_text) if old_text is not None else {}
@@ -320,6 +328,7 @@ def diff(root: str, base: str = "HEAD", *, with_candidates: bool = True) -> Surf
         files_compared=compared,
         unparsed=tuple(unparsed),
         obligations=obligations,
+        paths=targets,
     )
 
 

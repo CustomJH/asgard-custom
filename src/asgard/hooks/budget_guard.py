@@ -25,6 +25,17 @@
 #
 # 헬리오스가 못 찾던 agent_type이 여기 있다. 훅 페이로드가 아니라 디스크가 정본이다.
 #
+# ── 매 호출 전량 재스캔을 안 하는 이유 (26-08-14) ────────────────────────────────────
+# 이 훅은 UserPromptSubmit 과 PreToolUse 두 자리에 걸려 있어 도구 호출마다 돈다. 계측원인 트랜스
+# 크립트는 세션 내내 자라기만 하고(이 저장소 실측 1.38MB), 매번 통째로 훑으면 훅 한 번의 값이
+# 세션 길이에 비례해 붙는다. 그래서 마지막으로 센 바이트 오프셋과 그때까지의 누계를 세션별 상태
+# 파일(`.asgard/state/budget-<세션>.json`)에 적고, 다음 호출은 그 뒤에 붙은 바이트만 읽는다.
+#
+# 꼬리 N줄만 읽는 방법은 여기서 오답이다 — 앞부분을 놓치면 누계가 실제보다 작아지고 상한 판정이
+# **막아야 할 때 안 막는 쪽**으로 틀린다. 체크포인트는 앞부분을 버리는 게 아니라 접어 두는 것이라
+# 집계값이 전량 스캔과 같다. 값을 못 믿는 자리는 전부 전량 재스캔으로 되돌아간다: 파일이 줄었다
+# (회전·교체), 앞 4096바이트 지문이 다르다, 상태 파일이 깨졌거나 없다. `read_ledger` 참조.
+#
 # ── 지점은 둘, 거부는 하나 ──────────────────────────────────────────────────────────
 # 트랜스크립트 381세션 실측에서 상위 소비 세션(29.3M·28.8M·24.5M cost unit)은 **서브에이전트
 # 호출이 0** 이었다. 진짜 지출은 메인 레인에서 난다. Task 스폰만 재면 최대 지출을 통째로
@@ -65,6 +76,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import zlib
 from dataclasses import dataclass, field
 
 # Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 넣지 못한다 — 인코딩 오류가
@@ -189,6 +201,7 @@ class Ledger:
     agent_calls: dict = field(default_factory=dict)  # role -> int
     models: dict = field(default_factory=dict)  # model -> call count
     read_error: str = ""  # 조용한 절단 금지 — 못 읽었으면 그 사실을 넣는다
+    broken: int = 0  # 못 읽은 줄 수 — read_error 문구의 출처이자 체크포인트에 이어지는 값
 
     def total(self) -> Usage:
         out = Usage()
@@ -199,6 +212,17 @@ class Ledger:
 
     def cost_units(self, weights: dict | None = None) -> float:
         return self.total().cost_units(weights)
+
+    def merge(self, other: "Ledger") -> None:
+        """다른 집계를 이 집계에 더한다 — 체크포인트에 접어 둔 몫과 이번에 읽은 몫을 잇는 자리."""
+        self.main.add(other.main)
+        for role, usage in other.agents.items():
+            self.agents.setdefault(role, Usage()).add(usage)
+        for role, calls in other.agent_calls.items():
+            self.agent_calls[role] = self.agent_calls.get(role, 0) + calls
+        for model, calls in other.models.items():
+            self.models[model] = self.models.get(model, 0) + calls
+        self.broken += other.broken
 
 
 def _usage_from(raw) -> Usage | None:
@@ -217,53 +241,201 @@ def _usage_from(raw) -> Usage | None:
     return out if seen else None
 
 
-def read_ledger(path: str) -> Ledger:
+def _ingest(ledger: Ledger, row: dict) -> None:
+    """트랜스크립트 한 행을 두 레인에 반영한다 — 메인은 message.usage, 에이전트는 toolUseResult."""
+    message = row.get("message")
+    if isinstance(message, dict):
+        usage = _usage_from(message.get("usage"))
+        if usage:
+            ledger.main.add(usage)
+            model = str(message.get("model") or "")
+            if model:
+                ledger.models[model] = ledger.models.get(model, 0) + 1
+    result = row.get("toolUseResult")
+    if isinstance(result, dict):
+        role = str(result.get("agentType") or "").strip()
+        if role:
+            ledger.agent_calls[role] = ledger.agent_calls.get(role, 0) + 1
+            usage = _usage_from(result.get("usage"))
+            if usage:
+                ledger.agents.setdefault(role, Usage()).add(usage)
+            model = str(result.get("resolvedModel") or "")
+            if model:
+                ledger.models[model] = ledger.models.get(model, 0) + 1
+
+
+def _scan(handle) -> tuple[Ledger, int, Ledger]:
+    """열린 파일의 현재 위치부터 끝까지 센다 — `(확정 집계, 확정한 바이트 수, 꼬리 집계)`.
+
+    개행으로 끝나지 않은 마지막 줄은 호스트가 지금 쓰는 중일 수 있다. 그 줄은 이번 판정에는
+    넣되(빼면 과소 집계고, 과소 집계는 안 막는 쪽으로 틀린다) 확정 몫에서는 뺀다 — 확정하면
+    다음 호출이 그 줄의 나머지를 새 줄로 읽어 반쪽만 세거나 같은 usage 를 두 번 센다.
+
+    이진 모드로 읽는 이유는 두 가지다: 바이트 오프셋이 그대로 나와야 체크포인트를 적을 수 있고,
+    `"usage"` 선별을 디코딩 전에 해서 걸러지는 줄의 디코딩 값을 안 낸다."""
+    committed, tail, consumed = Ledger(), Ledger(), 0
+    for raw in handle:
+        target = committed if raw.endswith(b"\n") else tail
+        if target is committed:
+            consumed += len(raw)
+        if b'"usage"' not in raw and b'"toolUseResult"' not in raw:
+            continue
+        try:
+            row = json.loads(raw.decode("utf-8", "ignore"))
+        except Exception:
+            target.broken += 1
+            continue
+        if isinstance(row, dict):
+            _ingest(target, row)
+    return committed, consumed, tail
+
+
+# 체크포인트 — 마지막으로 센 자리와 그때까지의 누계. 파일 형식이 바뀌면 version 을 올린다:
+# 못 알아보는 판은 버려지고 그 세션은 한 번 전량 재스캔한다 (틀린 누계를 이어받는 것보다 낫다).
+_CHECKPOINT_VERSION = 1
+_HEAD_BYTES = 4096  # 파일 동일성 지문을 뜨는 앞부분 — 세션 기록은 줄마다 sessionId 를 적는다
+_COMPONENTS = ("input", "output", "cache_write", "cache_read")
+
+
+def _checkpoint_path(root: str, transcript: str) -> str:
+    """이 트랜스크립트의 체크포인트 파일 — 쓸 자리가 없으면 빈 문자열.
+
+    이름짓기는 craft-gate 의 `writes-<세션>.json`·`craftgate-<세션>.json` 과 같은 규약이고, 세션
+    이름은 트랜스크립트 파일 이름이다 (Claude Code 는 `<session-id>.jsonl`, Codex 는
+    `rollout-<시각>-<uuid>.jsonl`). `.asgard` 가 없는 트리에는 안 적는다 — 아스가르드를 안 쓰는
+    저장소에 상태 폴더를 만드는 것은 이 훅의 일이 아니다."""
+    if not root or not transcript or not os.path.isdir(os.path.join(root, ".asgard")):
+        return ""
+    name = os.path.basename(transcript)
+    if name.endswith(".jsonl"):
+        name = name[: -len(".jsonl")]
+    safe = "".join(char if (char.isalnum() or char in "._-") else "-" for char in name)
+    return os.path.join(root, ".asgard", "state", "budget-" + safe + ".json") if safe else ""
+
+
+def _head_mark(handle) -> str:
+    """파일 앞부분의 지문 — 같은 이름에 다른 파일이 앉았는지(회전·교체) 가리는 값.
+
+    hashlib 이 아니라 zlib 인 이유는 값이다: 이 훅은 도구 호출마다 새 프로세스로 뜨고 `import
+    hashlib` 하나가 실측 0.9~1.2ms 인데 `import zlib` 은 0.03ms 다. 32비트 검사합이라 서로 다른
+    앞부분이 같은 값을 낼 확률이 남지만, 그 자리는 파일이 같은 이름·같은 이상의 크기로 교체되고
+    앞 4096바이트의 검사합까지 같은 경우다. 어긋나면 전량 재스캔이므로 틀리는 방향은 느린 쪽이다."""
+    handle.seek(0)
+    return format(zlib.crc32(handle.read(_HEAD_BYTES)), "08x")
+
+
+def _read_checkpoint(path: str, head: str, size: int) -> tuple[int, Ledger] | None:
+    """`(오프셋, 그때까지의 누계)` — 이어 붙일 수 없으면 None (호출자는 전량 재스캔한다).
+
+    되돌아가는 조건: 파일이 없다·JSON 이 깨졌다·판이 다르다·앞부분 지문이 다르다(교체)·오프셋이
+    파일 크기를 넘는다(잘렸다)·성분에 정수가 아닌 값이 있다. 의심스러운 판은 고쳐 쓰지 않고
+    통째로 버린다 — 틀린 누계를 이어받으면 상한이 조용히 어긋난다."""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            saved = json.load(handle)
+    except Exception:
+        return None
+    if not isinstance(saved, dict) or saved.get("version") != _CHECKPOINT_VERSION:
+        return None
+    if saved.get("head") != head:
+        return None
+    offset = saved.get("offset")
+    broken = saved.get("broken", 0)
+    if isinstance(offset, bool) or not isinstance(offset, int) or not 0 <= offset <= size:
+        return None
+    if isinstance(broken, bool) or not isinstance(broken, int) or broken < 0:
+        return None
+    ledger = Ledger(broken=broken)
+    main = _usage_from_state(saved.get("main"))
+    if main is None:
+        return None
+    ledger.main = main
+    agents = saved.get("agents")
+    if not isinstance(agents, dict):
+        return None
+    for role, raw in agents.items():
+        usage = _usage_from_state(raw)
+        if usage is None:
+            return None
+        ledger.agents[str(role)] = usage
+    for source, target in ((saved.get("calls"), ledger.agent_calls), (saved.get("models"), ledger.models)):
+        if not isinstance(source, dict):
+            return None
+        for key, count in source.items():
+            if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+                return None
+            target[str(key)] = count
+    return offset, ledger
+
+
+def _usage_from_state(raw) -> Usage | None:
+    """체크포인트에 적힌 성분 넷 → Usage. 하나라도 음수·비정수면 None (판 전체를 버린다)."""
+    if not isinstance(raw, dict):
+        return None
+    usage = Usage()
+    for name in _COMPONENTS:
+        value = raw.get(name, 0)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            return None
+        setattr(usage, name, value)
+    return usage
+
+
+def _write_checkpoint(path: str, offset: int, head: str, ledger: Ledger) -> None:
+    """확정한 자리까지의 누계를 적는다 — 실패는 삼킨다 (다음 호출이 전량 재스캔하면 그만이다).
+
+    temp+rename 은 craft-gate 의 카운터와 같은 이유다: 중간에 끊긴 파일이 남으면 다음 호출이
+    그것을 읽고 누계를 잃는다."""
+    payload = {
+        "version": _CHECKPOINT_VERSION,
+        "offset": offset,
+        "head": head,
+        "broken": ledger.broken,
+        "main": {name: getattr(ledger.main, name) for name in _COMPONENTS},
+        "agents": {role: {name: getattr(usage, name) for name in _COMPONENTS} for role, usage in ledger.agents.items()},
+        "calls": dict(ledger.agent_calls),
+        "models": dict(ledger.models),
+    }
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = "%s.%d.tmp" % (path, os.getpid())
+        with open(tmp, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle)
+        os.replace(tmp, path)
+    except Exception:
+        pass  # 못 적으면 다음 호출이 전량 재스캔한다 — 집계는 안 틀리고 그 한 번이 느려질 뿐이다
+
+
+def read_ledger(path: str, root: str = "") -> Ledger:
     """트랜스크립트 JSONL을 두 레인으로 집계한다. 못 읽으면 빈 집계 + read_error.
 
     메인 레인은 assistant 행의 message.usage, 에이전트 레인은 Task 결과의 toolUseResult 다.
-    한 행이 깨져도 나머지는 센다 — 부분 관측이 무관측보다 낫고, 부분이라는 사실은 read_error가 진다."""
+    한 행이 깨져도 나머지는 센다 — 부분 관측이 무관측보다 낫고, 부분이라는 사실은 read_error가 진다.
+
+    `root` 를 주면 세션별 체크포인트에 확정 오프셋과 누계를 적고 다음 호출은 그 뒤만 읽는다.
+    안 주면 매번 전량 스캔이다 — 어느 쪽이든 같은 파일에 대한 집계값은 같다."""
     ledger = Ledger()
     if not path:
         ledger.read_error = "no transcript path"
         return ledger
     try:
-        handle = open(path, encoding="utf-8", errors="ignore")
+        handle = open(path, "rb")
     except Exception as exc:
         ledger.read_error = f"open failed: {type(exc).__name__}"
         return ledger
-    broken = 0
     with handle:
-        for line in handle:
-            if '"usage"' not in line and '"toolUseResult"' not in line:
-                continue
-            try:
-                row = json.loads(line)
-            except Exception:
-                broken += 1
-                continue
-            if not isinstance(row, dict):
-                continue
-            message = row.get("message")
-            if isinstance(message, dict):
-                usage = _usage_from(message.get("usage"))
-                if usage:
-                    ledger.main.add(usage)
-                    model = str(message.get("model") or "")
-                    if model:
-                        ledger.models[model] = ledger.models.get(model, 0) + 1
-            result = row.get("toolUseResult")
-            if isinstance(result, dict):
-                role = str(result.get("agentType") or "").strip()
-                if role:
-                    ledger.agent_calls[role] = ledger.agent_calls.get(role, 0) + 1
-                    usage = _usage_from(result.get("usage"))
-                    if usage:
-                        ledger.agents.setdefault(role, Usage()).add(usage)
-                    model = str(result.get("resolvedModel") or "")
-                    if model:
-                        ledger.models[model] = ledger.models.get(model, 0) + 1
-    if broken:
-        ledger.read_error = f"{broken} unparsable line(s)"
+        state = _checkpoint_path(root, path)
+        head = _head_mark(handle) if state else ""
+        resumed = _read_checkpoint(state, head, os.fstat(handle.fileno()).st_size) if state else None
+        start, ledger = resumed if resumed else (0, Ledger())
+        handle.seek(start)
+        committed, consumed, tail = _scan(handle)
+        ledger.merge(committed)
+        if state and (consumed or not resumed):
+            _write_checkpoint(state, start + consumed, head, ledger)
+        ledger.merge(tail)
+    if ledger.broken:
+        ledger.read_error = f"{ledger.broken} unparsable line(s)"
     return ledger
 
 
@@ -452,7 +624,9 @@ def main() -> None:
     if enforce == "off":
         sys.exit(0)
 
-    ledger = read_ledger(str(data.get("transcript_path") or ""))
+    # root 를 같이 넘기는 것이 증분 스캔의 스위치다 — 이 훅은 도구 호출마다 도는 자리라
+    # 트랜스크립트를 매번 통째로 훑으면 값이 세션 길이에 비례해 붙는다 (모듈 주석).
+    ledger = read_ledger(str(data.get("transcript_path") or ""), root)
     role = spawn_role(data) if current_action == "task" else ""
     result = verdict(ledger, limits, role)
 

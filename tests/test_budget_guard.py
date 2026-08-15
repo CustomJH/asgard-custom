@@ -111,6 +111,157 @@ class TestLedger(unittest.TestCase):
         self.assertEqual(ledger.main.input, 0)
 
 
+class _CountingFile:
+    """읽은 줄의 바이트 수를 세는 파일 껍데기 — 증분 스캔이 실제로 덜 읽는지 재는 자리."""
+
+    def __init__(self, handle, lines: list, reads: list):
+        self._handle, self._lines, self._reads = handle, lines, reads
+
+    def __iter__(self):
+        for raw in self._handle:
+            self._lines.append(len(raw))
+            yield raw
+
+    def read(self, *args):
+        body = self._handle.read(*args)
+        self._reads.append(len(body))
+        return body
+
+    def __getattr__(self, name):
+        return getattr(self._handle, name)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return self._handle.__exit__(*exc)
+
+
+class TestIncrementalScan(unittest.TestCase):
+    """체크포인트는 같은 값을 덜 읽고 낼 뿐이다 — 집계가 달라지면 상한 판정이 어긋난다.
+
+    꼬리 N줄만 읽는 방법이 오답인 이유가 여기 있다: 앞부분을 놓치면 누계가 실제보다 작아지고,
+    게이트는 막아야 할 때 안 막는 쪽으로 틀린다. 그래서 이 묶음의 모든 시험이 증분 결과를
+    **전량 스캔과 대조**한다."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        os.makedirs(os.path.join(self.root, ".asgard", "state"), exist_ok=True)
+
+    def _write(self, path: str, *lines: str) -> None:
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write("".join(lines))
+
+    def _state(self) -> str:
+        return os.path.join(self.root, ".asgard", "state")
+
+    def _snapshot(self, ledger: bg.Ledger) -> tuple:
+        fields = ("input", "output", "cache_write", "cache_read")
+        return (
+            tuple(getattr(ledger.main, name) for name in fields),
+            {role: tuple(getattr(usage, name) for name in fields) for role, usage in ledger.agents.items()},
+            dict(ledger.agent_calls),
+            dict(ledger.models),
+            ledger.read_error,
+        )
+
+    def _assert_matches_full_scan(self, path: str) -> None:
+        self.assertEqual(self._snapshot(bg.read_ledger(path, self.root)), self._snapshot(bg.read_ledger(path)))
+
+    def test_totals_match_a_full_scan_as_the_transcript_grows(self):
+        path = _transcript(
+            _assistant(input_tokens=10, output_tokens=20, cache_creation_input_tokens=30, cache_read_input_tokens=40),
+            _task("asgard-worker", input_tokens=100, output_tokens=200),
+        )
+        self.addCleanup(os.unlink, path)
+        self._assert_matches_full_scan(path)
+        for extra in (
+            _assistant(output_tokens=7),
+            _task("asgard-verifier", input_tokens=3),
+            _line(type="user", toolUseResult={"agentType": "asgard-worker", "content": "x"}),
+        ):
+            self._write(path, extra)
+            self._assert_matches_full_scan(path)
+
+    def test_the_second_call_reads_only_the_appended_bytes(self):
+        path = _transcript(*[_assistant(output_tokens=n) for n in range(400)])
+        self.addCleanup(os.unlink, path)
+        first = os.path.getsize(path)
+        bg.read_ledger(path, self.root)
+        appended = _assistant(output_tokens=5)
+        self._write(path, appended)
+
+        lines, reads = [], []
+        real_open = open
+
+        def counting(target, *args, **kwargs):
+            handle = real_open(target, *args, **kwargs)
+            return _CountingFile(handle, lines, reads) if str(target).endswith(".jsonl") else handle
+
+        with mock.patch("builtins.open", counting):
+            ledger = bg.read_ledger(path, self.root)
+        self.assertEqual(sum(lines), len(appended.encode()))  # 줄 스캔은 새로 붙은 만큼만
+        self.assertLessEqual(sum(reads), 4096)  # 나머지는 동일성 지문뿐
+        self.assertGreater(first, 10 * sum(lines))  # 전량이면 이만큼 읽었다
+        self.assertEqual(ledger.main.output, sum(range(400)) + 5)
+
+    def test_a_shrunken_transcript_is_rescanned_whole(self):
+        path = _transcript(*[_assistant(output_tokens=100) for _ in range(20)])
+        self.addCleanup(os.unlink, path)
+        bg.read_ledger(path, self.root)
+        with open(path, "w", encoding="utf-8") as handle:  # 회전·교체 — 오프셋이 파일 크기를 넘는다
+            handle.write(_assistant(output_tokens=3))
+        self.assertEqual(bg.read_ledger(path, self.root).main.output, 3)
+        self._assert_matches_full_scan(path)
+
+    def test_a_replacement_of_the_same_size_is_not_resumed(self):
+        path = _transcript(_assistant(output_tokens=111), _assistant(output_tokens=222))
+        self.addCleanup(os.unlink, path)
+        bg.read_ledger(path, self.root)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(_assistant(output_tokens=333) + _assistant(output_tokens=444))
+        self.assertEqual(bg.read_ledger(path, self.root).main.output, 777)
+
+    def test_a_corrupt_checkpoint_is_discarded(self):
+        path = _transcript(_assistant(output_tokens=42))
+        self.addCleanup(os.unlink, path)
+        bg.read_ledger(path, self.root)
+        mark = os.path.join(self._state(), "budget-" + os.path.basename(path)[: -len(".jsonl")] + ".json")
+        self.assertTrue(os.path.exists(mark))
+        for junk in ('{"version": 1, "offset": "x"}', '{"version": 99}', "not json", "[]"):
+            with open(mark, "w", encoding="utf-8") as handle:
+                handle.write(junk)
+            with self.subTest(junk=junk):
+                self.assertEqual(bg.read_ledger(path, self.root).main.output, 42)
+
+    def test_an_unterminated_last_line_is_counted_but_not_committed(self):
+        # 호스트가 쓰는 중인 줄을 확정하면 다음 호출이 나머지를 새 줄로 읽어 반쪽만 센다.
+        path = _transcript(_assistant(output_tokens=10))
+        self.addCleanup(os.unlink, path)
+        half = _assistant(output_tokens=90)
+        self._write(path, half[:-1])  # 개행 없는 꼬리
+        self.assertEqual(bg.read_ledger(path, self.root).main.output, 100)
+        self._write(path, "\n" + _assistant(output_tokens=1))
+        self.assertEqual(bg.read_ledger(path, self.root).main.output, 101)
+        self._assert_matches_full_scan(path)
+
+    def test_a_tree_without_asgard_gets_no_checkpoint(self):
+        bare = tempfile.mkdtemp()
+        path = _transcript(_assistant(output_tokens=8))
+        self.addCleanup(os.unlink, path)
+        self.assertEqual(bg.read_ledger(path, bare).main.output, 8)
+        self.assertEqual(os.listdir(bare), [])
+
+    def test_a_broken_line_stays_broken_across_calls(self):
+        path = _transcript(_assistant(output_tokens=10), '{"usage": broken\n')
+        self.addCleanup(os.unlink, path)
+        bg.read_ledger(path, self.root)
+        self._write(path, _assistant(output_tokens=5))
+        ledger = bg.read_ledger(path, self.root)
+        self.assertEqual(ledger.main.output, 15)
+        self.assertIn("1 unparsable", ledger.read_error)
+
+
 class TestCostUnits(unittest.TestCase):
     def test_cache_read_is_discounted(self):
         """원시 합으로 재면 캐시 읽기가 지표를 지배한다 — 그 구별이 곧 돈이다."""

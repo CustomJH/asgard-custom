@@ -5,6 +5,8 @@ import glob
 import importlib.util
 import json
 import os
+import shutil
+import tempfile
 import time
 import unittest
 
@@ -367,7 +369,11 @@ class TestWhatTheVerdictIsScoredOn(TrinityBase):
     def context(self, *commands):
         """주입 블록. 명령을 주면 그 호출이 실린 기록 파일을 함께 세운다 — 트리가 안 움직인
         라운드에서는 명령 기록이 있어야 블록 자체가 뜬다 (`main` 의 침묵 조건)."""
-        path = os.path.join(self.root, "none.jsonl")
+        # 기록 파일은 저장소 **밖**에 쓴다. 안에 쓰면 그 파일 자체가 추적 밖 변경으로 잡혀
+        # (트리 비교가 추적 밖도 담는다) "변경 0" 갈래를 세우려는 시험이 변경 1 을 만든다.
+        outside = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, outside, True)
+        path = os.path.join(outside, "none.jsonl")
         if commands:
             rows = []
             for i, command in enumerate(commands):
@@ -390,7 +396,7 @@ class TestWhatTheVerdictIsScoredOn(TrinityBase):
                         }
                     }
                 )
-            path = os.path.join(self.root, "transcript.jsonl")
+            path = os.path.join(outside, "transcript.jsonl")
             with open(path, "w", encoding="utf-8") as handle:
                 handle.write("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows))
         p = run(VCONTEXT, stdin=self.payload(transcript_path=path), cwd=self.root)
@@ -498,7 +504,13 @@ class TestWhatTheVerdictIsScoredOn(TrinityBase):
         text = self.context("python -m compileall app.py")
         self.assertIn("Changed files (0)", text)
         self.assertNotIn("not on the tree you are judging", text, "안 움직인 트리를 움직였다고 단언했다")
-        self.assertIn("ignored paths and .asgard/ outside the shared map", text)
+        # `is_junk` 는 gitignore 여부와 **무관하게** 빼므로 무시 경로만 적으면 그 문장이 다시
+        # 과장이 된다 (26-08-14 판정자 3회차가 auto-fix 로 남긴 자리 — 같은 종류의 과장이 그 앞
+        # 라운드를 FAIL 로 만들었다).
+        self.assertIn("ignored", text)
+        self.assertIn("__pycache__", text)
+        self.assertIn(".asgard/ outside the", text)
+        self.assertNotIn("leaves out only", text, "빠지는 것을 다 안 적고 'only' 라고 단언했다")
 
     def test_the_verifier_is_never_told_to_skip_a_check(self):
         """판정 독립성은 판정자가 명령을 직접 돌리는 데서 나온다 — 주입면이 그것을 깎으면 안 된다."""

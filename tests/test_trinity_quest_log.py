@@ -547,9 +547,14 @@ class TestQuestLog(TrinityBase):
         self.open_quest()
         self.write("app.py", "print('ok')\n")
 
+        # 이 시험이 지키는 것은 "안 막힌다" 이지 "5초 안에 끝난다" 가 아니다. FIFO 를 여는 쪽이
+        # 정말 막히면 그 대기는 무한이고, 그 앞에 선 git 호출 상한이 60초다 (tree.py 의 subprocess
+        # timeout) — 그러니 그 아래 어디에 벽을 세워도 같은 것을 증명한다. 5초는 이 저장소 기본
+        # 병렬(xdist 18워커) 경합에서 넘친다: 단독 1.16·2.05·3.76초인데 전량 실행에서 5.06초와
+        # 11.67초를 냈고, 그 빨강은 FIFO 와 아무 상관이 없었다 (26-08-13·14 실측).
         started = time.monotonic()
         result = jout(self.verify(level="full"))
-        self.assertLess(time.monotonic() - started, 5)
+        self.assertLess(time.monotonic() - started, 30)
         self.assertEqual(result["verdict"], "FAIL")
 
     def test_close_map_nudge_silent_without_map_or_change(self):

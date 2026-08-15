@@ -279,7 +279,13 @@ BLANK_DETAIL = {
 
 
 def render_commitments(
-    lines: list, turn: int, contracts: list, checks: list, rows: list, state: str, moved: int = 0
+    lines: list,
+    turn: int,
+    contracts: list,
+    checks: list,
+    rows: list,
+    state: str,
+    moved: int = 0,
 ) -> None:
     """이 판정이 무엇으로 채점되는지, 그리고 하네스가 이미 무엇을 돌렸는지를 본문에 붙인다.
 
@@ -331,8 +337,9 @@ def render_commitments(
             # 이 저장소에 서 있었다: `??` 로 뜨는 scope_activate.py 가 변경 목록에 M 으로 실렸다.
             # 실제로 빠지는 것은 무시 경로와 지도 밖 `.asgard/` 다 (26-08-14 판정 둘이 각각 잡았다).
             lines.append("Those ran on the tree at that anchor. Nothing shows as changed since, so they may still")
-            lines.append("describe this tree — the comparison covers untracked files too, and leaves out only")
-            lines.append("ignored paths and .asgard/ outside the shared map. Confirm anything that turns on those.")
+            lines.append("describe this tree — the comparison covers untracked files too, and leaves out ignored")
+            lines.append("paths, build junk (.pyc, __pycache__, node_modules, .venv), and .asgard/ outside the")
+            lines.append("shared map. Confirm anything that turns on those.")
 
 
 def render(

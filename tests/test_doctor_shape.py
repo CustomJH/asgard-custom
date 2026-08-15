@@ -158,11 +158,30 @@ class TestTemplateRegisteredHooksAreWired(unittest.TestCase):
         `.claude/hooks/quest-log.py` 가 적혀 있지만 그건 배선이 아니라 승인 규칙이다."""
         return set(re.findall(r"hooks/([a-z0-9-]+)\.py", json.dumps(settings["hooks"])))
 
+    @staticmethod
+    def _drop_segment(command: str, name: str) -> str:
+        """디스패처 명령에서 훅 하나의 `-- <경로> [인자...]` 조각만 뺀다.
+
+        주입 훅 여럿이 명령 하나를 공유하므로, 항목째 지우면 "이 훅 하나의 배선을 지웠다"가
+        아니라 "그 이벤트의 주입을 통째로 지웠다"가 된다 — 사람이 손으로 하는 일과 다르다."""
+        head, _, rest = command.partition(" -- ")
+        kept = [chunk for chunk in rest.split(" -- ") if f"/{name}.py" not in chunk]
+        return head + "".join(" -- " + chunk for chunk in kept) if kept else ""
+
     @classmethod
     def _without(cls, node, name: str):
-        """`name` 을 부르는 훅 항목만 뺀 설정 — 사람이 손으로 지운 배선의 재현."""
+        """`name` 을 부르는 배선만 뺀 설정 — 사람이 손으로 지운 배선의 재현."""
         if isinstance(node, list):
-            return [cls._without(v, name) for v in node if not (isinstance(v, dict) and name in str(v.get("command")))]
+            out = []
+            for value in node:
+                command = str(value.get("command")) if isinstance(value, dict) else ""
+                if name not in command:
+                    out.append(cls._without(value, name))
+                elif "hook-dispatch.py" in command and name != "hook-dispatch":
+                    trimmed = cls._drop_segment(command, name)
+                    if trimmed:
+                        out.append({**value, "command": trimmed})
+            return out
         if isinstance(node, dict):
             return {key: cls._without(value, name) for key, value in node.items()}
         return node
@@ -302,6 +321,22 @@ class TestHookInterpreterIsExecuted(unittest.TestCase):
             row = doctor._hook_interpreter_check(td)
         self.assertTrue(row["ok"], row["detail"])
         self.assertEqual([sys.executable], doctor._wired_hook_argv(td) or [sys.executable])
+
+    def test_arguments_after_the_hook_path_do_not_reach_the_interpreter(self):
+        """인터프리터는 첫 훅 경로 **앞까지**다 — 뒤에 오는 것은 훅의 인자다.
+
+        훅 경로만 걸러내던 판은 나머지를 전부 인터프리터에 넘겼다. 주입 훅을 묶어 부르는 줄
+        (`hook-dispatch.py -- <경로> -- <경로>`)에서 `python -- -c pass` 가 되어, 인터프리터는
+        멀쩡한데 이 행이 빨개졌다 (26-08-14 실측)."""
+        with tempfile.TemporaryDirectory() as td:
+            self._wire(
+                td,
+                '%s "$CLAUDE_PROJECT_DIR/.claude/hooks/hook-dispatch.py"'
+                ' -- "$CLAUDE_PROJECT_DIR/.claude/hooks/a.py"'
+                ' -- "$CLAUDE_PROJECT_DIR/.claude/hooks/b.py" claude brief' % sys.executable,
+            )
+            self.assertEqual(doctor._wired_hook_argv(td), [sys.executable])
+            self.assertTrue(doctor._hook_interpreter_check(td)["ok"])
 
     def test_no_wiring_falls_back_to_the_interpreter_this_machine_would_wire(self):
         with tempfile.TemporaryDirectory() as td:

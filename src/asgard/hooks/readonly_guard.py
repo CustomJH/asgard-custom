@@ -28,6 +28,7 @@ _HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
 if _HOOK_DIR not in sys.path:
     sys.path.append(_HOOK_DIR)
 
+from asgard_hooklib.baseline import harness_owned_command  # noqa: E402
 from asgard_hooklib.firing import run  # noqa: E402
 from asgard_hooklib.policy import READ_ONLY_ROLES  # noqa: E402
 from asgard_hooklib.readonly import (  # noqa: E402
@@ -252,7 +253,7 @@ def _forgery_surface_access(
     return any(marker in scannable for marker in _PRIVATE_CONTROL_PATHS)
 
 
-def refusal_reason(tool_name: str, command: str, path: str, roots: tuple[str, ...], agent: str) -> str:
+def refusal_reason(tool_name: str, command: str, path: str, roots: tuple[str, ...], agent: str, root: str = "") -> str:
     """이 호출을 막는다면 무엇 때문인가 — `control` · `escape` · `readonly`, 통과면 빈 문자열.
 
     정책 전부가 여기 한 자리에 있다 (`main`은 프로토콜만 다룬다). 규율은 세션이 아니라
@@ -336,6 +337,12 @@ def refusal_reason(tool_name: str, command: str, path: str, roots: tuple[str, ..
     if bool(path) and not path_token_within_root(roots, path):
         return "escape"
     if agent in _READONLY_AGENTS and (tool_name in _WRITE_TOOLS or (tool_name == "Bash" and not readonly_shell)):
+        # 하네스가 어차피 돌리는 명령 하나는 예외다 — 판정자에게 채점 기준을 알려 주면서 그것을
+        # 못 돌리게 두면, 판정이 자기 명령 대신 우회 계산으로 서게 된다 (`harness_owned_command`).
+        # 통제 표면 갈래보다 뒤에 두는 것이 요점이다: 기장·영수증·경계 파일 차단은 이 완화를
+        # 안 지나간다.
+        if tool_name == "Bash" and root and harness_owned_command(root, command):
+            return ""
         return "readonly"
     return ""
 
@@ -359,7 +366,7 @@ def main() -> None:
     root = str(data.get("cwd") or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
     roots = work_roots(root)
     path = str(tool_input.get("file_path") or tool_input.get("path") or tool_input.get("notebook_path") or "")
-    reason = refusal_reason(tool_name, command, path, roots, agent)
+    reason = refusal_reason(tool_name, command, path, roots, agent, root)
     if reason == "escape" and not path:
         # Bash 호출의 payload 에는 경로 인자가 없다 — 이탈 문장이 지목할 디렉터리를 명령에서 뽑는다.
         path = first_escaping_operand(roots, command)

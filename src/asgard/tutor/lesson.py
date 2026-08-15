@@ -37,10 +37,13 @@ def review(root: str, base: str = "HEAD", paths: object = ()) -> Lesson:
                 f"한 번에 {MAX_PATHS}개까지만 읽었어요 — 경로를 좁혀 다시 봐 주세요",
             )
         )
-    contract, gaps = _surface_points(root, base)
+    contract, gaps = _surface_points(root, base, tuple(named))
     # 경로를 지목받았으면 표면 판정도 그 안으로 자른다. surface는 나무 전체의 변경을 보는데,
     # 훅은 "이 세션이 쓴 경로"만 넘긴다 — 안 자르면 남이 만든 계약 파괴를 이 턴의 물음으로
     # 돌려주게 되고, 그건 craft 래칫이 막는 것과 똑같은 종류의 오귀속이다.
+    # 위에서 이미 pathspec 으로 좁혀 물었으므로 지금은 겹치는 자름이다. 남겨 두는 것은 값이 싸고,
+    # `_surface_points` 가 나중에 diff 밖에서 경로를 얻어 오더라도 이 턴의 물음이 지목 밖으로
+    # 새지 않는다는 불변식이 여기서 지켜지기 때문이다.
     scope = set(named)
     if scope:
         contract = [point for point in contract if point.path in scope]

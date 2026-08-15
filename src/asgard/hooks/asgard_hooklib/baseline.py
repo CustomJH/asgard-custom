@@ -7,11 +7,16 @@
 
 from __future__ import annotations
 
+import json
+import os
 import subprocess
 import time
 
-from .contracts import criteria_contracts
+from .contracts import contract_criteria, criteria_contracts
+from .paths import quest_dir, read_text
+from .policy import load_policy
 from .runners import detect_checks
+from .session import active_quest
 
 # 한 판정에서 하네스가 실제로 돌리는 체크의 상한. 판정자 주입면이 같은 수를 세어야 한다
 # (`verifier_context.commitments`) — 한쪽만 늘리면 판정자가 한 번도 못 본 명령이 PASS 채점에
@@ -265,3 +270,57 @@ def run_criteria_checks(
             row["budget"] = timeout
         results.append(row)
     return results
+
+
+def _declared_verify_commands(root: str) -> list[str]:
+    """활성 퀘스트가 **개봉 기록에** 선언한 verify 계약 명령.
+
+    첫 기록 하나만 본다. 뒤따르는 이벤트의 criteria 까지 세면 읽기전용 역할이 진행 중인 퀘스트에
+    자기 허용을 덧붙일 수 있다 — 그 역할은 `quest-log.py append --criteria "... | verify: <명령>"`
+    을 부를 수 있고(읽기전용 레인이 기장 쓰기를 허용한다), 그러면 아래 함수가 그 문자열을 하네스
+    소유로 읽는다.
+
+    이것이 막는 것은 거기까지다. `open` 도 같은 레인에서 허용되므로, 읽기전용 역할이 계약을 실은
+    퀘스트를 새로 열면 그 계약이 다시 개봉 기록이 된다. 그래도 실행 능력은 안 늘어난다 — 하네스가
+    `run_criteria_checks` 에서 그 문자열을 `shell=True` 로 어차피 돌린다. 문이 옮겨질 뿐이다."""
+    qid = active_quest(root)
+    if not qid:
+        return []
+    for line in read_text(os.path.join(quest_dir(root), qid + ".jsonl")).splitlines():
+        if not line.strip():
+            continue
+        try:
+            opening = json.loads(line)
+        except ValueError:
+            return []  # 개봉 기록을 못 읽으면 무엇이 선언됐는지도 말할 수 없다
+        contracts = criteria_contracts(contract_criteria(opening.get("criteria")))
+        return [c["verify_cmd"] for c in contracts if c.get("verify_cmd")]
+    return []
+
+
+def harness_owned_command(root: str, command: str) -> bool:
+    """하네스가 PASS 를 적을 때 자기 손으로 돌리는 명령인가 — 읽기전용 레인의 유일한 예외.
+
+    판정자 주입면은 이 판정이 무엇으로 채점되는지를 판정자에게 알려 준다: 선언된 verify 계약과
+    프로젝트 베이스라인 (`verifier_context.commitments`). 알려 주고 실행은 막으면 판정자는 채점
+    기준을 알고도 그것을 못 돌린다. 26-08-14 판정이 그 자리에 걸려, 계약 명령 대신 하네스 모듈을
+    임포트해 같은 수를 재는 우회로 판정을 세웠다 — 그 우회는 "판정자가 검증 명령을 직접 돌린다"는
+    검증 독립성의 근거를 판정자 손에서 뺀다.
+
+    넓히는 것은 허용 목록이 아니라 **출처**다. 여기를 통과하는 문자열은 하네스가 어차피 돌리는
+    바로 그것이므로 이 완화가 새로 여는 실행 능력은 없다 — 판정자가 안 돌려도 하네스가 돌린다.
+    그래서 정확히 일치할 때만 통과한다: 인자 하나가 달라지면 그것은 하네스가 돌리는 명령이 아니라
+    판정자가 고른 임의 실행이다. 공백만 접어서 비교하는 이유는 계약 원문과 정책에 적힌 형태가
+    들여쓰기로 갈릴 수 있어서다.
+
+    베이스라인은 `MAX_CHECKS` 까지만 센다. 하네스가 상한 밖 명령을 안 돌리므로, 그 뒤를 열면
+    "하네스가 어차피 돌린다"는 이 함수의 근거가 그 명령에는 성립하지 않는다."""
+    target = " ".join(command.split())
+    if not target:
+        return False
+    try:
+        owned = list(detect_checks(root, load_policy(root))[:MAX_CHECKS])
+        owned += _declared_verify_commands(root)
+    except Exception:
+        return False  # 출처를 못 읽으면 완화하지 않는다 — 이 레인의 기본은 막는 쪽이다
+    return any(target == " ".join(str(cmd).split()) for cmd in owned)

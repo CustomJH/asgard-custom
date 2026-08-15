@@ -6,10 +6,16 @@ from .. import surface, tutor_probes
 from ..tutor_model import Checkpoint
 
 
-def _surface_points(root: str, base: str) -> tuple[list[Checkpoint], list[tuple[str, str]]]:
-    """공개 시그니처 변화 + 호출부 후보. 목록을 손 grep에 맡기지 않는 것이 surface의 존재 이유다."""
+def _surface_points(
+    root: str, base: str, scope: tuple[str, ...] = ()
+) -> tuple[list[Checkpoint], list[tuple[str, str]]]:
+    """공개 시그니처 변화 + 호출부 후보. 목록을 손 grep에 맡기지 않는 것이 surface의 존재 이유다.
+
+    `scope` 는 지목받은 경로다. 부르는 쪽(`review`)이 결과를 어차피 그 경로로 자르므로, 자를
+    파일까지 대조하면 파일마다 도는 `git show` 만 늘고 화면은 그대로다.
+    """
     try:
-        diff = surface.diff(root, base)
+        diff = surface.diff(root, base, scope=scope)
     except Exception:
         return ([], [("(public surface)", "표면 대조를 돌리지 못해서 계약이 바뀌었는지 못 봤어요")])
     out: list[Checkpoint] = []

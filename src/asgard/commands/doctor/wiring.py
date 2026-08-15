@@ -1,5 +1,6 @@
 """doctor — 배선 검사. 클라이언트 설정·훅 인터프리터·역할 계약·3모드 동작 일치."""
 
+import itertools
 import json as _json
 import os
 import re
@@ -105,7 +106,11 @@ def _wired_hook_argv(root: str) -> list[str] | None:
                     continue
                 # posix=False — Windows 경로의 역슬래시를 탈출 문자로 먹지 않는다.
                 argv = [token.strip('"') for token in shlex.split(command, posix=False)]
-                head = [token for token in argv if "hooks/" not in token.replace("\\", "/")]
+                # 첫 훅 경로 **앞에서 자른다**. 훅 경로만 걸러내던 판은 뒤에 남는 인자를 전부
+                # 인터프리터 인자로 넘겼다 — 주입 훅을 묶어 부르는 줄(`hook-dispatch.py --
+                # <경로> -- <경로>`)에서 `python -- -c pass` 가 되어, 인터프리터는 멀쩡한데
+                # 이 행이 빨개졌다.
+                head = list(itertools.takewhile(lambda t: "hooks/" not in t.replace("\\", "/"), argv))
                 return head or None
     except Exception:
         return None

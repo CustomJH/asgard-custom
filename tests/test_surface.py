@@ -2,7 +2,7 @@
 
 실행: uv run pytest tests/test_surface.py
 
-이 모듈의 산출물은 판정자의 호출부 전수 대조에 **하한**으로 실린다. 분류가 틀리면 판정이
+이 모듈의 산출물은 판정자의 호출부 전수 대조에 **하한**으로 들어간다. 분류가 틀리면 판정이
 깨진 호출부를 안전하다고 읽으므로, breaking 여부는 종류별로 하나씩 못박는다.
 """
 
@@ -204,6 +204,22 @@ class GitDiffTest(unittest.TestCase):
         self._write("lib.py", "def fetch_record(a):\n    return a\n")
         result = surface.diff(self.root, "HEAD")
         self.assertIn("tests/test_lib.py", result.obligations["fetch_record"], "테스트 호출부는 진짜 의무다")
+
+    def test_scope_keeps_the_fan_out_off_untouched_files(self):
+        """`scope`를 주면 그 밖의 변경 파일은 대조 대상에서 빠진다.
+
+        `diff()`는 대조 대상 하나마다 `git show`를 부른다. 부르는 쪽이 볼 자리를 이미 아는데
+        나무 전체를 받으면 git 호출 수가 **묻지도 않은 파일 수**에 비례해 늘어난다.
+        """
+        self._write("asked.py", "def f(a, b):\n    return a\n")
+        self._write("other.py", "def g(a, b):\n    return a\n")
+        self._commit()
+        self._write("asked.py", "def f(a):\n    return a\n")
+        self._write("other.py", "def g(a):\n    return a\n")
+        scoped = surface.diff(self.root, "HEAD", scope=("asked.py",))
+        self.assertEqual(scoped.paths, ("asked.py",))
+        self.assertEqual([c.path for c in scoped.changes], ["asked.py"])
+        self.assertEqual(surface.diff(self.root, "HEAD").paths, ("asked.py", "other.py"), "scope 없이는 종전대로")
 
     def test_note_is_empty_when_surface_is_stable(self):
         self._write("lib.py", "def f(a):\n    return a\n")
