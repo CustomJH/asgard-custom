@@ -1,6 +1,7 @@
 """memory 호스트 배선 — 1차 주입 게이트 doctor, Claude Code settings 훅 배선과 memory-activate 동작."""
 
 import hashlib
+import importlib
 import json
 import os
 import re
@@ -494,6 +495,38 @@ class TestCCWiring(MemoryBase):
         self.assertIn("⠶", payload["systemMessage"])
         self.assertIn("진화 후보 신호 1건", payload["systemMessage"])
         self.assertIn("위그드라실 노른 통합이 밀렸어요", payload["systemMessage"])
+
+
+class TestMemoryCommandFacade(MemoryBase):
+    """`asgard.commands.memory` 파사드 — 이름을 물을 때 그 모듈만 등록하는 자리.
+
+    이 파사드가 이름 하나를 못 내주면 CLI 명령이 그 자리에서 죽고, `memory-activate` 훅은
+    반환 코드만 보고 조용히 넘어간다 — 화면에는 "회수 결과 없음"과 똑같이 보인다. 그래서
+    두 축을 같이 본다: 공개 이름 전부가 실제 정의처와 같은 객체로 풀리는가, 그리고 회수가
+    CLI 끝까지 통해 실제 본문을 내는가."""
+
+    def test_every_exported_name_resolves_to_its_defining_module(self):
+        from asgard import memory as memory_package
+        from asgard.commands import memory as facade
+
+        for name in facade.__all__:
+            with self.subTest(name=name):
+                value = getattr(facade, name)
+                if name == "memory":
+                    self.assertIs(value, memory_package)
+                    continue
+                module = importlib.import_module("asgard.commands.memory." + facade._SOURCE[name])
+                self.assertIs(value, getattr(module, name))
+
+    def test_recall_command_returns_the_stored_page_body(self):
+        """`memory recall` 은 훅이 UserPromptSubmit 마다 부르는 그 명령이다 — 파사드가
+        `run_recall` 을 못 내주거나 회수 경로가 끊기면 여기서 빈 문자열이 된다."""
+        memory.add("배치 재처리는 멱등 키로 중복을 막는다", title="facade-recall-marker")
+
+        result = CliRunner().invoke(app, ["memory", "recall", "--provider", "claude-code", "--", "배치 재처리"])
+
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("facade-recall-marker", result.stdout)
 
 
 def _json_dumps(payload: dict) -> str:

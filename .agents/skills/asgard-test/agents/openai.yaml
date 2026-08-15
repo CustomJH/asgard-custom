@@ -1,0 +1,5 @@
+interface:
+  display_name: "Asgard Test"
+  short_description: "Asgard setup self-test — three-layer verification (wiring, harness, live) plus hook latency. Reports as a scorecard."
+policy:
+  allow_implicit_invocation: false

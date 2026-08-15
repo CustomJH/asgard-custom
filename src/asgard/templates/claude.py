@@ -30,6 +30,24 @@ CC_FOLDERS = [
 ]
 
 
+def _dispatch(py: str, *specs: str) -> str:
+    """주입 훅 여럿을 프로세스 하나로 — `hook-dispatch.py [-- <경로> [인자...]]...`.
+
+    각 `spec` 은 배선이 예전에 적던 그대로다: 훅 이름, 그리고 그 훅이 받던 인자
+    (`"tutor-note claude brief"`). 이름이 아니라 경로를 통째로 적는 이유는 진단 때문이다 —
+    `doctor` 의 `_HOOK_IN_COMMAND` 가 명령줄에서 `hooks/<이름>.py` 를 찾아 이벤트별 배선
+    누락을 잰다. 이름만 적으면 합쳐진 훅들이 그 눈에서 통째로 사라지고, 그 상태가 초록으로
+    읽힌다.
+
+    합치는 것은 주입 훅뿐이다. 가드와 증거 훅은 각자 뜬다 (hook_dispatch.py 머리말).
+    """
+    parts = [f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/hook-dispatch.py"']
+    for spec in specs:
+        name, _, args = spec.partition(" ")
+        parts.append(f'-- "$CLAUDE_PROJECT_DIR/.claude/hooks/{name}.py"' + (f" {args}" if args else ""))
+    return " ".join(parts)
+
+
 def cc_settings() -> str:
     # Permission floor (belt) + deterministic PreToolUse guards (braces): "prose asks, hooks forbid."
     # 훅 인터프리터는 생성 시점의 타깃 머신 기준 — uv 가 설치 보장 런타임이라 정본이고,
@@ -99,33 +117,22 @@ def cc_settings() -> str:
                 "hooks": {
                     # Lagom — 세션 시작·재개·클리어·컴팩트 시 모드 초기화 + 캐논 주입.
                     # Memory v3 — 개인 위키 스냅샷 주입 (asgard memory snapshot 소비, fail-open).
+                    # 여섯이 한 프로세스로 뜬다 — 전부 주입 훅이라 합쳐도 잃는 판정이 없다.
                     "SessionStart": [
                         {
                             "matcher": "startup|resume|clear|compact",
                             "hooks": [
                                 {
                                     "type": "command",
-                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/lagom-activate.py"',
-                                },
-                                {
-                                    "type": "command",
-                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/memory-activate.py"',
-                                },
-                                {
-                                    "type": "command",
-                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/charter-activate.py"',
-                                },
-                                {
-                                    "type": "command",
-                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/manual-activate.py"',
-                                },
-                                {
-                                    "type": "command",
-                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/agent-activate.py"',
-                                },
-                                {
-                                    "type": "command",
-                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/map-activate.py"',
+                                    "command": _dispatch(
+                                        py,
+                                        "lagom-activate",
+                                        "memory-activate",
+                                        "charter-activate",
+                                        "manual-activate",
+                                        "agent-activate",
+                                        "map-activate",
+                                    ),
                                 },
                             ],
                         },
@@ -141,51 +148,31 @@ def cc_settings() -> str:
                                     "type": "command",
                                     "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/budget-guard.py" claude-code prompt',
                                 },
+                                # 나머지 열은 주입 훅이라 프로세스 하나로 뜬다. 순서는 그대로 —
+                                # 디스패처가 배선 순서대로 컨텍스트를 잇는다. 각 훅이 무엇을 하는지:
+                                #   scope-activate  이 요청의 작업 형상과 넘길 전문가. 계획 규율은
+                                #     결정론으로 정해져 있었지만 세 호스트 모드에 오는 길이 없었다.
+                                #   siege-inbox     다른 세션·`siege serve` 가 이 세션 앞으로 보낸 메일.
+                                #     받을 것이 없으면 sqlite 조회 하나로 끝난다.
+                                #   tutor-note      되짚기의 앞쪽 절반. 같은 자리를 다시 건드리기
+                                #     **전에** 남은 물음을 사용자에게만 꺼낸다 (모델 컨텍스트에 넣으면
+                                #     모델이 대신 답해 버린다) — 그래서 이 훅만 systemMessage 로 나가고,
+                                #     디스패처가 컨텍스트와 다른 칸에 담는다.
                                 {
                                     "type": "command",
-                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/unattended-context.py"',
-                                },
-                                {
-                                    "type": "command",
-                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/lagom-tracker.py"',
-                                },
-                                {
-                                    "type": "command",
-                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/memory-activate.py"',
-                                },
-                                {
-                                    "type": "command",
-                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/charter-activate.py"',
-                                },
-                                {
-                                    "type": "command",
-                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/manual-activate.py"',
-                                },
-                                {
-                                    "type": "command",
-                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/agent-activate.py"',
-                                },
-                                {
-                                    "type": "command",
-                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/map-activate.py"',
-                                },
-                                # 이 요청의 작업 형상과, 넘길 전문가가 있는지. 계획 규율은 결정론으로
-                                # 정해져 있었지만 세 호스트 모드에는 그것이 오는 길이 없었다.
-                                {
-                                    "type": "command",
-                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/scope-activate.py"',
-                                },
-                                # 배차 장부 우편함 — 다른 세션이나 `siege serve` 가 이 세션 앞으로
-                                # 보낸 메일. 받을 것이 없으면 sqlite 조회 하나로 끝난다.
-                                {
-                                    "type": "command",
-                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/siege-inbox.py"',
-                                },
-                                # 되짚기의 앞쪽 절반 — 같은 자리를 다시 건드리기 **전에** 남은 물음을
-                                # 사용자에게만 꺼낸다. 모델 컨텍스트에 넣으면 모델이 대신 답해 버린다.
-                                {
-                                    "type": "command",
-                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/tutor-note.py" claude brief',
+                                    "command": _dispatch(
+                                        py,
+                                        "unattended-context",
+                                        "lagom-tracker",
+                                        "memory-activate",
+                                        "charter-activate",
+                                        "manual-activate",
+                                        "agent-activate",
+                                        "map-activate",
+                                        "scope-activate",
+                                        "siege-inbox",
+                                        "tutor-note claude brief",
+                                    ),
                                 },
                             ]
                         },
@@ -196,40 +183,28 @@ def cc_settings() -> str:
                     "SubagentStart": [
                         {
                             "hooks": [
+                                # 일곱 주입 훅이 프로세스 하나로. 뒤의 둘이 하는 일:
+                                #   scope-activate    배차받은 역할의 형상 규율. 판정 표면
+                                #     (verifier·loki)은 훅이 스스로 제외한다 — advisory 지식은
+                                #     판정자에게 가지 않는다.
+                                #   dispatch-context  What a dispatched agent needs to reach the
+                                #     ledger it is already on: its own address, where to leave a
+                                #     question it cannot settle, and how to report a failure. Without
+                                #     the last one the ledger records every attempt as succeeded. No
+                                #     matcher — the hook excludes the Verifier itself, whose seat here
+                                #     belongs to verifier-context.
                                 {
                                     "type": "command",
-                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/lagom-subagent.py"',
-                                },
-                                {
-                                    "type": "command",
-                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/charter-activate.py"',
-                                },
-                                {
-                                    "type": "command",
-                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/manual-activate.py"',
-                                },
-                                {
-                                    "type": "command",
-                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/agent-activate.py"',
-                                },
-                                {
-                                    "type": "command",
-                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/map-activate.py"',
-                                },
-                                # 배차받은 역할의 형상 규율. 판정 표면(verifier·loki)은 훅이 스스로
-                                # 제외한다 — advisory 지식은 판정자에게 가지 않는다.
-                                {
-                                    "type": "command",
-                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/scope-activate.py"',
-                                },
-                                # What a dispatched agent needs to reach the ledger it is already on:
-                                # its own address, where to leave a question it cannot settle, and how
-                                # to report a failure. Without the last one the ledger records every
-                                # attempt as succeeded. No matcher — the hook excludes the Verifier
-                                # itself, whose seat here belongs to verifier-context.
-                                {
-                                    "type": "command",
-                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/dispatch-context.py"',
+                                    "command": _dispatch(
+                                        py,
+                                        "lagom-subagent",
+                                        "charter-activate",
+                                        "manual-activate",
+                                        "agent-activate",
+                                        "map-activate",
+                                        "scope-activate",
+                                        "dispatch-context",
+                                    ),
                                 },
                             ]
                         },
@@ -247,6 +222,10 @@ def cc_settings() -> str:
                                 }
                             ],
                         },
+                        # 주입 훅인데 위 디스패처에 안 들어간다. 들어가려면 이 matcher 를 지워야
+                        # 하고, 그러면 "Thinker 한정" 선언이 훅 안의 검사 하나만 남는다 — 격리
+                        # 매트릭스(Verifier·Loki 영구 무주입)의 바깥 겹이 배선에서 사라진다.
+                        # 아끼는 것은 Thinker 배차 한 번당 프로세스 하나뿐이라 저울이 안 맞는다.
                         {
                             "matcher": "^asgard-thinker$",
                             "hooks": [
@@ -398,28 +377,23 @@ def cc_settings() -> str:
                                     "type": "command",
                                     "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/verifier-gate.py"',
                                 },
-                                {
-                                    "type": "command",
-                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/memory-activate.py"',
-                                },
-                                {
-                                    "type": "command",
-                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/map-activate.py"',
-                                },
                                 # Canon Law 9 — the same tracker, second observation site. This host
                                 # does not call PostToolUse when a tool call fails (measured; see the
                                 # hook's header), so the tool-failure lane exists only here: at the turn
                                 # boundary the tracker reads the transcript tail instead of a payload.
-                                # Once per turn, not once per tool call.
+                                # Once per turn, not once per tool call. 게이트와 함께 제자리에 남는다 —
+                                # 증거 훅이 디스패처 안에서 조용히 죽으면 게이트가 초록인 채 판정의
+                                # 증거만 사라진다.
                                 {
                                     "type": "command",
                                     "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/failure-tracker.py"',
                                 },
-                                # 되짚기 — 이 턴이 쓴 코드를 사용자 앞에 물음으로 되돌린다. 절대
-                                # 안 막는다(health 등급): 되짚기가 관문이 되면 사람이 먼저 끈다.
+                                # 나머지 셋은 한 프로세스로. tutor-note 는 되짚기 — 이 턴이 쓴 코드를
+                                # 사용자 앞에 물음으로 되돌린다. 절대 안 막는다(health 등급):
+                                # 되짚기가 관문이 되면 사람이 먼저 끈다.
                                 {
                                     "type": "command",
-                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/tutor-note.py"',
+                                    "command": _dispatch(py, "memory-activate", "map-activate", "tutor-note"),
                                 },
                             ]
                         },

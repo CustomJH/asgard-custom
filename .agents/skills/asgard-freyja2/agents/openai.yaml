@@ -1,0 +1,5 @@
+interface:
+  display_name: "Asgard Freyja2"
+  short_description: "Freyja 2 — Freyja's second visual delivery engine. A complete design workflow: 23 commands (shape, critique, audit, poli"
+policy:
+  allow_implicit_invocation: false

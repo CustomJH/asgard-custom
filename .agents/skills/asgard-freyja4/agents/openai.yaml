@@ -1,0 +1,5 @@
+interface:
+  display_name: "Asgard Freyja4"
+  short_description: "Freyja's fourth visual delivery engine — Mardöll. Anti-slop surface design for greenfield pages, audits, redesigns, and "
+policy:
+  allow_implicit_invocation: false

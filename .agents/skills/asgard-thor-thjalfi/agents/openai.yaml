@@ -1,0 +1,5 @@
+interface:
+  display_name: "Asgard Thor Thjalfi"
+  short_description: "Thor's servant Thjalfi, who runs ahead into every land — per-language canon: which standard governs, what the compiler w"
+policy:
+  allow_implicit_invocation: false

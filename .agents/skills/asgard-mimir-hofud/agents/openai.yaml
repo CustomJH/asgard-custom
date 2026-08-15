@@ -1,0 +1,5 @@
+interface:
+  display_name: "Asgard Mimir Hofud"
+  short_description: "Mimir's head Mimishofud — deep knowledge of question design. Load before onboarding, handover, or comprehension-check wo"
+policy:
+  allow_implicit_invocation: false

@@ -1,0 +1,5 @@
+interface:
+  display_name: "Asgard Worker Testing"
+  short_description: "Test design — load before writing, strengthening, or de-flaking tests. Pin public behavior, fail first, boundary values,"
+policy:
+  allow_implicit_invocation: false

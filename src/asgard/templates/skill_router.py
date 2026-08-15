@@ -113,8 +113,10 @@ Run the installed `asgard` executable directly from `PATH`. Do not prefix the co
 `python`, and do not resolve `asgard` relative to this skill directory.
 
 Apply only the returned policies. Empty output means no extra policy. Do not also auto-select an
-individual `.agents/skills` adapter; those remain available as explicit `/name` or `$name`
-overrides.
+individual `.agents/skills` adapter; those remain available as explicit overrides, and the syntax
+differs by host: Cursor takes `/name`, Codex takes `$name`. Codex answers `/name` with
+`Unrecognized command` — its slash menu is reserved for session control, and `/skills` only opens
+the picker (openai/codex#11817, closed as not planned).
 
 The output ends with a `Work shape` block whenever the request implies a change. It states the
 deterministic size of the work — `slice`, `feature`, or `expedition` — the planning discipline that

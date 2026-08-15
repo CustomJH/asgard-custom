@@ -1,0 +1,131 @@
+#!/usr/bin/env python3
+# Asgard charter-activate — 프로젝트 북극성(Charter) 주입 (모드 B: Claude Code/Codex/Cursor).
+#
+# 네이티브 Heimdall은 charter.py note()를 프롬프트에 직접 주입하지만, 모드 B는 서브에이전트가
+# AGENTS.md를 읽는 구조라 닿지 않는다 — lagom/memory와 동일하게 훅으로 보상한다. 동작:
+#   agent_type 없음 (SessionStart/UserPromptSubmit) → through_line만 stdout 주입 (설계①, 메인 스레드)
+#   agent_type 있음 (SubagentStart) → 역할별 JSON additionalContext:
+#     asgard-thinker  → through_line + coherence(criteria 환원 지시)  협업②
+#     asgard-verifier → through_line + coherence(반례 렌즈, 게이트 대체 아님 명시)  판단③
+#     그 외(worker/딜리버리) → through_line만 — coherence를 게이트 강제 criteria로 흘리지 않는다
+# 렌더 문구는 asgard/charter.py note()와 **동일 유지 (단일 출처 원칙)** — 훅은 임포트를 못 하므로 재구현한다.
+# fail-open: charter 부재·파손·훅 오류는 전부 무개입 통과 (exit 0) — 세션을 막지 않는다.
+import json
+import os
+import sys
+
+# Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 넣지 못한다 — 인코딩 오류가
+# fail-open에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except로
+    except Exception:
+        pass
+
+# 주입 스키마는 훅과 함께 깔리는 공용 라이브러리가 쥔다 — 아홉 훅이 같은 JSON 리터럴을 손으로
+# 적던 자리다 (스키마 오타는 호스트가 조용히 버려서 주입이 통째로 사라진다).
+_HOOK_DIR = os.path.dirname(os.path.abspath(__file__))
+if _HOOK_DIR not in sys.path:
+    sys.path.append(_HOOK_DIR)
+
+from asgard_hooklib.firing import run  # noqa: E402
+from asgard_hooklib.inject import client, emit_context  # noqa: E402
+
+COHERENCE_CAP = 8  # 프롬프트 팽창 방지 — charter.py _coherence_block과 동일
+
+
+def load_charter(root):
+    """charter.py load_charter와 동일 유지 — {through_line, coherence:[...]} 또는 None."""
+    try:
+        with open(os.path.join(root, ".asgard", "asgard-setting-project.json"), encoding="utf-8") as f:
+            cfg = json.load(f)
+        raw = cfg.get("charter") if isinstance(cfg, dict) else None
+    except Exception:
+        return None
+    if isinstance(raw, str):
+        raw = {"through_line": raw}
+    if not isinstance(raw, dict):
+        return None
+    through = str(raw.get("through_line") or "").strip()
+    coherence = [str(c).strip() for c in (raw.get("coherence") or []) if str(c).strip()]
+    if not through and not coherence:
+        return None
+    return {"through_line": through, "coherence": coherence}
+
+
+def _coherence_block(items):
+    return "\n".join("  · %s" % c for c in items[:COHERENCE_CAP])
+
+
+def render(ch, section):
+    """charter.py note()와 동일 유지 (단일 출처 원칙)."""
+    through, coherence = ch["through_line"], ch["coherence"]
+    if section == "identity":
+        if not through:
+            return ""
+        return (
+            "## Project North Star (Charter)\nThrough-line: %s\n"
+            "Do not choose a direction that contradicts this principle — surface any conflict." % through
+        )
+    if section == "thinker":
+        parts = ["## Project North Star (Charter)"]
+        if through:
+            parts.append("Through-line: %s" % through)
+        if coherence:
+            parts.append(
+                "Coherence criteria — reduce the items this quest touches into **assigned-unit criteria** "
+                "(no abstract wording; use verification commands):\n" + _coherence_block(coherence)
+            )
+        return "\n".join(parts)
+    if section == "verifier":
+        parts = ["## Project North Star (Charter) — counterexample lens"]
+        if through:
+            parts.append("Through-line: %s" % through)
+        if coherence:
+            parts.append("Coherence criteria:\n" + _coherence_block(coherence))
+        parts.append(
+            "A change that **clearly** violates this principle FAILs with a reproducible, high-confidence "
+            "counterexample. But the Charter does not replace criteria — the verdict basis "
+            "(evidence · criteria · diff-hash) stays as-is; a low-confidence 'feels off' is not a FAIL reason."
+        )
+        return "\n".join(parts)
+    return ""
+
+
+def section_for(agent):
+    if agent == "asgard-thinker":
+        return "thinker"
+    if agent == "asgard-verifier":
+        return "verifier"
+    if agent == "asgard-worker":
+        return ""  # 네이티브 패리티 — Worker는 worker.md+lagom만 (charter 무주입, Fugu 격리)
+    return "identity"  # 메인·딜리버리(freyja/thor/eitri/loki) — through_line만 (네이티브 delivery_identity 대응)
+
+
+def main():
+    try:
+        data = json.load(sys.stdin)
+    except Exception:
+        data = {}
+    try:
+        root = (
+            os.environ.get("CLAUDE_PROJECT_DIR")
+            or os.environ.get("CURSOR_PROJECT_DIR")
+            or data.get("cwd")
+            or os.getcwd()
+        )
+        ch = load_charter(root)
+        if not ch:
+            sys.exit(0)  # charter 미설정 — 무개입 (토큰 회귀 없음)
+        agent = str(data.get("agent_type") or data.get("agent_name") or data.get("subagent_type") or "")
+        body = render(ch, section_for(agent))
+        if not body:
+            sys.exit(0)
+        emit_context(client(), "[charter]\n\n%s" % body, "SubagentStart" if agent else "SessionStart")
+    except Exception:
+        pass  # fail-open — 어떤 실패도 세션을 막지 않는다
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    run("charter-activate", main)

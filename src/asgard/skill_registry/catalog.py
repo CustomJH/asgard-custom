@@ -12,8 +12,8 @@ from .anchor import _delivered_md
 from .builtin import _builtin_plugins
 from .bundles import bundled_plugins, installed_plugins
 from .frontmatter import _description, _file_skill, _implicit, _lane, _read_text
-from .manifest import _ASSIGNABLE_AGENTS, _skill_md
-from .policy import _assigned, _skill_policy, _skill_routes
+from .manifest import _skill_md
+from .policy import _assigned, _skill_policy
 
 
 def skills(root: str) -> list[dict]:
@@ -127,16 +127,35 @@ def show_skill_resource(root: str, name: str, relative: str) -> str:
 
 
 def invocable_skills(root: str) -> list[dict]:
-    """Catalog rows reachable by at least one configured runtime role."""
-    policy = _skill_policy(root)
-    allowed = set()
-    for name, (defaults, compatible) in _skill_routes(root).items():
-        if any(
-            (agent in compatible or "any" in compatible) and _assigned(name, agent, defaults, policy)
-            for agent in _ASSIGNABLE_AGENTS
-        ):
-            allowed.add(name)
-    return [row for row in skills(root) if row["name"] in allowed]
+    """Catalog rows exposed for exact user invocation in every client.
+
+    Per-role assignment controls automatic selection. An exact user invocation bypasses that
+    routing choice, while the project-wide disabled list still removes the command everywhere.
+    """
+    disabled, _, _ = _skill_policy(root)
+    return [row for row in skills(root) if row["name"] not in disabled]
+
+
+def invocable_skill_bodies(root: str) -> list[tuple[str, str]]:
+    """Return thin-adapter source bodies for the shared explicit command surface."""
+    allowed = {row["name"] for row in invocable_skills(root)}
+    hits: dict[str, str] = {}
+    for plugin in _builtin_plugins().values():
+        for name, body in plugin["skills"]:
+            if name in allowed:
+                hits.setdefault(name, body)
+    for plugin in bundled_plugins().values():
+        for name in plugin["skills"]:
+            if name in allowed:
+                hits.setdefault(name, _delivered_md(root, plugin, name, unpack=False))
+    for name, skill in learned_skills(root).items():
+        if name in allowed:
+            hits.setdefault(name, _read_text(str(skill["path"])))
+    for plugin in installed_plugins().values():
+        for name in plugin["skills"]:
+            if name in allowed:
+                hits.setdefault(name, _delivered_md(root, plugin, name, unpack=False))
+    return sorted(hits.items())
 
 
 def invoked_skill_prompt(root: str, command: str) -> str | None:

@@ -96,10 +96,16 @@ SEMANTIC_CASES: tuple[dict, ...] = (
 )
 
 # 사용자 호출 스킬은 모델이 못 부른다. 대신 형상 노트가 오딘에게 이름을 대 줘야 한다.
+# `council` 이 셋 다에 붙는 이유: 결정이 안 끝난 자리는 기능이든 원정이든 같고, 그 스킬은
+# `available_skills` 에 안 들어가 이 산문 말고는 지목될 자리가 없다 (26-08-14).
 SHAPE_CASES: tuple[dict, ...] = (
-    {"req": "결제 정산 화면 추가해줘", "shape": "feature", "must_name": ("blueprint", "quests")},
-    {"req": "build a new settings page for the workspace", "shape": "feature", "must_name": ("blueprint", "quests")},
-    {"req": "인증 계층을 전면 재설계하자", "shape": "expedition", "must_name": ("expedition",)},
+    {"req": "결제 정산 화면 추가해줘", "shape": "feature", "must_name": ("blueprint", "quests", "council")},
+    {
+        "req": "build a new settings page for the workspace",
+        "shape": "feature",
+        "must_name": ("blueprint", "quests", "council"),
+    },
+    {"req": "인증 계층을 전면 재설계하자", "shape": "expedition", "must_name": ("expedition", "council")},
 )
 
 # 형상 과승격 감시 — 한 조각짜리 요청이 feature 로 올라가면 매 쓰기 턴에 기능 규율 블록이

@@ -1,0 +1,5 @@
+interface:
+  display_name: "Asgard Provider"
+  short_description: "Bridge for projects where a Trinity role (THINKER/WORKER/VERIFIER) is placed on an external provider via [trinity.<role>"
+policy:
+  allow_implicit_invocation: false

@@ -43,9 +43,13 @@ class TestScaffold(unittest.TestCase):
         paths = [p for p, _ in files]
         for sname in _SKILL_NAMES:
             self.assertTrue(any(p.endswith(os.path.join(sname, "SKILL.md")) for p in paths), sname)
-        # CC는 서브에이전트(role)가 실체 — 코어 스킬은 .agents 스코프 전용 (중복 배치 금지)
+        by_path = dict(files)
+        # 모든 host가 같은 명령을 노출하되 Claude의 코어 adapter는 자동 선택하지 않는다.
         for core in ("asgard-thor", "asgard-eitri"):
-            self.assertFalse(any(p.endswith(os.path.join(core, "SKILL.md")) for p in paths), core)
+            path = os.path.join("/tmp/x", ".claude", "skills", core, "SKILL.md")
+            self.assertIn(path, by_path)
+            self.assertIn("disable-model-invocation: true", by_path[path])
+            self.assertIn(f"asgard skills show {core}", by_path[path])
 
     def test_plan_contains_thor_skills_agents_scope(self):
         from asgard.commands.setup import plan_files

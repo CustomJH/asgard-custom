@@ -36,6 +36,7 @@ from .catalog import (  # noqa: F401
     _catalog_line,
     available_skills,
     client_skill_bodies,
+    invocable_skill_bodies,
     invocable_skills,
     invoked_skill_command,
     invoked_skill_prompt,

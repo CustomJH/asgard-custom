@@ -1,0 +1,5 @@
+interface:
+  display_name: "Learned Host Invocation Scaffold Drift"
+  short_description: "host-invocation-scaffold-drift — destructive.cpython-314.pyc, transcript.cpython-314.pyc, SKILL.md, __init__.cpython-314"
+policy:
+  allow_implicit_invocation: false

@@ -1,0 +1,5 @@
+interface:
+  display_name: "Asgard Thor"
+  short_description: "Thor core contract — inline execution standard for backend work (service code, data, API, runtime policy). Loaded by the"
+policy:
+  allow_implicit_invocation: false

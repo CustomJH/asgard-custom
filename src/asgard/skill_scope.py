@@ -128,6 +128,16 @@ _LENS_SKILLS: dict[str, tuple[str, ...]] = {
 # 형상별 계획 규율 — 상류 공개 스킬군(정렬→스펙→슬라이스→구현→리뷰)의 우리 말 재서술.
 # 산출물을 만드는 오케스트레이터(`/blueprint`·`/quests`·`/expedition`)는 사용자 호출로 남긴다:
 # 자율 턴이 docs/specs·docs/quests를 임의로 낳으면 범위 밖 산출물이다 (Canon 7).
+#
+# `/council` 도 사용자 호출이지만 이유가 다르다 — 산출물이 아니라 **오딘의 답**을 기다리며 멈춘다.
+# 자율 턴에는 그 답이 도착할 수 없으므로(Canon 8) 부르지 않고 이름만 댄다. 이름을 여기서 대야
+# 하는 것은 사용자 호출 스킬이 `available_skills` 에 안 들어가 `bound_skills` 가 원리상 못 집기
+# 때문이다. 이 줄이 없으면 **턴에 주입되는 표면** 중 council 을 대 주는 것이 0개다. README 와
+# `asgard start` 의 `/skills` 목록에는 전부터 있지만, 둘 다 오딘이 찾아가야 보이는 자리다.
+#
+# `--ambiguous` 축에는 걸지 않는다: 실제 호출 265건 중 그 플래그를 선언한 것이 1건이라
+# (26-08-14 세션 기록 실측) 거기 걸면 부르는 손이 없는 관문이 하나 더 생긴다. 형상 축은 같은
+# 배터리에서 100% 라 이쪽에 건다.
 _SHAPE_CONTRACT: dict[str, str] = {
     "direct": ("Read-only turn — answer from what you observe. No plan artifacts, no files."),
     "slice": (
@@ -143,14 +153,18 @@ _SHAPE_CONTRACT: dict[str, str] = {
         " verifiable. Reuse the vocabulary already fixed in the repository instead of coining new terms."
         " `/blueprint` writes that spec surface and `/quests` cuts the slices; both are Odin's to"
         " invoke, so name them as the offer and keep working — producing those artifacts unasked is"
-        " out of scope (Canon 7)."
+        " out of scope (Canon 7). When the spec cannot be pinned because the decisions behind it are"
+        " still open, `/council` settles them one answerable round at a time and comes before"
+        " `/blueprint`; offer it the same way."
     ),
     "expedition": (
         "This exceeds one quest: decisions still block a durable spec. Name the destination — the"
         " concrete state that ends this effort — and plan the **decision frontier only**. Resolve just"
         " the decisions precise enough to answer now, each with the cheapest sufficient instrument"
         " (repository facts, one focused observation, a throwaway prototype); leave the rest as fog"
-        " instead of guessing. Do not convert unresolved decisions into implementation units, and"
+        " instead of guessing. The decisions only Odin can settle go to `/council`, which puts one"
+        " answerable round in front of them at a time — name it rather than guessing the answers."
+        " Do not convert unresolved decisions into implementation units, and"
         " report to Odin that `/expedition` will hold the shared map across sessions."
     ),
 }

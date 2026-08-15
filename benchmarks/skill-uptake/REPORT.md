@@ -18,7 +18,7 @@
 |---|---|---|
 | reach | **100%** (ko 100% · en 100%) | 트리거 낱말이 있는 요청에서 기대 스킬이 해석 결과에 나온 비율 |
 | precision | **100%** | 관계없는 요청에서 새 스킬이 뜨지 않은 비율 |
-| spec-reach | **92%** | 실제 지시가 넘길 전문가(freyja·thor)에 닿은 비율 — 하한 0.9 |
+| spec-reach | **93%** | 실제 지시가 넘길 전문가(freyja·thor)에 닿은 비율 — 하한 0.9 |
 | spec-prec | **100%** | 화면 밖 요청이 Freyja 로 안 간 비율 |
 | shape | **100%** | 형상 노트가 사용자 호출 오케스트레이터 이름을 대 준 비율 |
 | shape-prec | **100%** | 한 조각짜리 요청이 `feature` 로 안 올라간 비율 |
@@ -31,7 +31,7 @@
 
 | 역할 | 카탈로그 | 이번에 느는 것 |
 |---|---|---|
-| worker | 6,150 | +319 |
+| worker | 7,430 | +319 |
 | eitri | 934 | +319 |
 | thor · freyja · mimir | 4,196 · 4,255 · 616 | +0 |
 
@@ -170,6 +170,57 @@ freyja2·freyja4). 한 플러그인의 트리거만 고쳐 놓고 축이 닫혔�
 경계 레인이 `optimizer.step` 의 `step` 을 **독립 낱말로 본다**는 것도 함께 고정했다 (점이 경계다).
 그래서 이 부류를 막는 것은 매칭 규칙이 아니라 어휘 선택이다 — 흔한 식별자 조각과 같은 낱말은
 단독 트리거로 쓰지 않고 구로 적는다.
+
+**⑥ `council` 은 턴에 주입되는 표면 어디에서도 안 불렸다 (2026-08-14 추가).** 상류에서 옮겨 온
+열한 스킬 중 여섯이 사용자 호출이라 모델이 못 부른다 — 그 여섯의 유일한 경로는 형상 노트가 오딘에게
+**이름을 대 주는 것**인데, 대 주던 것은 `/blueprint`·`/quests`·`/expedition` 셋뿐이었다. 나머지 셋
+중 `inquiry` 는 council 이 넘겨 주고 `lost` 는 오딘의 상태에 반응하는 스킬이라 지목할 축이 없지만,
+`council` 은 상류 흐름의 **첫 정거장**이면서 주입면에서 한 번도 안 나왔다. `feature`·`expedition`
+계약에 blueprint 앞 정거장으로 넣었다.
+
+주입면 밖에는 전부터 있었다 — `README.md` 의 명령 목록과 `asgard start` 의 `/skills` 픽커
+(`agent/repl/commands.py`). 둘 다 오딘이 찾아가야 보이는 자리라 배차 중에는 안 닿는다. 판정이 첫
+판본의 "저장소 전체에 0개"를 이 반례로 잡았고, 문장을 주입면으로 좁혔다.
+
+**축을 고르기 전에 그 축이 실제로 켜지는지 봤다.** 첫 설계는 `--ambiguous` 였다 — 뜻이 정확히
+맞는다(결정이 안 끝났다). 세션 기록 615개에서 `quest-log.py` 의 open·next·verify-baseline 호출
+**265건**을 뽑아 플래그별로 세니 `--ambiguous` 는 **1건**이었다. 자기 선언 축은 대체로 어둡다 —
+`--destructive` 2 · `--external-research` 2 · `--shared` 6 · `--parallel-requested` 8 ·
+`--structural` 42 · `--write-expected` 200. 하네스가 **관측해서** 채우는 축(sensitive_path·
+diff_lines·deleted_tests·sig_risk)은 선언이 필요 없어 이 어둠 밖에 있다. 거기 걸었으면 부르는 손이
+없는 관문이 하나 더 생겼다. 형상 축은 같은 배터리에서 100% 라 이쪽에 걸었다.
+
+다시 세는 명령 — 전사 경로는 기계마다 다르니 자기 것으로 바꿔라:
+
+```bash
+uv run --no-project python - <<'PY'
+import json, glob, re, collections
+TD = '~/.claude/projects/<프로젝트-슬러그>/*.jsonl'
+import os; TD = os.path.expanduser(TD)
+calls, flags = 0, collections.Counter()
+for path in glob.glob(TD):
+    for line in open(path, encoding='utf-8'):
+        if 'quest-log' not in line:
+            continue
+        try: entry = json.loads(line)
+        except Exception: continue
+        content = (entry.get('message') or {}).get('content')
+        for block in content if isinstance(content, list) else []:
+            if not (isinstance(block, dict) and block.get('type') == 'tool_use'):
+                continue
+            cmd = (block.get('input') or {}).get('command') or ''
+            if not re.search(r'quest-log\.py\s+(open|next|verify-baseline)', cmd):
+                continue
+            calls += 1
+            for f in ('--write-expected', '--ambiguous', '--shared', '--destructive',
+                      '--external-research', '--parallel-requested', '--structural'):
+                if f in cmd: flags[f] += 1
+print(calls, dict(flags))
+PY
+```
+
+**표의 두 칸이 이번 회차와 무관하게 움직였다.** `spec-reach` 92→93%, worker 상시 부하 6,150→7,430자.
+둘 다 그 사이 다른 퀘스트가 트리를 바꾼 결과다. 손으로 적힌 수는 이렇게 뒤진다 — 하네스를 돌려라.
 
 ## 이 벤치가 못 재는 것
 

@@ -61,6 +61,33 @@ _PLANTED_STATUSLINE = {
 }
 
 
+_RETIRED_WORKFLOW_ADAPTERS = {
+    name: f"""---
+name: {name}
+description: {description}
+disable-model-invocation: true
+allowed-tools: Bash(asgard skills *)
+---
+
+# Asgard central skill adapter
+
+Run `asgard skills show {name}` and apply the returned body as the canonical policy for this skill.
+The wrapper contains no client-specific policy.
+"""
+    for name, description in {
+        "grill-me": "Relentlessly clarify a plan or design, one decision at a time.",
+        "to-spec": "Turn the current discussion into a durable implementation spec.",
+        "to-tickets": "Split a spec or plan into dependency-aware tracer-bullet tickets.",
+        "wayfinder": "Map a decision-heavy effort that cannot fit in one agent session.",
+    }.items()
+}
+
+
+def _is_generated_direct_adapter(content: str, directory_name: str) -> bool:
+    """Recognize exact retired Asgard adapters while preserving every user-modified byte."""
+    return content == _RETIRED_WORKFLOW_ADAPTERS.get(directory_name)
+
+
 def merge_cc_settings(existing: str | None, new: str) -> str:
     """.claude/settings.json 병합 — 훅 배선은 항상 최신 템플릿, permissions는
     템플릿(바닥) + 사용자 추가분 합집합, 그 외 사용자 키는 그대로. 기존이 JSON 파손이면 템플릿."""
@@ -123,30 +150,42 @@ def _prune_stale_skill_adapters(
         scopes.append(os.path.join(root, ".claude", "skills"))
     if cursor or codex:
         scopes.append(os.path.join(root, ".agents", "skills"))
-    removed = 0
+    generated: set[str] = set()
     for row in skills(root):
         name = row["name"]
         body = show_skill(root, name)
         if not body:
             continue
-        generated = {direct_skill(body), direct_skill(body, implicit=False)} | {
+        generated.update((direct_skill(body), direct_skill(body, implicit=False)))
+        generated.update(
             routed_skill(body, agent) for agent in ("worker", "freyja", "thor", "thor-lead", "eitri", "mimir")
-        }
-        for scope in scopes:
-            path = os.path.join(scope, name, "SKILL.md")
-            if path in expected_paths:
-                continue
-            try:
-                with open(path, encoding="utf-8") as handle:
-                    if handle.read() not in generated:
-                        continue
-            except OSError:
-                continue
-            removed += 1
-            if not dry_run:
+        )
+    removed = 0
+    for scope in scopes:
+        try:
+            entries = os.scandir(scope)
+        except OSError:
+            continue
+        with entries:
+            for entry in entries:
+                if not entry.is_dir(follow_symlinks=False):
+                    continue
+                path = os.path.join(entry.path, "SKILL.md")
+                if path in expected_paths:
+                    continue
+                try:
+                    with open(path, encoding="utf-8") as handle:
+                        content = handle.read()
+                except OSError:
+                    continue
+                if content not in generated and not _is_generated_direct_adapter(content, entry.name):
+                    continue
+                removed += 1
+                if dry_run:
+                    continue
                 os.unlink(path)
-                metadata = os.path.join(os.path.dirname(path), "agents", "openai.yaml")
-                expected = openai_skill_metadata(direct_skill(body, implicit=False))
+                metadata = os.path.join(entry.path, "agents", "openai.yaml")
+                expected = openai_skill_metadata(content)
                 try:
                     with open(metadata, encoding="utf-8") as handle:
                         stale = bool(expected) and handle.read() == expected
@@ -156,7 +195,7 @@ def _prune_stale_skill_adapters(
                 except OSError:
                     pass
                 try:
-                    os.rmdir(os.path.dirname(path))
+                    os.rmdir(entry.path)
                 except OSError:
                     pass
     return removed

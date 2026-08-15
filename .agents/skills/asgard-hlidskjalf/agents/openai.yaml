@@ -1,0 +1,5 @@
+interface:
+  display_name: "Asgard Hlidskjalf"
+  short_description: "오딘의 고좌 흘리드스캴프 — 시스템 아키텍처 검증 팩. 계층·의존 방향, 결합도·응집도, 모듈 경계를 증거 우선으로 감사하는 절차 정본. 아키텍처 검증·리뷰·감사 배정, 순환 의존·계층 위반·구조 부채 조사에서 로드"
+policy:
+  allow_implicit_invocation: false

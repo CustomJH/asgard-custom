@@ -1,0 +1,5 @@
+interface:
+  display_name: "Blueprint"
+  short_description: "Turn the current discussion into a durable implementation spec."
+policy:
+  allow_implicit_invocation: false

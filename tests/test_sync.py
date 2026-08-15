@@ -571,6 +571,59 @@ class TestSyncProject(Base):
         sync_project(self.root, cc=False, cursor=False, codex=True)
         self.assertFalse(os.path.exists(directory))
 
+    def test_sync_prunes_generated_adapter_after_canonical_skill_is_renamed(self):
+        from asgard.templates.skill_router import direct_skill, openai_skill_metadata
+
+        retired = {
+            "to-spec": "Turn the current discussion into a durable implementation spec.",
+            "grill-me": "Relentlessly clarify a plan or design, one decision at a time.",
+            "to-tickets": "Split a spec or plan into dependency-aware tracer-bullet tickets.",
+            "wayfinder": "Map a decision-heavy effort that cannot fit in one agent session.",
+        }
+
+        def adapter(name: str) -> str:
+            body = f"---\nname: {name}\ndescription: {retired[name]}\ndisable-model-invocation: true\n---\n"
+            return direct_skill(body, implicit=False)
+
+        generated = adapter("to-spec")
+        metadata = openai_skill_metadata(generated)
+        self.assertIsNotNone(metadata)
+        for scope in (".claude", ".agents"):
+            directory = os.path.join(self.root, scope, "skills", "to-spec")
+            os.makedirs(directory)
+            with open(os.path.join(directory, "SKILL.md"), "w", encoding="utf-8") as handle:
+                handle.write(generated)
+        metadata_dir = os.path.join(self.root, ".agents", "skills", "to-spec", "agents")
+        os.makedirs(metadata_dir)
+        with open(os.path.join(metadata_dir, "openai.yaml"), "w", encoding="utf-8") as handle:
+            handle.write(metadata or "")
+
+        customized = {}
+        for name, content in (
+            ("grill-me", adapter("grill-me").replace(retired["grill-me"], "User-edited description")),
+            (
+                "to-tickets",
+                adapter("to-tickets").replace(
+                    "allowed-tools: Bash(asgard skills *)", "allowed-tools: WebSearch, Bash(asgard skills *)"
+                ),
+            ),
+            ("wayfinder", adapter("wayfinder") + "\nUser-owned note\n"),
+        ):
+            directory = os.path.join(self.root, ".agents", "skills", name)
+            os.makedirs(directory)
+            customized[name] = os.path.join(directory, "SKILL.md")
+            with open(customized[name], "w", encoding="utf-8") as handle:
+                handle.write(content)
+
+        sync_project(self.root, cc=True, cursor=True, codex=True)
+
+        for scope in (".claude", ".agents"):
+            self.assertFalse(os.path.exists(os.path.join(self.root, scope, "skills", "to-spec")))
+            for name in ("council", "blueprint", "quests", "expedition"):
+                self.assertTrue(os.path.exists(os.path.join(self.root, scope, "skills", name, "SKILL.md")))
+        for path in customized.values():
+            self.assertTrue(os.path.exists(path))
+
     def test_run_sync_prunes_missing_root_and_syncs_rest(self):
         registry.record(self.root, True, False, False)
         # 실사 순서 그대로 — 있는 폴더를 등록하고 나서 지운다. 없는 채로 등록하고 뒤에 다른

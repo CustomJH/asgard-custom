@@ -11,17 +11,13 @@ from pathlib import Path
 from .. import io_files, ui
 from ..hooks import library_files  # asgard_hooklib/* — the shared substrate, laid next to the hooks
 from ..hooks import script as hook  # hook("git-guard") → the hook's source, scaffolded verbatim
-from ..skill_registry import client_skill_bodies, skill_catalog
+from ..skill_registry import client_skill_bodies, invocable_skill_bodies, skill_catalog
 from ..templates import (
-    BRAGI_SKILLS,
-    BRIDGE_SKILL_MD,
     CC_FOLDERS,
     CURSOR_FOLDERS,
     LAGOM_CANON,
     MANUAL_STARTER_MD,
     MAP_INDEX_MD,
-    SEAL_SKILL_MD,
-    SELFTEST_MD,
     agents_md,
     cc_settings,
     codex_agent,
@@ -32,27 +28,16 @@ from ..templates import (
     cursor_rule,
     project_settings,
 )
-from ..templates.freyja import (
-    freyja_core_skill,  # 모드 A 코어 계약 스킬 — role 파일에서 파생 (단일 소스)
-)
 from ..templates.lagom import (
-    LAGOM_SKILLS,  # (스킬명, SKILL.md 본문) — review/debt/compress
     LAGOM_STATUSLINE_SH,
 )
-from ..templates.memory import MEMORY_SKILL_MD  # memory v3 — 읽기/저장(승인 게이트) 계약
-from ..templates.mimir import (
-    mimir_core_skill,  # 모드 A 코어 계약 스킬 — role 파일에서 파생 (단일 소스)
-)
+from ..templates.memory import MEMORY_SKILL_MD  # noqa: F401 — compatibility re-export for setup consumers
 from ..templates.roles import ROLE_AGENTS, claude_agent
 from ..templates.skill_router import (
     MANAGED_ROUTER_SKILL_MD,
     ROUTER_SKILL_MD,
     direct_skill,
     openai_skill_metadata,
-)
-from ..templates.thor import (
-    eitri_core_skill,  # 모드 A 코어 계약 스킬 — role 파일에서 파생 (단일 소스)
-    thor_core_skill,
 )
 
 # 루트 .gitignore 마커 블록 (AGENTS.md와 같은 idempotent 마커 패턴). 런타임 상태·로컬 설정만
@@ -361,6 +346,8 @@ def hook_files(hooks_dir: str, client: str = "claude-code") -> list[tuple[str, s
         (j(hooks_dir, "dispatch-context.py"), hook("dispatch-context")),
         # 배차 장부 우편함 — 다른 세션·`siege serve` 가 이 세션 앞으로 보낸 메일 (턴 머리).
         (j(hooks_dir, "siege-inbox.py"), hook("siege-inbox")),
+        # 주입 훅 묶음 실행 — 한 이벤트의 주입을 프로세스 하나에서. 가드와 증거 훅은 안 들어간다.
+        (j(hooks_dir, "hook-dispatch.py"), hook("hook-dispatch")),
     ]
     # 공용 라이브러리는 훅과 **같은 폴더**에 깔린다. 그 인접이 곧 임포트 경로다: 스크립트로 실행된
     # 훅은 자기 폴더가 `sys.path[0]` 이라 `import asgard_hooklib` 이 그대로 선다. 표에 한 줄씩
@@ -374,6 +361,15 @@ def hook_files(hooks_dir: str, client: str = "claude-code") -> list[tuple[str, s
     return files
 
 
+def _discovery_bodies(root: str) -> list[tuple[str, str]]:
+    """Merge the role-filtered catalog into one client discovery surface."""
+    merged: dict[str, str] = {}
+    for agent in ("worker", "freyja", "thor", "thor-lead", "eitri", "mimir"):
+        for skill, body in client_skill_bodies(agent, root):
+            merged.setdefault(skill, body)
+    return sorted(merged.items())
+
+
 def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> tuple[list[tuple[str, str]], str]:
     """Compute (files, label) a setup would write — pure, no IO. Shared by run_setup and the TUI
     preview so what the onboarding screen shows is exactly what gets scaffolded."""
@@ -383,13 +379,6 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
     root = root or os.getcwd()
     name = os.path.basename(root)
     j = os.path.join
-
-    def discovery_bodies() -> list[tuple[str, str]]:
-        merged: dict[str, str] = {}
-        for agent in ("worker", "freyja", "thor", "thor-lead", "eitri", "mimir"):
-            for skill, body in client_skill_bodies(agent, root):
-                merged.setdefault(skill, body)
-        return sorted(merged.items())
 
     files: list[tuple[str, str]] = [
         (j(root, "AGENTS.md"), agents_md(name)),
@@ -437,20 +426,11 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
             files.append((j(root, ".claude", "agents", fname), claude_agent(content, root) + catalog))
         # /asgard-test — 사용자가 세션 안에서 셋업을 자가 테스트 (배선·하니스·라이브 3계층).
         files.append((j(root, ".claude", "skills", "asgard-skills", "SKILL.md"), ROUTER_SKILL_MD))
-        files.append((j(root, ".claude", "skills", "asgard-test", "SKILL.md"), direct_skill(SELFTEST_MD)))
-        # asgard-provider — Trinity 역할 브릿지. 항상 스캐폴드, 게이트는 런타임([bridge] 기본 꺼짐).
-        files.append((j(root, ".claude", "skills", "asgard-provider", "SKILL.md"), direct_skill(BRIDGE_SKILL_MD)))
-        # Lagom 스킬 — review(양축 diff 검토) / debt(lagom: 마커 감사) / compress(문서 압축)
-        files += [(j(root, ".claude", "skills", sname, "SKILL.md"), direct_skill(body)) for sname, body in LAGOM_SKILLS]
-        # Bragi 스킬 — 보고문 사람 문체 감사·재작성 (다국어 판정기 asgard/bragi.py 소비)
-        files += [(j(root, ".claude", "skills", sname, "SKILL.md"), direct_skill(body)) for sname, body in BRAGI_SKILLS]
-        # /asgard-seal — 빠른 gitmoji commit (Conventional type + 시크릿·staged 게이트)
-        files.append((j(root, ".claude", "skills", "asgard-seal", "SKILL.md"), direct_skill(SEAL_SKILL_MD)))
-        # asgard-memory — 개인 메모리 읽기/저장 계약 (직접 파일 편집 금지, ingest 승인 게이트)
-        files.append((j(root, ".claude", "skills", "asgard-memory", "SKILL.md"), direct_skill(MEMORY_SKILL_MD)))
-        # Claude가 각 description으로 스킬을 고르고, 선택된 얇은 어댑터만 중앙 정본을 로드한다.
+        implicit = {name for name, _ in _discovery_bodies(root)}
+        # 공개 명령은 모든 호스트에서 같고, 역할 배정은 Claude의 자동 선택 여부만 바꾼다.
         files += [
-            (j(root, ".claude", "skills", sname, "SKILL.md"), direct_skill(body)) for sname, body in discovery_bodies()
+            (j(root, ".claude", "skills", sname, "SKILL.md"), direct_skill(body, implicit=sname in implicit))
+            for sname, body in invocable_skill_bodies(root)
         ]
 
     # Cursor — rule bridge + skeleton + beforeShellExecution guard + postToolUseFailure tracker.
@@ -481,57 +461,10 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
     # 같은 SKILL.md 포맷이라 본문은 하나다.
     if cursor or codex:
         files.append((j(root, ".agents", "skills", "asgard-skills", "SKILL.md"), MANAGED_ROUTER_SKILL_MD))
-        files.append(
-            (j(root, ".agents", "skills", "asgard-test", "SKILL.md"), direct_skill(SELFTEST_MD, implicit=False))
-        )
-        files.append(
-            (
-                j(root, ".agents", "skills", "asgard-provider", "SKILL.md"),
-                direct_skill(BRIDGE_SKILL_MD, implicit=False),
-            )
-        )
-        files += [
-            (j(root, ".agents", "skills", sname, "SKILL.md"), direct_skill(body, implicit=False))
-            for sname, body in [*LAGOM_SKILLS, *BRAGI_SKILLS]
-        ]
-        files.append(
-            (j(root, ".agents", "skills", "asgard-seal", "SKILL.md"), direct_skill(SEAL_SKILL_MD, implicit=False))
-        )
-        files.append(
-            (
-                j(root, ".agents", "skills", "asgard-memory", "SKILL.md"),
-                direct_skill(MEMORY_SKILL_MD, implicit=False),
-            )
-        )
-        # 딜리버리 코어 계약 — 서브에이전트 디스패치와 단일 세션 폴백에서 같은 정본을 쓴다.
-        files.append(
-            (
-                j(root, ".agents", "skills", "asgard-freyja", "SKILL.md"),
-                direct_skill(freyja_core_skill(), implicit=False),
-            )
-        )
-        files.append(
-            (
-                j(root, ".agents", "skills", "asgard-thor", "SKILL.md"),
-                direct_skill(thor_core_skill(), implicit=False),
-            )
-        )
-        files.append(
-            (
-                j(root, ".agents", "skills", "asgard-eitri", "SKILL.md"),
-                direct_skill(eitri_core_skill(), implicit=False),
-            )
-        )
-        files.append(
-            (
-                j(root, ".agents", "skills", "asgard-mimir", "SKILL.md"),
-                direct_skill(mimir_core_skill(), implicit=False),
-            )
-        )
         # 각 클라이언트가 이름·설명만 색인하고, 선택된 어댑터가 중앙 정본을 지연 로드한다.
         files += [
             (j(root, ".agents", "skills", sname, "SKILL.md"), direct_skill(body, implicit=False))
-            for sname, body in discovery_bodies()
+            for sname, body in invocable_skill_bodies(root)
         ]
 
         # Codex excludes user-invoked skills from model discovery through this standard policy file.

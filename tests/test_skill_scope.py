@@ -130,6 +130,27 @@ class ScopeNoteTest(unittest.TestCase):
             self.assertIn("out of scope", scope_note(root, "신규 화면 추가", _WRITE))
             self.assertIn("decision frontier", scope_note(root, "전면 재설계해줘", _WRITE))
 
+    def test_decision_heavy_shapes_name_council(self):
+        # 사용자 호출 스킬은 `available_skills` 에 안 들어가 `bound_skills` 가 못 집는다. 형상 계약
+        # 산문이 유일한 통로라, 이 문장이 빠지면 턴에 주입되는 표면 중 council 을 대 주는 것이 0개다.
+        with tempfile.TemporaryDirectory() as root:
+            for request in ("결제 정산 화면 추가해줘", "인증 계층을 전면 재설계하자"):
+                with self.subTest(request=request):
+                    self.assertIn("/council", scope_note(root, request, _WRITE))
+            # 한 조각짜리 요청까지 결정 회의를 권하면 매 쓰기 턴이 오딘의 답을 기다린다.
+            self.assertNotIn("/council", scope_note(root, "버튼 색 바꿔줘", _WRITE))
+
+    def test_named_orchestrators_exist_in_the_registry(self):
+        # 없는 이름을 지목하는 노트는 거짓말이다 — 모델이 못 여는 것을 열려다 턴을 태운다.
+        # `available_skills` 가 아니라 전수 목록으로 본다: 이 넷은 사용자 호출이라 역할별
+        # 목록에는 원래 들어가지 않는다.
+        from asgard.skill_registry.catalog import skills
+
+        known = {row["name"] for row in skills(".")}
+        for name in ("council", "blueprint", "quests", "expedition"):
+            with self.subTest(skill=name):
+                self.assertIn(name, known)
+
     def test_harness_wrapper_is_fail_open(self):
         # 조회 실패가 턴을 죽이면 안 된다 — 노트는 강화층이지 실행 경로가 아니다.
         self.assertEqual(work_shape_note("/nonexistent-root-for-scope", "설명해줘", {"write_expected": False}), "")

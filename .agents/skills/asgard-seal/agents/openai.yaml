@@ -1,0 +1,5 @@
+interface:
+  display_name: "Asgard Seal"
+  short_description: "Commit current working-tree changes with a required gitmoji and Conventional Commit type in one session. NEVER add autho"
+policy:
+  allow_implicit_invocation: false

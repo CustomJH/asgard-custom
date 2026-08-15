@@ -400,7 +400,7 @@ def slash(cmd: str, root: str, rp) -> bool:
         from ...commands.skills import render_skills
         from ...skill_registry import invocable_skills
 
-        rows = [row for row in invocable_skills(root) if row["invocation"] == "user"]
+        rows = invocable_skills(root)
         if rows:
             rows = [{**row, "name": "/" + row["name"]} for row in rows]
             render_skills(rows, "User skills")

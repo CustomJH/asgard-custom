@@ -1,0 +1,5 @@
+interface:
+  display_name: "Learned Stale Reference After Removal"
+  short_description: "stale-reference-after-removal — destructive.cpython-314.pyc, transcript.cpython-314.pyc, __init__.cpython-314.pyc, contr"
+policy:
+  allow_implicit_invocation: false

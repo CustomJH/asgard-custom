@@ -1,0 +1,5 @@
+interface:
+  display_name: "Asgard Skillcraft"
+  short_description: "Writing any document an agent reads. Use when creating or editing a skill, changing AGENTS.md / CLAUDE.md / MANUAL.md or"
+policy:
+  allow_implicit_invocation: false

@@ -1,0 +1,5 @@
+interface:
+  display_name: "Inquiry"
+  short_description: "Turn a decision the user cannot answer alone into a document for the one person who can."
+policy:
+  allow_implicit_invocation: false

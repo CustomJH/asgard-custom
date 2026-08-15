@@ -1,0 +1,5 @@
+interface:
+  display_name: "Asgard Tickets"
+  short_description: "Track work as tickets while doing it, on the workspace board the human sees in Asgard Studio. Use when work is more than"
+policy:
+  allow_implicit_invocation: false

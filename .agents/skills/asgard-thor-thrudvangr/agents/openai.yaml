@@ -1,0 +1,5 @@
+interface:
+  display_name: "Asgard Thor Thrudvangr"
+  short_description: "Þrúðvangr, Thor's field — the procedure engine for backend work. Routes a backend task to one of eleven verbs (survey, s"
+policy:
+  allow_implicit_invocation: false

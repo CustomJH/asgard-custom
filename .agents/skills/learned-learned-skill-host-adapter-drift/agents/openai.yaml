@@ -1,0 +1,5 @@
+interface:
+  display_name: "Learned Learned Skill Host Adapter Drift"
+  short_description: "learned-skill-host-adapter-drift — destructive.cpython-314.pyc, transcript.cpython-314.pyc, __init__.cpython-314.pyc, co"
+policy:
+  allow_implicit_invocation: false

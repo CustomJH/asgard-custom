@@ -1,0 +1,5 @@
+interface:
+  display_name: "Asgard Freyja Fjadrhamr"
+  short_description: "Freyja Fjadrhamr — the falcon cloak. Source working animated-component and micro-UI examples from 8 libraries (Magic UI,"
+policy:
+  allow_implicit_invocation: false

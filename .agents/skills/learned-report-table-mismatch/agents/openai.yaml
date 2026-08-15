@@ -1,0 +1,5 @@
+interface:
+  display_name: "Learned Report Table Mismatch"
+  short_description: "report-table-mismatch — asgard-eitri.md, asgard-freyja.md, asgard-mimir.md, asgard-thor-lead.md 외 6개에서 겪고 고친 자리 (FAIL 3회"
+policy:
+  allow_implicit_invocation: false

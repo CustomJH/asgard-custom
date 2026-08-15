@@ -675,6 +675,54 @@ class RegistryTest(unittest.TestCase):
         self.assertIn("council", names)
         self.assertIn("domain-modeling", names)
 
+    def test_all_hosts_expose_the_same_canonical_command_names(self):
+        from asgard.commands.setup import plan_files
+
+        files, _ = plan_files(cc=True, cursor=True, codex=True, root=self.root)
+        cc_prefix = os.path.join(self.root, ".claude", "skills") + os.sep
+        agents_prefix = os.path.join(self.root, ".agents", "skills") + os.sep
+
+        def adapter_names(prefix):
+            return {
+                Path(path).parent.name
+                for path, _ in files
+                if path.startswith(prefix) and path.endswith(os.path.join("", "SKILL.md"))
+            } - {"asgard-skills"}
+
+        native = {row["name"] for row in skill_registry.invocable_skills(self.root)}
+        self.assertEqual(adapter_names(cc_prefix), adapter_names(agents_prefix))
+        self.assertEqual(adapter_names(cc_prefix), native)
+        self.assertFalse(native & {"grill-me", "to-spec", "to-tickets", "wayfinder"})
+
+        for path, body in files:
+            if not path.endswith(os.path.join("", "SKILL.md")):
+                continue
+            if not (path.startswith(cc_prefix) or path.startswith(agents_prefix)):
+                continue
+            name = Path(path).parent.name
+            if name == "asgard-skills":
+                continue
+            self.assertIn(f"asgard skills show {name}", body)
+            self.assertIsNotNone(skill_registry.invoked_skill_prompt(self.root, f"/{name} parity-check"))
+
+    def test_all_role_unassign_keeps_explicit_command_parity(self):
+        from asgard.commands.setup import plan_files
+
+        agents = ("worker", "freyja", "thor", "thor-lead", "eitri", "mimir")
+        policy = (set(), {}, {agent: {"council"} for agent in agents})
+        with mock.patch("asgard.skill_registry.catalog._skill_policy", return_value=policy):
+            files, _ = plan_files(cc=True, cursor=True, codex=True, root=self.root)
+            by_path = dict(files)
+            cc = by_path[os.path.join(self.root, ".claude", "skills", "council", "SKILL.md")]
+            shared = by_path[os.path.join(self.root, ".agents", "skills", "council", "SKILL.md")]
+            native = {row["name"] for row in skill_registry.invocable_skills(self.root)}
+            prompt = skill_registry.invoked_skill_prompt(self.root, "/council parity-check")
+
+        self.assertIn("council", native)
+        self.assertIn("disable-model-invocation: true", cc)
+        self.assertIn("disable-model-invocation: true", shared)
+        self.assertIsNotNone(prompt)
+
     def test_skillcraft_keeps_detailed_rubric_in_a_lazy_resource(self):
         row = next(row for row in skill_registry.skills(self.root) if row["name"] == "asgard-skillcraft")
         self.assertEqual((row["plugin"], row["invocation"]), ("asgard-skillcraft", "model"))

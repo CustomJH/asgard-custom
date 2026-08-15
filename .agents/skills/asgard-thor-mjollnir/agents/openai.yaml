@@ -1,0 +1,5 @@
+interface:
+  display_name: "Asgard Thor Mjollnir"
+  short_description: "Thor's hammer Mjölnir — deep guidance on core computation, transactions, batch, and messaging reliability. Load before b"
+policy:
+  allow_implicit_invocation: false

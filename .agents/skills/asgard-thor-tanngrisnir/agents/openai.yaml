@@ -1,0 +1,5 @@
+interface:
+  display_name: "Asgard Thor Tanngrisnir"
+  short_description: "Thor's goat Tanngrisnir — output integrity sweep and completion-evidence contract. Load when finishing backend changes ("
+policy:
+  allow_implicit_invocation: false

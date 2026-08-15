@@ -1,0 +1,5 @@
+interface:
+  display_name: "Escort"
+  short_description: "Generate an interactive script that walks a human through steps only they can take. Use when provisioning infrastructure"
+policy:
+  allow_implicit_invocation: false

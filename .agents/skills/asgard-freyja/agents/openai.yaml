@@ -1,0 +1,5 @@
+interface:
+  display_name: "Asgard Freyja"
+  short_description: "Freyja UI/UX delivery using the default Freyja Design engine."
+policy:
+  allow_implicit_invocation: false

@@ -1,0 +1,5 @@
+interface:
+  display_name: "Asgard Mimir"
+  short_description: "Mimir core contract — the inline execution baseline for code explanation, walkthroughs, and onboarding (execution-flow n"
+policy:
+  allow_implicit_invocation: false

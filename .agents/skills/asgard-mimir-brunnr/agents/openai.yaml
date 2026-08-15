@@ -1,0 +1,5 @@
+interface:
+  display_name: "Asgard Mimir Brunnr"
+  short_description: "Mimir's well Mimisbrunnr — deep knowledge of walkthrough design. Load before code tours, flow explanations, or architect"
+policy:
+  allow_implicit_invocation: false

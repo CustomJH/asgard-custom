@@ -1,0 +1,5 @@
+interface:
+  display_name: "Asgard Freyja 3d"
+  short_description: "Freyja's 3D engine — Brisingamen (브리싱가멘/브리싱아멘). Use for parametric and precision CAD (build123d/CadQuery/OpenSCAD, STEP-"
+policy:
+  allow_implicit_invocation: false

@@ -168,7 +168,7 @@ def test_trinity_model_terminal_native_change_requests_session_reconfigure(monke
     }
 
 
-def test_skills_command_lists_only_explicit_workflows(monkeypatch, capsys, tmp_path) -> None:
+def test_skills_command_lists_every_exposed_skill(monkeypatch, capsys, tmp_path) -> None:
     monkeypatch.setattr(ui, "_COLOR", False)
 
     repl.slash("/skills", str(tmp_path), None)
@@ -176,9 +176,16 @@ def test_skills_command_lists_only_explicit_workflows(monkeypatch, capsys, tmp_p
     out = capsys.readouterr().out
     assert "User skills" in out
     assert "╭─" in out and "╰" in out
-    assert "/council" in out
-    assert "/blueprint" in out
-    assert "/domain-modeling" not in out
+    for command in (
+        "/council",
+        "/blueprint",
+        "/quests",
+        "/expedition",
+        "/asgard-seal",
+        "/asgard-siege",
+        "/domain-modeling",
+    ):
+        assert command in out
 
 
 def test_exact_skill_slash_reaches_heimdall_as_explicit_prompt(monkeypatch, tmp_path) -> None:
@@ -210,6 +217,16 @@ def test_exact_skill_slash_reaches_heimdall_as_explicit_prompt(monkeypatch, tmp_
     assert len(seen) == 1
     assert '<user_invoked_skill name="council">' in seen[0]
     assert "Arguments: checkout flow" in seen[0]
+
+
+def test_exact_asgard_commands_resolve_to_canonical_skill_bodies(tmp_path) -> None:
+    from asgard.skill_registry import invoked_skill_prompt
+
+    for name in ("asgard-seal", "asgard-siege"):
+        prompt = invoked_skill_prompt(str(tmp_path), f"/{name} requested args")
+        assert prompt is not None
+        assert f'<user_invoked_skill name="{name}">' in prompt
+        assert "Arguments: requested args" in prompt
 
 
 def test_banner_uses_compact_mark_on_standard_terminal(monkeypatch, capsys) -> None:
