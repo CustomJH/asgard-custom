@@ -237,8 +237,10 @@ def main() -> int:
         except Exception:
             record(_ROOT, name, False, True)  # 임포트 실패도 침묵이 아니라 장부에 남는다
 
-    sys.stdout = _RoutedStream("out", base)  # ty: ignore[invalid-assignment]
-    sys.stdin = _RoutedStream("stdin", sys.stdin)  # ty: ignore[invalid-assignment]
+    # 두 스트림은 구조적으로 TextIO 를 만족해 억제가 필요 없다. `_RoutedArgv` 는 `list[str]` 이
+    # 아니라 그 자리만 남는다 — 안 쓰는 억제를 남기면 검사기가 그것을 다시 경고로 낸다.
+    sys.stdout = _RoutedStream("out", base)
+    sys.stdin = _RoutedStream("stdin", sys.stdin)
     sys.argv = _RoutedArgv()  # ty: ignore[invalid-assignment]
     results: dict = {}
     threads = []
