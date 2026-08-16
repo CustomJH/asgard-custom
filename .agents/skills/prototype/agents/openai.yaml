@@ -1,5 +1,5 @@
 interface:
-  display_name: "Prototype"
+  display_name: "prototype"
   short_description: "Answer a design question with throwaway runnable code. Use when reading and discussion cannot settle how logic should be"
 policy:
   allow_implicit_invocation: false

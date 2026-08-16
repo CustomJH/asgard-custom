@@ -1,5 +1,5 @@
 interface:
-  display_name: "Learned Forgeable Gate Exemption"
+  display_name: "learned-forgeable-gate-exemption"
   short_description: "forgeable-gate-exemption — asgard-eitri.md, asgard-worker.md, destructive.cpython-314.pyc, transcript.cpython-314.pyc 외 "
 policy:
   allow_implicit_invocation: false

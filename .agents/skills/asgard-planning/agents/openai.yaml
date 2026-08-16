@@ -1,5 +1,5 @@
 interface:
-  display_name: "Asgard Planning"
+  display_name: "asgard-planning"
   short_description: "Guide product planning sequentially from an uncertain idea to evidence-linked requirements, flows, validation, and imple"
 policy:
   allow_implicit_invocation: false

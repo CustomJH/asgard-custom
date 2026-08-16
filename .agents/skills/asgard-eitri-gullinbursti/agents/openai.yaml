@@ -1,5 +1,5 @@
 interface:
-  display_name: "Asgard Eitri Gullinbursti"
+  display_name: "asgard-eitri-gullinbursti"
   short_description: "Eitri's golden boar Gullinbursti — deep knowledge of packaging, versioning, and release automation. Load before building"
 policy:
   allow_implicit_invocation: false

@@ -1,5 +1,5 @@
 interface:
-  display_name: "Learned Unassign All Host Native Parity"
+  display_name: "learned-unassign-all-host-native-parity"
   short_description: "unassign-all-host-native-parity — destructive.cpython-314.pyc, transcript.cpython-314.pyc, __init__.cpython-314.pyc, con"
 policy:
   allow_implicit_invocation: false

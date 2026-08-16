@@ -1,5 +1,5 @@
 interface:
-  display_name: "Learned Over Promotion On Korean Negation"
+  display_name: "learned-over-promotion-on-korean-negation"
   short_description: "over-promotion-on-korean-negation — destructive.cpython-314.pyc, transcript.cpython-314.pyc, PROJECT.md, README.md 외 5개에"
 policy:
   allow_implicit_invocation: false

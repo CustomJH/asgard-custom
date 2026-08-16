@@ -1,5 +1,5 @@
 interface:
-  display_name: "Asgard Mimir Auga"
+  display_name: "asgard-mimir-auga"
   short_description: "Odin's eye in Mimir's well — deep knowledge of handing a change back to the person who must own it. Load after writing o"
 policy:
   allow_implicit_invocation: false

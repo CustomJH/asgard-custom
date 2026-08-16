@@ -1,5 +1,5 @@
 interface:
-  display_name: "Asgard Office"
+  display_name: "asgard-office"
   short_description: "Create, read, edit, fill, and verify Word (.docx), PowerPoint (.pptx), Excel (.xlsx), and PDF documents. Use whenever th"
 policy:
   allow_implicit_invocation: false

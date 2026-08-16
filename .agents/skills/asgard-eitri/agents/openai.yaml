@@ -1,5 +1,5 @@
 interface:
-  display_name: "Asgard Eitri"
+  display_name: "asgard-eitri"
   short_description: "Eitri core contract — inline execution standard for build, CI, packaging, and release work. Loaded by the Worker phase o"
 policy:
   allow_implicit_invocation: false

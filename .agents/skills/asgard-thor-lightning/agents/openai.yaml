@@ -1,5 +1,5 @@
 interface:
-  display_name: "Asgard Thor Lightning"
+  display_name: "asgard-thor-lightning"
   short_description: "Thor's lightning — deep guidance on APIs, realtime, server security, and external integrations. Load before endpoint-des"
 policy:
   allow_implicit_invocation: false

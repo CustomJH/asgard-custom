@@ -1,5 +1,5 @@
 interface:
-  display_name: "Asgard Thor Jarngreipr"
+  display_name: "asgard-thor-jarngreipr"
   short_description: "Thor's iron gauntlets Járngreipr — data and schema safety overlay. For tasks involving schema changes, migrations, index"
 policy:
   allow_implicit_invocation: false

@@ -1,5 +1,5 @@
 interface:
-  display_name: "Scrapling Official"
+  display_name: "scrapling-official"
   short_description: "Scrape web pages using Scrapling with anti-bot bypass (like Cloudflare Turnstile), stealth headless browsing, spiders fr"
 policy:
   allow_implicit_invocation: false

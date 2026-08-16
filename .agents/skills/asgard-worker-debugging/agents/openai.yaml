@@ -1,5 +1,5 @@
 interface:
-  display_name: "Asgard Worker Debugging"
+  display_name: "asgard-worker-debugging"
   short_description: "Systematic debugging — load before root-causing and fixing bugs, crashes, or regressions. Reproduce → observe → one hypo"
 policy:
   allow_implicit_invocation: false

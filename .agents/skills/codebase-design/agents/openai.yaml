@@ -1,5 +1,5 @@
 interface:
-  display_name: "Codebase Design"
+  display_name: "codebase-design"
   short_description: "Design deep modules — a lot of behaviour behind a small interface, placed at a clean seam. Use when adding a module, wid"
 policy:
   allow_implicit_invocation: false

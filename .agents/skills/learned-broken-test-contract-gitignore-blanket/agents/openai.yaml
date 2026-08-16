@@ -1,5 +1,5 @@
 interface:
-  display_name: "Learned Broken Test Contract Gitignore Blanket"
+  display_name: "learned-broken-test-contract-gitignore-blanket"
   short_description: "broken-test-contract-gitignore-blanket — readonly.cpython-314.pyc, shell.cpython-314.pyc, siege.cpython-314.pyc, workspa"
 policy:
   allow_implicit_invocation: false

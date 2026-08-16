@@ -1,5 +1,5 @@
 interface:
-  display_name: "Asgard Thor Magni"
+  display_name: "asgard-thor-magni"
   short_description: "Thor's son Magni — micro-craft: the shape of the code you are writing, the lifetime of what it allocates, and what it co"
 policy:
   allow_implicit_invocation: false

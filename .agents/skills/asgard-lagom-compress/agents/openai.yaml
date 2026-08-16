@@ -1,5 +1,5 @@
 interface:
-  display_name: "Asgard Lagom Compress"
+  display_name: "asgard-lagom-compress"
   short_description: "Rewrite docs and memory files with meaning-preserving compression to permanently cut input tokens (approval required)."
 policy:
   allow_implicit_invocation: false

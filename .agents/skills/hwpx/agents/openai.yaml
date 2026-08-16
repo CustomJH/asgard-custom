@@ -1,5 +1,5 @@
 interface:
-  display_name: "Hwpx"
+  display_name: "hwpx"
   short_description: "HWPX 문서를 읽고 생성·편집·검증하며, 사용자가 명시한 경우 HWP를 HWPX로 변환한다."
 policy:
   allow_implicit_invocation: false

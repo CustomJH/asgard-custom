@@ -1,5 +1,5 @@
 interface:
-  display_name: "Playwright Cli"
+  display_name: "playwright-cli"
   short_description: "Drive a persistent browser for navigation, accessibility snapshots, interaction, screenshots, PDF export, and web UI tes"
 policy:
   allow_implicit_invocation: false

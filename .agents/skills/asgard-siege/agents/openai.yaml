@@ -1,5 +1,5 @@
 interface:
-  display_name: "Asgard Siege"
+  display_name: "asgard-siege"
   short_description: "Drive and read the dispatch ledger — open a run, lay out a task graph, track every attempt, ask a blocking question, hol"
 policy:
   allow_implicit_invocation: false

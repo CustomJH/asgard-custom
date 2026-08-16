@@ -1,5 +1,5 @@
 interface:
-  display_name: "Quests"
+  display_name: "quests"
   short_description: "Split a spec or plan into dependency-aware tracer-bullet quests."
 policy:
   allow_implicit_invocation: false

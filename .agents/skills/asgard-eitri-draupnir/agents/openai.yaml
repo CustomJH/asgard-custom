@@ -1,5 +1,5 @@
 interface:
-  display_name: "Asgard Eitri Draupnir"
+  display_name: "asgard-eitri-draupnir"
   short_description: "Eitri's ring Draupnir — deep knowledge of CI pipelines and build reproducibility. Load before pipeline design, build cac"
 policy:
   allow_implicit_invocation: false

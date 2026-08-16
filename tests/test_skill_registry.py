@@ -542,6 +542,10 @@ class RegistryTest(unittest.TestCase):
             os.path.join(self.root, ".agents", "skills", "asgard-worker-debugging", "agents", "openai.yaml")
         ]
         self.assertIn("allow_implicit_invocation: false", metadata)
+        # Codex 목록에 뜨는 이름은 사용자가 실제로 치는 이름이다. 하이픈을 공백으로 바꿔
+        # 대문자화하면 목록엔 `Asgard Worker Debugging` 이 뜨는데 통하는 것은
+        # `$asgard-worker-debugging` 뿐이라, 읽은 문자열이 어느 호스트에서도 안 통한다.
+        self.assertIn('display_name: "asgard-worker-debugging"', metadata)
         freyja_role = by_path[os.path.join(self.root, ".claude", "agents", "asgard-freyja.md")]
         self.assertIn("<available_skills>", freyja_role)
         self.assertIn("asgard-freyja-design", freyja_role)
@@ -704,6 +708,24 @@ class RegistryTest(unittest.TestCase):
                 continue
             self.assertIn(f"asgard skills show {name}", body)
             self.assertIsNotNone(skill_registry.invoked_skill_prompt(self.root, f"/{name} parity-check"))
+
+    def test_codex_shows_the_name_the_user_has_to_type(self):
+        """세 호스트가 같은 한 문자열을 낸다 — 디렉터리, 프론트매터 `name`, Codex 표시 이름.
+
+        목록으로 재지 않고 불변식으로 재는 이유: 어댑터가 생기고 사라질 때마다 목록을 손보면
+        빠뜨린 하나가 그대로 구멍이 된다. `$asgard-siege` 를 쳐야 하는데 목록엔
+        `Asgard Siege` 가 떠 있으면, 사용자가 화면에서 읽은 것이 어디서도 안 통한다."""
+        from asgard.commands.setup import plan_files
+
+        files, _ = plan_files(cc=True, cursor=True, codex=True, root=self.root)
+        by_path = dict(files)
+        policies = [path for path in by_path if path.endswith(os.path.join("agents", "openai.yaml"))]
+        self.assertTrue(policies, "Codex 정책 파일이 하나도 안 나왔어요")
+        for path in policies:
+            directory = Path(path).parent.parent.name
+            self.assertIn(f'display_name: "{directory}"', by_path[path], path)
+            adapter = by_path[os.path.join(str(Path(path).parent.parent), "SKILL.md")]
+            self.assertIn(f"\nname: {directory}\n", adapter, path)
 
     def test_all_role_unassign_keeps_explicit_command_parity(self):
         from asgard.commands.setup import plan_files

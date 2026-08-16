@@ -1,5 +1,5 @@
 interface:
-  display_name: "Asgard Freyja Design"
+  display_name: "asgard-freyja-design"
   short_description: "Freyja's default visual design engine. Use for every Freyja UI, UX, frontend, design-system, motion, accessibility, copy"
 policy:
   allow_implicit_invocation: false

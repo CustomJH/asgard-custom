@@ -1,5 +1,5 @@
 interface:
-  display_name: "Asgard Bragi Humanize"
+  display_name: "asgard-bragi-humanize"
   short_description: "Audit or rewrite text so it reads as human-written in its own language — detects the measured AI-writing tells (any lang"
 policy:
   allow_implicit_invocation: false

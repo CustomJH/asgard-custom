@@ -1,5 +1,5 @@
 interface:
-  display_name: "Asgard Thor Gridarvol"
+  display_name: "asgard-thor-gridarvol"
   short_description: "Thor's staff Gríðarvölr — backend diagnosis overlay. For root-causing server defects, API misbehavior, and hard-to-repro"
 policy:
   allow_implicit_invocation: false

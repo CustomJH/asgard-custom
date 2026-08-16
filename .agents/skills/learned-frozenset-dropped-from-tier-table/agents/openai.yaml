@@ -1,5 +1,5 @@
 interface:
-  display_name: "Learned Frozenset Dropped From Tier Table"
+  display_name: "learned-frozenset-dropped-from-tier-table"
   short_description: "frozenset-dropped-from-tier-table — transcript.py, budget-guard.py, failure-tracker.py, verifier-context.py 외 6개에서 겪고 고친"
 policy:
   allow_implicit_invocation: false

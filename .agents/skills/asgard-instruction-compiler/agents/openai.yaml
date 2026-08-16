@@ -1,5 +1,5 @@
 interface:
-  display_name: "Asgard Instruction Compiler"
+  display_name: "asgard-instruction-compiler"
   short_description: "Interpret vague, colloquial, or poorly structured user intent and compile it into an executable prompt or delegation pac"
 policy:
   allow_implicit_invocation: false

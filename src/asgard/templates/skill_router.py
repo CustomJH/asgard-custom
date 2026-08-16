@@ -74,10 +74,13 @@ def openai_skill_metadata(skill_md: str) -> str | None:
     name = _field(skill_md, "name")
     # 상류 프론트매터가 인용된 설명을 쓰면 그 따옴표가 사용자에게 보이는 문장 첫 글자가 된다.
     description = _plain(_field(skill_md, "description"))
-    display = " ".join(part.capitalize() for part in name.split("-"))
+    # 표시 이름은 부르는 이름 그대로다. 하이픈을 공백으로 바꿔 대문자화하면 Codex 목록에는
+    # `Asgard Siege` 가 뜨는데 실제로 치는 것은 `$asgard-siege` 라, 사용자가 목록에서 읽은
+    # 문자열이 어느 호스트에서도 안 통한다. Cursor 의 `/asgard-siege`, Claude Code 의
+    # `.claude/skills/asgard-siege` 와도 이 자리에서 갈렸다.
     return (
         "interface:\n"
-        f'  display_name: "{display}"\n'
+        f'  display_name: "{name}"\n'
         f'  short_description: "{description[:120].replace(chr(34), chr(39))}"\n'
         "policy:\n"
         "  allow_implicit_invocation: false\n"
