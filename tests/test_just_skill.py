@@ -14,6 +14,7 @@ import os
 import re
 import sys
 import unittest
+from typing import Any
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -28,9 +29,19 @@ SKILL = "asgard-just"
 _ASGARD_JUST_RE = re.compile(r"`asgard just ([a-z][a-z-]*)")
 
 
+def _subcommands(command: Any) -> dict[str, Any]:
+    """하위 명령 표 — 표를 안 드는 명령이면 그 자체가 시험의 전제 붕괴다.
+
+    click 타입을 안 적는 이유는 typer 가 click 을 벤더링해서다 — 여기서 어느 쪽 `Group` 을
+    적어도 다른 설치에서는 어긋난다 (tests/test_siege_skill.py 가 같은 이유로 같은 자리를 쓴다).
+    재는 것은 클래스가 아니라 표가 있느냐다."""
+    assert hasattr(command, "commands"), f"하위 명령을 안 드는 명령이다: {command.name}"
+    return command.commands
+
+
 def _cli_verbs() -> set[str]:
-    group = get_command(cli.app).commands["just"]
-    return {name for name, command in group.commands.items() if not command.hidden}
+    group = _subcommands(get_command(cli.app))["just"]
+    return {name for name, command in _subcommands(group).items() if not command.hidden}
 
 
 class SkillMatchesCli(unittest.TestCase):

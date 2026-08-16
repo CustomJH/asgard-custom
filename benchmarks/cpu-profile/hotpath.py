@@ -140,7 +140,8 @@ def clear_synthetic_state() -> list[str]:
 def _top_functions(profiler, limit: int) -> list[dict]:
     stats = pstats.Stats(profiler)
     rows = []
-    for (path, line, func), (_cc, nc, tt, ct, _callers) in stats.stats.items():
+    # `Stats.stats` 는 실재하는 속성인데 typeshed 에 선언이 없다 (CPython Lib/pstats.py).
+    for (path, line, func), (_cc, nc, tt, ct, _callers) in stats.stats.items():  # ty: ignore[unresolved-attribute]
         rows.append(
             {
                 "function": "%s:%s(%s)" % (os.path.basename(path), line, func),

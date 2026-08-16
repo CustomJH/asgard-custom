@@ -435,7 +435,9 @@ def measure_latency(root: str, iters: int = 12) -> dict:
 
 
 def run(root: str) -> dict:
-    result = {
+    # 점수와 판정을 따로 둔다. 한 dict 이 수와 문자열 목록을 같이 담으면 값 타입이
+    # `float | list[str]` 로 넓어져 그 안의 `>` 비교가 타입상 성립하지 않는다.
+    scores: dict[str, float] = {
         **measure_reach(root),
         **measure_specialists(root),
         **measure_semantic(root),
@@ -443,12 +445,12 @@ def run(root: str) -> dict:
         **measure_load(root),
         **measure_latency(root),
     }
-    result["violations"] = [
-        f"{key} {result[key]:.3f} < {floor}" if key != "latency_ms_p50" else f"{key} {result[key]:.1f}ms > {floor}ms"
+    violations = [
+        f"{key} {scores[key]:.3f} < {floor}" if key != "latency_ms_p50" else f"{key} {scores[key]:.1f}ms > {floor}ms"
         for key, floor in FLOORS.items()
-        if (result[key] > floor if key == "latency_ms_p50" else result[key] < floor)
+        if (scores[key] > floor if key == "latency_ms_p50" else scores[key] < floor)
     ]
-    return result
+    return {**scores, "violations": violations}
 
 
 def _print(result: dict) -> None:

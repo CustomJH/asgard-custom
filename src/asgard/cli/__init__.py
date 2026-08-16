@@ -83,7 +83,10 @@ def _declares(cmd_name: str) -> bool:
         if info.name == cmd_name:
             return True
     for info in app.registered_commands:
-        declared = info.name or (info.callback and typer.main.get_command_name(info.callback.__name__))
+        # 콜백은 늘 이름 있는 함수다 — 선언 타입이 그것을 못 좁힌다.
+        declared = info.name or (
+            info.callback and typer.main.get_command_name(info.callback.__name__)  # ty: ignore[unresolved-attribute]
+        )
         if declared == cmd_name:
             return True
     return False
@@ -118,7 +121,9 @@ class _LazyGroup(TyperGroup):
             return
         self._complete = True  # 아래 재구축이 이 속성을 다시 읽어도 되돌아오지 않게 먼저 세운다
         _load_all()
-        self._table = typer.main.get_command(app)._table
+        # `get_command` 의 선언 타입은 Command 지만 실물은 이 파일이 세운 `_LazyGroup` 이고,
+        # `_table` 은 아래 `commands` 세터가 심는 우리 자리다.
+        self._table = typer.main.get_command(app)._table  # ty: ignore[unresolved-attribute]
 
     def get_command(self, ctx: Any, cmd_name: str) -> Any:
         command = self._table.get(cmd_name)
@@ -136,7 +141,7 @@ class _LazyGroup(TyperGroup):
                 break
         else:
             return None
-        command = typer.main.get_command(app)._table.get(cmd_name)
+        command = typer.main.get_command(app)._table.get(cmd_name)  # ty: ignore[unresolved-attribute]
         if command is not None:
             self._table[cmd_name] = command
         return command
