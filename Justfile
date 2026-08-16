@@ -33,3 +33,16 @@ typecheck:
 check: fmt-check lint typecheck test
 
 # <<< asgard managed recipes <<<
+
+# `quality` gates the `release` job, so a red gate means the tag ships no wheel — that is how
+# v0.10.15 and v0.10.16 became tags with no release. tests/test_release_gate.py keeps this recipe
+# equal to .github/workflows/release.yml, so the two cannot drift apart again.
+
+# Everything the release workflow checks before it builds — run this before you tag
+gate:
+    uv sync --group dev
+    uv run ruff check
+    uv run ruff format --check
+    uv run ty check
+    uv run asgard health --gate
+    uv run pytest -q -n auto
