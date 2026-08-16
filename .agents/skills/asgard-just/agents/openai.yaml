@@ -1,0 +1,5 @@
+interface:
+  display_name: "asgard-just"
+  short_description: "The run surface — in a repository that has a Justfile, every command it can run lives there, written from the manifests "
+policy:
+  allow_implicit_invocation: false

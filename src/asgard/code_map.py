@@ -461,6 +461,15 @@ def _verification_commands(root: Path, files: list[Path]) -> list[tuple[str, str
     return sorted(commands.items())
 
 
+def verification_commands(root: str | os.PathLike[str]) -> list[tuple[str, str]]:
+    """이 저장소의 매니페스트가 뒷받침하는 명령 — 지도의 `## Detected verification` 과 같은 것.
+
+    `justfile.detect_recipes` 가 이 자리를 부른다. 감지기를 하나로 두는 이유는 갈리면 주입면이
+    광고하는 명령과 Justfile 이 담은 명령이 서로 다른 것을 가리키기 때문이다."""
+    base = Path(root)
+    return _verification_commands(base, _files(base))
+
+
 def _python_module(path: Path) -> str:
     parts = list(path.with_suffix("").parts)
     if parts and parts[0] in {"src", "lib"}:

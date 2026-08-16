@@ -263,6 +263,12 @@ def sync_project(root: str, cc: bool, cursor: bool, codex: bool, dry_run: bool =
         counts["updated"] += 1
     else:
         counts["kept"] += 1
+    # 이미 Justfile 을 쓰는 저장소만 실행 표면도 같이 갱신한다 — 매니페스트가 움직이면
+    # `just test` 가 도는 명령도 같이 움직여야 한다. `create=False` 라 파일이 없으면 아무 일도
+    # 안 한다: 실행 표면을 들일지는 `asgard just init` 으로 저장소가 고른다.
+    from ..justfile import sync as sync_justfile
+
+    counts["updated" if sync_justfile(root, dry_run=dry_run, create=False).changed else "kept"] += 1
     return counts
 
 

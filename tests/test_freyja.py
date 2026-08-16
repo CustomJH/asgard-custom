@@ -52,6 +52,9 @@ class TestFreyjaBaseline(unittest.TestCase):
                     "asgard-freyja-sjonhverfing",
                     "asgard-freyja2",
                     "asgard-freyja4",
+                    # 실행 표면 — 프레이야도 `just dev` 를 친다. 명령을 부르는 역할 전부가 이것을
+                    # 받는 이유는 한 역할이라도 raw 명령으로 돌아가면 표면이 그 자리에서 갈리기 때문이다.
+                    "asgard-just",
                     # 프레임워크 불문 모듈 설계 규율 — 컴포넌트 경계도 같은 문법이라 의도적으로 공유.
                     # 프레이야 전용 엔진이 다른 표면으로 새지 않는다는 불변식은 아래 assertNotIn이 진다.
                     "codebase-design",

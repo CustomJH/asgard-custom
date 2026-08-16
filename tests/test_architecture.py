@@ -114,6 +114,9 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 "charter",
                 "manual",  # 커스텀 매뉴얼 — charter와 같은 자리(설정 해석 + 프롬프트 렌더)
                 "code_map",
+                # justfile — 실행 표면. code_map 과 같은 층이고 그 감지기를 부른다: 저장소가
+                # 무엇을 돌릴 수 있는지 읽어 파일 하나로 낸다. 명령을 도는 것은 just 자신이다.
+                "justfile",
                 "health",
                 # loop — 컨트롤러. health(센서)·craft_rules(단위) 위에 서고, 고르기만 한다.
                 # 센서와 같은 층인 이유는 둘 다 판단을 내리지 않기 때문이다 — 적용은 위층 몫.
@@ -338,6 +341,9 @@ SUBTIERS: dict[str, list[tuple[str, frozenset[str]]]] = {
             frozenset(
                 {
                     "craft_c",
+                    # justfile — 해석 등급의 code_map 감지기를 읽어 실행 표면 하나를 낸다.
+                    # 지도 레인과 같은 자리인 이유도 같다: 같은 감지를 읽고 다른 산출물을 낸다.
+                    "justfile",
                     "thor_lex",
                     "tutor_probes",
                     "tutor_debt",
@@ -565,6 +571,7 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
                     "review",
                     "agent",
                     "map",
+                    "just",
                     "role",
                     "siege",
                     "skills",
@@ -621,6 +628,9 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
                     "agent",
                     "craft",
                     "init_tui",
+                    # just — 실행 표면을 세우고 재는 손. craft·manual 과 같은 자리다:
+                    # 저장소 뿌리를 health 에서 받고, 판정 자체는 도메인(justfile)이 한다.
+                    "just",
                     "manual",
                     "memory_dashboard",
                     # automations — commands.health의 프로젝트 경계 해석을 읽으므로 명령 소비 등급이다.
@@ -919,6 +929,7 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
                     "claude",
                     "comments",
                     "eitri",
+                    "just",
                     "lagom",
                     "manual",
                     "map",

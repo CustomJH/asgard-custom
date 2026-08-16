@@ -10,7 +10,7 @@ import sys
 
 from ... import __version__, ui
 from ...platform import on_path
-from .codemap import _codebase_map_check, _custom_manual_check
+from .codemap import _codebase_map_check, _custom_manual_check, _run_surface_check
 from .engines import (
     _design_engine_checks,
     _engine_reachable_check,
@@ -90,6 +90,7 @@ def _trinity_checks(root: str) -> list[dict]:
     checks += _client_wiring_checks(root)
     checks += memory_rows
     checks += _codebase_map_check(root)
+    checks += [row for row in (_run_surface_check(root),) if row]
     checks.append(_quest_log_writable_check(root))
     checks += _classify_misroute_check(root)
     checks += _route_prior_check(root)

@@ -4,14 +4,14 @@
 > Asgard managed relation catalog. Regenerate with `asgard map scan`; do not hand-edit.
 > `?` marks candidate evidence — verify at the cited source before asserting.
 
-- Evidence summary: commands 205 · db 3 · calls 6 · uses 2
+- Evidence summary: commands 209 · db 3 · calls 6 · uses 2
 
 ## Coverage boundaries
 
 > Named scanner gaps are evidence too. They weaken absence and blast-radius claims; details live in `map scan --json`.
 
 - Coverage status: partial · 2 named limits
-- test_sources_excluded [repository] — 222 test source files are outside the production relation graph · files 222
+- test_sources_excluded [repository] — 224 test source files are outside the production relation graph · files 224
 - unsupported_source_suffix [.rs] — no relation extractor is configured for Rust (.rs) · files 2
 
 ## Commands
@@ -64,6 +64,10 @@
 - `asgard health` — how much the codebase has worn down — size, duplication, coupling, hotspots, and which way it is going
 - `asgard humanize` — read text back and say where it sounds like a machine wrote it (exit 1 = it does)
 - `asgard init` — get a project ready for coding agents (Claude Code / Cursor / Codex)
+- `asgard just check` — how far the run surface has drifted from the manifests — writes nothing
+- `asgard just init` — bring the run surface into this repository — install the runner and write the Justfile
+- `asgard just install` — put the just runner on PATH for this machine
+- `asgard just sync` — redraw the managed recipes from the checked-in manifests; your own recipes stay
 - `asgard k6 baseline clear` — drop the target — the gate stops judging until you pin another
 - `asgard k6 baseline set` — pin a run as the target to beat (the newest one, unless you name a stamp)
 - `asgard k6 baseline show` — which run is the target right now, and how far a run may drift from it
@@ -256,6 +260,7 @@
 - `src/asgard/studio/tickets/triage.py` — db: conn.execute?×7
 - `src/asgard/studio/tickets/_core.py` — db: conn.execute?×6
 - `src/asgard/studio/tickets/evidence.py` — db: conn.execute?×4 · calls: failed_rate?, rate_per_s?
+- `src/asgard/cli/just.py` — commands: just check, just init, just install, just sync
 - `src/asgard/cli/review.py` — commands: review cancel, review decide, review list, review show
 - `src/asgard/cli/roots.py` — commands: root add, root list, root remove
 - `src/asgard/commands/studio/load.py` — calls: count?, failed?, rate_per_s?
@@ -273,7 +278,7 @@
 
 > Exact node ids — copy into `asgard map trace --from <id>` or `asgard map impact <id>`.
 
-- commands: `command:auth_login` · `command:auth_logout` · `command:auth_status` · `command:automations_add` · `command:automations_disable` · `command:automations_due` · `command:automations_enable` · `command:automations_history` · `command:automations_list` · `command:automations_remove` · `command:budget` · `command:completions` · `command:craft` · `command:doctor` · `command:einherjar_bind` · `command:einherjar_config` · `command:einherjar_create` · `command:einherjar_delete` · `command:einherjar_describe` · `command:einherjar_export` · `command:einherjar_identity` · `command:einherjar_import` · `command:einherjar_list` · `command:einherjar_open` · `command:einherjar_rename` · `command:einherjar_show` · `command:einherjar_unbind` · `command:einherjar_use` · `command:einherjar_where` · `command:einherjar_windows` · `command:evolve_approve` · `command:evolve_archive` · `command:evolve_bench` · `command:evolve_curate` · `command:evolve_list` · `command:evolve_nudge` · `command:evolve_polish` · `command:evolve_reject` · `command:evolve_reset` · `command:evolve_restore` (+165 more — `asgard map list --kind command`)
+- commands: `command:auth_login` · `command:auth_logout` · `command:auth_status` · `command:automations_add` · `command:automations_disable` · `command:automations_due` · `command:automations_enable` · `command:automations_history` · `command:automations_list` · `command:automations_remove` · `command:budget` · `command:completions` · `command:craft` · `command:doctor` · `command:einherjar_bind` · `command:einherjar_config` · `command:einherjar_create` · `command:einherjar_delete` · `command:einherjar_describe` · `command:einherjar_export` · `command:einherjar_identity` · `command:einherjar_import` · `command:einherjar_list` · `command:einherjar_open` · `command:einherjar_rename` · `command:einherjar_show` · `command:einherjar_unbind` · `command:einherjar_use` · `command:einherjar_where` · `command:einherjar_windows` · `command:evolve_approve` · `command:evolve_archive` · `command:evolve_bench` · `command:evolve_curate` · `command:evolve_list` · `command:evolve_nudge` · `command:evolve_polish` · `command:evolve_reject` · `command:evolve_reset` · `command:evolve_restore` (+169 more — `asgard map list --kind command`)
 
 ## Navigation contract
 

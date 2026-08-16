@@ -231,5 +231,21 @@ class InstallShVerify(InstallShHarness):
         self.assertIn("asgard v9.9.9", proc.stdout, f"the verified version is missing:\n{proc.stdout}")
 
 
+class InstallShInstallsOnlyAsgard(InstallShHarness):
+    """설치기는 asgard 하나만 깐다 — 사용자가 안 시킨 도구는 안 깐다.
+
+    목록이 아니라 **횟수**로 재는 이유가 있다. 26-08-17 에 실행 표면 러너(`rust-just`)를 여기서
+    같이 깔았고, 그 도구를 쓸지는 저장소가 고를 일이라 뺐다. 이름 하나를 금지 목록에 적으면
+    다음에 추가되는 이름은 그 목록에 없다 — 재는 축은 "무엇을 안 깔았나"가 아니라
+    "몇 개를 깔았나"다."""
+
+    def test_uv_tool_install_is_called_exactly_once(self) -> None:
+        proc = self._run_streamed(self.tmp)
+        self.assertEqual(proc.returncode, 0, f"install failed:\n{proc.stdout}\n{proc.stderr}")
+        calls = [line for line in self._installed_spec().splitlines() if line.strip()]
+        self.assertEqual(len(calls), 1, f"the installer installed more than asgard: {calls}")
+        self.assertIn("asgard", calls[0], f"the one install was not asgard: {calls[0]}")
+
+
 if __name__ == "__main__":
     unittest.main()

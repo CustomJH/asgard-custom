@@ -8,10 +8,10 @@
 
 - Project root: `../satellite-pilot/`
 - Languages by observed source files: TypeScript (24), JavaScript (16)
-- Evidence scan: 117 files; 4 landmarks
+- Evidence scan: 118 files; 4 landmarks
 - Declared work root of the session repository — paths below open as written from `./`.
 - The relation graph (`asgard map impact` / `trace`) covers the session repository only.
-- Source revision: source-stat-sha256:f79560b8900562096ffd934f62b23a4f3190cd5eed30628dab92d3041a9ac001
+- Source revision: source-stat-sha256:38d0b8cae27559cc7756e00487c5f7fe1e2c3be771547f69c6084267ceccc931
 
 ## Landmarks
 

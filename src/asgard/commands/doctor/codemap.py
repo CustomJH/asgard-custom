@@ -1,7 +1,9 @@
-"""doctor — 지도와 매뉴얼 검사. 드리프트·영역 지도 문법·오딘이 쓴 규칙 파일."""
+"""doctor — 지도와 매뉴얼 검사. 드리프트·영역 지도 문법·오딘이 쓴 규칙 파일·실행 표면."""
 
 import os
 from pathlib import Path
+
+from ... import io_files
 
 
 def _map_drift_detail(managed) -> str:
@@ -136,6 +138,38 @@ def _codebase_map_check(root: str) -> list[dict]:
 
 def _map_row(ok: bool, detail: str, fix: str) -> dict:
     return {"name": "codebase map", "ok": ok, "detail": detail, "fix": fix}
+
+
+def _run_surface_check(root: str) -> dict | None:
+    """실행 표면 — 이 저장소가 Justfile 을 쓰기로 했다면, 그것이 지금 매니페스트와 맞는가.
+
+    **안 들인 저장소에는 행 자체가 없다.** 실행 표면은 `asgard just init` 으로 저장소가 고르는
+    것이라, 안 고른 것을 진단에 올리면 초록이든 노랑이든 "들여야 할 것을 안 들였다"로 읽힌다 —
+    그 판단은 도구가 아니라 오딘이 한다.
+
+    들인 저장소에서는 두 가지가 갈린다. 러너가 PATH 에 없는 것과 관리 구역이 낡은 것은 처방이
+    다르다(`asgard just install` 대 `asgard just sync`) — 한 줄에 실어도 무엇을 쳐야 하는지가
+    갈리면 안 되므로 둘을 이어 적는다."""
+    try:
+        from ... import justfile
+
+        path = justfile.find_justfile(root)
+        if path is None:
+            return None  # 이 저장소는 실행 표면을 안 쓴다 — 진단할 것이 없다
+        parts = list(justfile.check(root))
+        version = justfile.just_version()
+        if not version:
+            parts.append("just is not on PATH")
+        recipes = len(justfile.parse_recipes(io_files.read_text(path)))
+        detail = " · ".join(parts) if parts else f"{os.path.basename(path)} · {recipes} recipes · {version}"
+        return {
+            "name": "run surface",
+            "ok": not parts,
+            "detail": detail,
+            "fix": "asgard just install (runner) · asgard just sync (recipes)",
+        }
+    except Exception:
+        return None  # 진단이 진단 대상을 막지 않는다
 
 
 def _custom_manual_check(root: str) -> dict | None:

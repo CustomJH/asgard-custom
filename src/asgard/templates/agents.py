@@ -79,6 +79,20 @@ per-area `<area>.md` files are the deep maps agents draw as they explore.
 - **When it updates** — Managed `PROJECT.md` auto-refreshes at main-request/subagent start and before Verifier hash computation (map changes are part of the PASS too). Add only meaning newly confirmed in the quest to area maps, incrementally. `asgard map check`/`doctor` catch drift, ghosts, grammar, and size violations.
 <!-- <<< asgard:map <<< -->
 
+<!-- >>> asgard:just >>> -->
+## Asgard — Run Surface (`just`, opt-in)
+
+A repository may keep every command it can run at one address: `just <recipe>`. **This is opt-in and off by default** — no install, no `asgard init`, and no `asgard sync` ever creates a Justfile. `asgard just init` is the one door, and Odin walks through it.
+
+- **First, find out whether this repository uses it.** A Justfile at the root means yes; then `just --list` is the inventory and it is current. No Justfile means this repository runs its commands the ordinary way — read the manifests, and do not propose adopting `just` unless Odin raises it.
+- **When it is there, call the recipe** rather than retyping what it wraps: the recipe carries the working directory, the flags, and the environment that make the command correct here. Reassembling `python -m pytest` from `pyproject.toml` is how one repository ends up with three different ways to run its tests.
+- **Two owners, one file** — between `# >>> asgard managed recipes >>>` and `# <<< asgard managed recipes <<<`, `asgard just sync` rewrites everything from the checked-in manifests, so an edit in there is erased on the next pass, silently. Everything outside the markers is yours and is never rewritten — deploys, migrations, local service startup, anything no manifest can state. When a name collides, sync drops its own recipe and keeps the one you wrote.
+- **Once adopted it keeps itself current** — `asgard sync` redraws the managed region in the same pass that refreshes the map, and `asgard just check` (also the **run surface** row of `asgard doctor`, which appears only in repositories that adopted it) says whether it has drifted. `asgard just install` is the repair when only the runner is missing.
+- **In an adopted repository, name the recipe in a verify contract** — a quest criterion should say `just check`, not the raw command underneath it. The recipe stays true after the manifests move; the raw command does not.
+
+The `asgard-just` skill carries the recipe grammar — load it before writing one, because the rule that catches everybody (one line of a recipe is one shell, so a bare `cd` is gone by the next line) is in there.
+<!-- <<< asgard:just <<< -->
+
 __LAGOM__
 __BRAGI__
 __COMMENTS__

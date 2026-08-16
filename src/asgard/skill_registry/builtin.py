@@ -9,6 +9,7 @@ def _builtin_plugins() -> dict[str, dict]:
     from ..templates.bragi import BRAGI_SKILLS
     from ..templates.eitri import EITRI_SKILLS
     from ..templates.freyja import FREYJA_SKILLS, freyja_core_skill
+    from ..templates.just import JUST_SKILLS
     from ..templates.lagom import LAGOM_SKILLS
     from ..templates.memory import MEMORY_SKILL_MD
     from ..templates.mimir import MIMIR_SKILLS, mimir_core_skill
@@ -64,6 +65,14 @@ def _builtin_plugins() -> dict[str, dict]:
             "agents": ("worker", "thor-lead"),
             "resolver": "siege",
         },
+        # just — 실행 표면. 명령을 실제로 부르는 역할 전부에 붙는다: 표면이 갈라지는 것은
+        # 한 역할이 raw 명령으로 돌아가는 순간이고, 그 순간은 어느 역할에서든 온다.
+        "just": {
+            "description": "The project's run surface — one Justfile, written from the manifests and extended by hand",
+            "skills": JUST_SKILLS,
+            "agents": ("worker", "thor", "thor-lead", "eitri", "freyja"),
+            "resolver": "just",
+        },
         "lagom": {"description": "Lagom review, debt, and compression modes", "skills": LAGOM_SKILLS},
         "bragi": {"description": "Human-voice audit and rewrite for reports, any language", "skills": BRAGI_SKILLS},
     }
@@ -94,4 +103,8 @@ def _builtin_resolver(name: str):
         from ..templates.siege import resolve_siege_skills
 
         return resolve_siege_skills
+    if name == "just":
+        from ..templates.just import resolve_just_skills
+
+        return resolve_just_skills
     return None

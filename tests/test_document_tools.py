@@ -113,6 +113,8 @@ class BundledDocumentSkillTest(unittest.TestCase):
                 "asgard-freyja-sjonhverfing",
                 "asgard-freyja2",
                 "asgard-freyja4",
+                # 실행 표면은 딜리버리 표면 전부가 받는다 — 프레이야도 `just dev` 를 친다.
+                "asgard-just",
                 "codebase-design",
             },
         )
