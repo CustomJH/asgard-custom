@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import resource
 import statistics
 import subprocess
@@ -223,8 +222,16 @@ def diff_note(left: str, right: str) -> str:
         return ""
     for index, (a, b) in enumerate(zip(left, right)):
         if a != b:
-            return "첫 불일치 offset=%d  before=%r  after=%r" % (index, left[index : index + 60], right[index : index + 60])
-    return "길이만 다름 before=%d after=%d  꼬리=%r" % (len(left), len(right), (left or right)[min(len(left), len(right)) :][:120])
+            return "첫 불일치 offset=%d  before=%r  after=%r" % (
+                index,
+                left[index : index + 60],
+                right[index : index + 60],
+            )
+    return "길이만 다름 before=%d after=%d  꼬리=%r" % (
+        len(left),
+        len(right),
+        (left or right)[min(len(left), len(right)) :][:120],
+    )
 
 
 def main() -> int:

@@ -53,7 +53,11 @@ SOURCE_CANDIDATES = ["startup", "resume", "clear", "compact"]
 _PROBE_FILE = str(ROOT / "benchmarks" / "cpu-profile" / ".hooktax-probe.txt")
 _PROBE_NB = str(ROOT / "benchmarks" / "cpu-profile" / ".hooktax-probe.ipynb")
 TOOL_INPUT = {
-    "Agent": {"subagent_type": "asgard-worker", "description": "hook-tax probe", "prompt": "profiling probe, no real work"},
+    "Agent": {
+        "subagent_type": "asgard-worker",
+        "description": "hook-tax probe",
+        "prompt": "profiling probe, no real work",
+    },
     "Bash": {"command": "echo hook-tax-profile"},
     "Write": {"file_path": _PROBE_FILE, "content": "hook-tax probe\n"},
     "Edit": {"file_path": _PROBE_FILE, "old_string": "a", "new_string": "b"},
@@ -132,7 +136,12 @@ def payload_for(event: str, matcher: str) -> dict:
         return {**base, "tool_name": tool, "tool_input": TOOL_INPUT[tool]}
     if event == "PostToolUse":
         tool = fullmatch_first(matcher, TOOL_CANDIDATES) or "Bash"
-        return {**base, "tool_name": tool, "tool_input": TOOL_INPUT[tool], "tool_response": {"is_error": False, "output": "hook-tax-profile\n"}}
+        return {
+            **base,
+            "tool_name": tool,
+            "tool_input": TOOL_INPUT[tool],
+            "tool_response": {"is_error": False, "output": "hook-tax-profile\n"},
+        }
     if event == "Stop":
         return {**base, "stop_hook_active": False}
     return base
@@ -152,7 +161,12 @@ def run_once(argv: list[str], payload: dict) -> dict:
     after = resource.getrusage(resource.RUSAGE_CHILDREN)
     cpu_ms = ((after.ru_utime - before.ru_utime) + (after.ru_stime - before.ru_stime)) * 1000
     out = proc.stdout.decode("utf-8", errors="replace").strip()
-    return {"wall_ms": wall_ms, "cpu_ms": cpu_ms, "exit_code": proc.returncode, "no_op": proc.returncode == 0 and not out}
+    return {
+        "wall_ms": wall_ms,
+        "cpu_ms": cpu_ms,
+        "exit_code": proc.returncode,
+        "no_op": proc.returncode == 0 and not out,
+    }
 
 
 def profile_script(entry: dict, event: str, reps: int) -> dict:
@@ -292,17 +306,23 @@ def main() -> int:
         print("  없음 — 여러 matcher 로 등록된 스크립트가 없다")
     for event, d in dup.items():
         for name, info in d.items():
-            print(f"  [{event}] {name}: {info['registrations']} -> 도구 호출당 최대 {info['max_fires_per_single_tool_call']}회")
+            print(
+                f"  [{event}] {name}: {info['registrations']} -> 도구 호출당 최대 {info['max_fires_per_single_tool_call']}회"
+            )
             if info["tools_that_fire_more_than_once"]:
                 print(f"    실제 중복 발화 도구: {info['tools_that_fire_more_than_once']}")
 
     print("\n도구별 PreToolUse+PostToolUse 발화 (웜)")
     for tool, f in fire.items():
-        print(f"  {tool:<14s} procs={f['process_count']}  cpu={f['warm_cpu_ms']:6.1f}ms  wall={f['warm_wall_ms']:6.1f}ms  pre={f['pre_hooks']} post={f['post_hooks']}")
+        print(
+            f"  {tool:<14s} procs={f['process_count']}  cpu={f['warm_cpu_ms']:6.1f}ms  wall={f['warm_wall_ms']:6.1f}ms  pre={f['pre_hooks']} post={f['post_hooks']}"
+        )
 
     print("\n턴 세금 (Bash 도구 K 회 반복 + UserPromptSubmit/Stop 1회, 웜 기준)")
     for k, t in turns.items():
-        print(f"  K={k:<3d} processes={t['processes']:4d}  cpu={t['cpu_s']:.3f}s  wall_serial={t['wall_s_serial']:.3f}s")
+        print(
+            f"  K={k:<3d} processes={t['processes']:4d}  cpu={t['cpu_s']:.3f}s  wall_serial={t['wall_s_serial']:.3f}s"
+        )
 
     return 0
 

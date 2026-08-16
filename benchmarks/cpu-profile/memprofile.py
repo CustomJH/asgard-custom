@@ -134,7 +134,9 @@ def measure_hook_rss(hook: dict, timeout: int = 30) -> dict:
     try:
         proc = subprocess.run(
             [sys.executable, "-c", _RSS_WRAPPER, cfg_path],
-            capture_output=True, text=True, timeout=timeout + 10,
+            capture_output=True,
+            text=True,
+            timeout=timeout + 10,
         )
     finally:
         Path(cfg_path).unlink(missing_ok=True)
@@ -200,7 +202,9 @@ def measure_hook_alloc(hook: dict, timeout: int = 30) -> dict:
     try:
         proc = subprocess.run(
             [str(VENV_PYTHON), "-c", _ALLOC_WRAPPER, cfg_path],
-            capture_output=True, text=True, timeout=timeout,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
         )
     finally:
         Path(cfg_path).unlink(missing_ok=True)
@@ -226,18 +230,33 @@ def measure_staircase() -> list[dict]:
     for label, stmt in STAIRCASE_STEPS:
         code = f"import resource, sys; {stmt}; print(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)"
         proc = subprocess.run(
-            [str(VENV_PYTHON), "-c", code], capture_output=True, text=True, cwd=REPO, timeout=30,
+            [str(VENV_PYTHON), "-c", code],
+            capture_output=True,
+            text=True,
+            cwd=REPO,
+            timeout=30,
         )
         if proc.returncode != 0:
             out.append({"step": label, "error": proc.stderr[-500:]})
             continue
         raw = int(proc.stdout.strip().splitlines()[-1])
-        out.append({"step": label, "rss_self_bytes": maxrss_to_bytes(raw), "rss_self_mb": round(maxrss_to_bytes(raw) / 1_048_576, 2)})
+        out.append(
+            {
+                "step": label,
+                "rss_self_bytes": maxrss_to_bytes(raw),
+                "rss_self_mb": round(maxrss_to_bytes(raw) / 1_048_576, 2),
+            }
+        )
     # 계단 마지막 칸: 훅 하나를 완료 시점까지 실행 (readonly-guard.py, 가장 흔한 PreToolUse 훅)
     hooks = [h for h in load_hook_invocations() if h["path"].name == "readonly-guard.py" and h["event"] == "PreToolUse"]
     if hooks:
         rss = measure_hook_rss(hooks[0])
-        out.append({"step": "readonly-guard.py 실행 완료 (PreToolUse, RUSAGE_CHILDREN)", **{k: v for k, v in rss.items() if k in ("max_rss_children_bytes", "max_rss_children_mb", "wall_s")}})
+        out.append(
+            {
+                "step": "readonly-guard.py 실행 완료 (PreToolUse, RUSAGE_CHILDREN)",
+                **{k: v for k, v in rss.items() if k in ("max_rss_children_bytes", "max_rss_children_mb", "wall_s")},
+            }
+        )
     return out
 
 

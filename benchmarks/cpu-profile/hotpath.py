@@ -286,10 +286,16 @@ def _print_human(result: dict, limit: int) -> None:
     if "exec" in result:
         print("  exec: %.1fms wall (cProfile)" % result["exec"]["elapsed_ms"])
         for row in result["exec"]["top_functions"][: min(10, limit)]:
-            print("    %8.2fms cum  %8.2fms self  %-6d calls  %s" % (row["cumtime_ms"], row["tottime_ms"], row["ncalls"], row["function"]))
+            print(
+                "    %8.2fms cum  %8.2fms self  %-6d calls  %s"
+                % (row["cumtime_ms"], row["tottime_ms"], row["ncalls"], row["function"])
+            )
     if "importtime" in result:
         it = result["importtime"]
-        print("  importtime: %.1fms wall, %.2fms total import (all modules)" % (it["elapsed_ms"], it["total_import_us"] / 1000))
+        print(
+            "  importtime: %.1fms wall, %.2fms total import (all modules)"
+            % (it["elapsed_ms"], it["total_import_us"] / 1000)
+        )
         for row in it["top_level_imports"][:8]:
             print("    %8.2fms cum  %s" % (row["cumulative_us"] / 1000, row["name"]))
 

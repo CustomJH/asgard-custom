@@ -27,11 +27,11 @@ Cumulative CPU (`ps -o time`) over wall-clock residency (`ps -o etime`) gives
 CPU-seconds-per-hour, which is stable across the run instead of a `%CPU` instant
 that depends on what else the machine was doing in the last sampling tick.
 """
+
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import shutil
 import sqlite3
@@ -49,7 +49,7 @@ _ASGARD_HINT_RE = re.compile(r"\basgard\b", re.IGNORECASE)
 def _run(cmd: list[str]) -> str:
     try:
         out = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
-    except (OSError, subprocess.TimeoutExpired):
+    except OSError, subprocess.TimeoutExpired:
         return ""
     return out.stdout if out.returncode == 0 else ""
 
@@ -151,10 +151,14 @@ def docker_report() -> dict:
         if not name.startswith("asgard-"):
             continue
         names.append(name)
-        containers.append({"name": name, "image": parts[1], "status": parts[2], "ports": parts[3] if len(parts) > 3 else ""})
+        containers.append(
+            {"name": name, "image": parts[1], "status": parts[2], "ports": parts[3] if len(parts) > 3 else ""}
+        )
     if not names:
         return {"available": True, "daemon_up": True, "containers": [], "note": "asgard- 접두 컨테이너 없음"}
-    stats_out = _run(["docker", "stats", "--no-stream", "--format", "{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}", *names])
+    stats_out = _run(
+        ["docker", "stats", "--no-stream", "--format", "{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}", *names]
+    )
     stats_by_name = {}
     for line in stats_out.splitlines():
         parts = line.split("\t")
@@ -240,7 +244,7 @@ def hook_read_frequency() -> dict:
     settings_path = REPO_ROOT / ".claude" / "settings.json"
     try:
         settings = json.loads(settings_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except OSError, json.JSONDecodeError:
         settings = {}
 
     hook_events: dict[str, list[str]] = {}
@@ -324,8 +328,12 @@ def main() -> int:
                 f"{p['kind']:6s} pid={p['pid']:<7d} etime={p['etime_s']:.0f}s "
                 f"cpu={p['cpu_s']:.2f}s cpu/h={p['cpu_s_per_hour']:.4f}s rss={p['rss_kb']}KB"
             )
-        print(f"discarded snapshot hits (name contains 'asgard', not serve/mcp): {report['processes']['discarded_snapshot_hits']}")
-        print(f"pytest workers in same snapshot (excluded, not Asgard's own surface): {report['pytest_worker_count_excluded']}")
+        print(
+            f"discarded snapshot hits (name contains 'asgard', not serve/mcp): {report['processes']['discarded_snapshot_hits']}"
+        )
+        print(
+            f"pytest workers in same snapshot (excluded, not Asgard's own surface): {report['pytest_worker_count_excluded']}"
+        )
         print(json.dumps(report["docker"], indent=2, ensure_ascii=False))
         print(json.dumps(report["disk"], indent=2, ensure_ascii=False))
     return 0
