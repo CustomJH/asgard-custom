@@ -7,8 +7,8 @@
 ## Orientation
 
 - Project root: `./`
-- Languages by observed source files: Python (729), JavaScript (6), Rust (2)
-- Evidence scan: 963 files; 47 landmarks
+- Languages by observed source files: Python (750), JavaScript (6), Rust (2)
+- Evidence scan: 985 files; 51 landmarks
 
 ## Landmarks
 
@@ -16,6 +16,7 @@
 - `docker/` — container and deployment area
 - `docker/asgard-k6/` — project boundary (docker-compose.yml)
 - `docker/asgard-project-memory/` — project boundary (docker-compose.yml)
+- `docs/` — documentation area
 - `pyproject.toml` — Python project manifest
 - `src/` — primary source area
 - `src/asgard/` — Python package root
@@ -58,7 +59,10 @@
 - `studio-shell/` — project boundary (package.json)
 - `studio-shell/src-tauri/` — project boundary (Cargo.toml)
 - `tests/` — test area
+- `tests/agent/` — Python package root
+- `tests/architecture/` — Python package root
 - `tests/heimdall/` — Python package root
+- `tests/map_graph/` — Python package root
 
 ## Detected verification
 
@@ -73,6 +77,7 @@
 - `MANUAL.md` — doc: MANUAL · sections: 오딘에게 보고하는 말투; API; Database; Naming
 - `README.md` — doc: Asgard · sections: Install; Local or isolated execution; Tool Kernel; Skill and Plugin Registry; Documents (Sága); Project Map
 - `docker/README.md` — doc: 컨테이너 하나 = 에이전트 하나 · sections: 먼저 — 이 폴더에 이미지가 둘 있고, 서로 다른 것이에요; 가르는 것은 두 줄이에요; 1. 호스트의 에이전트를 그대로 컨테이너에 (_asgard start_); 2. 컨테이너 전용 에이전트 여럿 (compose); 자격증명은 기본으로 안 넘어가요; 알아둘 것
+- `docs/HANDOVER-large-files-260817.md` — doc: 인수인계 — 대형 파일 리팩토링 (2026-08-17) · sections: ① 끝난 것 — 릴리즈가 다시 실패하지 않게; ② 대형 파일 — churn×lines 상위 셋 완료 (26-08-17); 시작하는 법
 - `studio-shell/README.md` — doc: Asgard Studio native shell · sections: Run; Build; Icons
 - `benchmarks/bragi-humanvoice/README.md` — doc: Bragi — human-voice bench · sections: Running; Part A — upstream labeled pairs; Part B — held-out human corpus; Part C — live A/B on a real model; Honest limits
 - `benchmarks/conductor/README.md` — doc: Conductor 대조 — arXiv 2512.04388 의 평가 축을 Asgard 에 적용 · sections: 두 층; 못 재는 것
@@ -108,7 +113,6 @@
 - `src/asgard/assets/k6_kit/README.md` — doc: asgard-k6 · sections: 왜 selftest 가 먼저인가; 시나리오; 표면 뒤의 것들; 도커 쪽 집
 - `src/asgard/templates/roles/asgard-eitri.md` — doc: asgard-eitri — ⚒️ Build/CI/packaging specialist (Delivery)
 - `src/asgard/templates/roles/asgard-freyja.md` — doc: asgard-freyja — UI/UX specialist (Delivery)
-- `src/asgard/templates/roles/asgard-loki.md` — doc: asgard-loki — 🐍 Adversarial specialist (Delivery)
 
 ## Public surfaces
 
@@ -132,19 +136,20 @@
 - `benchmarks/shortcut-recall/harness.py` — public surface: def build_sandbox(); def build_memory(); def precheck(); def run_one(fid, task, judge, arm, rep); def main()
 - `benchmarks/skill-uptake/harness.py` — public surface: def measure_reach(root); def measure_specialists(root); def measure_semantic(root); def measure_shape(root); def measure_load(root)
 - `studio-shell/src-tauri/icons/build_icons.py` — public surface: def superellipse(box, n, steps); def body_mask(size); def night(size); def master(); def main()
+- `tests/agent/agent_base.py` — public surface: class Base
+- `tests/architecture/test_layered.py` — public surface: class TestLayeredArchitecture
 - `tests/cli_boundary.py` — public surface: def strip_ansi(text); class Outcome; def run_cli(*argv, stdin)
 - `tests/heimdall/harness.py` — public surface: class FakeSession; class FakeHeimdall; def worker(files, root, text); def verifier(verdict, observed, structural, sig, why, …); def thinker(plan, commands); uses `src/asgard/i18n.py`, `src/asgard/providers.py`
 - `tests/hookscaffold.py` — public surface: def deploy_library(hooks_dir); def deploy_cli(bin_dir); def isolated_home_env(home, **extra); def until(predicate, timeout, step)
+- `tests/map_graph/map_base.py` — public surface: class Base
 - `tests/memory/memory_base.py` — public surface: def memory_semantic_env(); class MemoryBase
 - `tests/test_activity.py` — public surface: class ActivityEmitCase; class ActivityReadCase; class StudioAbsorbCase; class SessionEmitCase; class StudioLiveRunCase
 - `tests/test_adversarial_gate.py` — public surface: def run(script, args, stdin, cwd, env_extra); class AdversarialBase; class TestAdversarialVectors; class TestEncodingDisarm; class TestSessionIdentityDisarm
-- `tests/test_agent.py` — public surface: class Base; class TestEditor; class TestBash; class TestTruncation; class TestBashDestructiveGuard; uses `src/asgard/agent/quest_bridge.py`
 - `tests/test_agent_cli_config.py` — public surface: class AgentCliConfigTest
 - `tests/test_agent_env_propagation.py` — public surface: class EnvPropagationTest
 - `tests/test_agent_hook.py` — public surface: class AgentHookBase; class TestRenderIsSingleSource; class TestPlacementIsSingleSource; class TestContainerHome; class TestClientSchemas
 - `tests/test_agent_open_cli.py` — public surface: class AgentOpenCliTest
 - `tests/test_agent_picker_cli.py` — public surface: class AgentPickerCliTest
-- `tests/test_architecture.py` — public surface: class TestLayeredArchitecture; class TestRoleContract; class TestPackageInternals; class TestStudioPackage
 - `tests/test_automations.py` — public surface: class TestDueComputation; class TestStoreAndOutcome; class TestAutomationCLI
 - `tests/test_bragi.py` — public surface: class TestLanguageDetection; class TestDetection; class TestFalsePositiveGuards; class TestStatisticalFeatures; class TestGrading
 - `tests/test_bridge.py` — public surface: class TestScaffold; class TestSkillBody
@@ -159,7 +164,6 @@
 - `tests/test_completions.py` — public surface: class TestSurfaceDerivation; class TestRendererCoversTheApp; class TestOneDoorForWindows; class TestRenderAnchors; class TestBashFunctional
 - `tests/test_container_agent.py` — public surface: def machine(tmp_path, monkeypatch); def test_container_gets_the_agent_home_as_a_container_path(machine, monkeypatch); def test_container_mounts_the_agent_home(machine, monkeypatch); def test_host_path_never_leaks_into_the_container_env(machine, monkeypatch); def test_profile_name_does_not_ride_along(machine, monkeypatch)
 - `tests/test_craft.py` — public surface: class UnitShapeTest; class ResourceLifetimeTest; class CostTest; class RatchetTest; class MoveTest
-- `tests/test_craft_fix.py` — public surface: class RepairTest; class TableTest; class NotACommentTest; class EncodingTest; class ApplyTest; uses `src/asgard/commands/craft.py`
 
 ## Navigation contract
 
