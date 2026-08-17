@@ -41,7 +41,7 @@ def _root() -> str:
     """장부가 있는 프로젝트 루트 — `commands/siege.py` 와 **같은 함수**(`health._project_root`)로 판정한다.
 
     형제 모듈에서 가져오지 않고 각자 부르는 이유는 `commands` 패키지가 같은 등급끼리의 임포트를
-    금하기 때문이다(`tests/test_architecture.py`). 정본은 어차피 `_project_root` 하나이므로
+    금하기 때문이다(`tests/architecture/test_package_internals.py`). 정본은 어차피 `_project_root` 하나이므로
     갈릴 여지는 없고, 실제로 안 갈렸는지는 두 표면 모두에서 시험한다.
     """
     return _project_root(os.getcwd())

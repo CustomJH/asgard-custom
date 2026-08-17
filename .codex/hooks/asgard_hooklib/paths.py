@@ -15,7 +15,7 @@ import subprocess
 # 없으면 PATH 의 python3/py). 괄호 없는 다중 except는 3.14+ 문법(PEP 758)이라
 # 3.13 이하 기계에선 이 파일이 임포트 시점 SyntaxError가 되고, 훅 계약이 fail-open이라 그
 # 죽음이 **조용하다**. 그렇다고 괄호로 쓰면 포매터(target-version=py314)가 도로 벗긴다 —
-# 이름은 못 건드린다. tests/test_architecture.py의 문법 바닥 검사가 이 불변식을 지킨다.
+# 이름은 못 건드린다. tests/architecture/test_layered.py의 문법 바닥 검사가 이 불변식을 지킨다.
 BAD_NUMBER = (TypeError, ValueError)
 
 

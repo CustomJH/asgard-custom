@@ -81,7 +81,7 @@ def record(root: str, gate: str, fired: bool, failed: bool = False) -> None:
         os.replace(tmp, path)
     except Exception:
         # 타입을 좁혀 여러 개로 적지 않는 이유는 craft_gate 와 같다 — 포매터가 py314 문법으로
-        # 바꾸는데 훅은 3.9 로도 파스돼야 한다 (tests/test_architecture.py).
+        # 바꾸는데 훅은 3.9 로도 파스돼야 한다 (tests/architecture/test_layered.py).
         pass  # 계측 실패는 계측만 잃는다
 
 

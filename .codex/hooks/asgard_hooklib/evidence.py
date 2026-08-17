@@ -170,7 +170,7 @@ def evidence_breadth(rec: dict) -> int:
 # 읽을 수 없는 영수증 두 종 — 파일이 안 열리거나(OSError) JSON 이 아니거나(JSONDecodeError 는
 # ValueError). 이름을 붙여 두는 이유는 `paths.UNREADABLE_RECEIPT` 와 같다: `except Exception` 은
 # 진짜 결함까지 삼키고, 이 함수는 거짓이 정상 답이라 삼킨 자리가 겉으로 안 드러난다. 사본인 것은
-# 두 모듈이 같은 등급이라 서로 임포트하지 않기 때문이다 (배포 계약 — test_architecture 의 등급표).
+# 두 모듈이 같은 등급이라 서로 임포트하지 않기 때문이다 (배포 계약 — tests/architecture/packages.py 의 등급표).
 # 괄호를 벗기지 않는 이유도 있다: 괄호 없는 형태는 Python 3.14 문법이고, 훅은 사용자 환경의
 # 인터프리터로 도는 자립 파일이다.
 _UNREADABLE = (OSError, ValueError)

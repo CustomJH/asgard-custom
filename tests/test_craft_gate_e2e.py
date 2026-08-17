@@ -200,7 +200,7 @@ class ShippedHookRuns(unittest.TestCase):
         판정은 글자가 아니라 문법 트리로 한다. 부분 문자열로 찾으면 `asgard_hooklib` — 엔진이
         아니라 훅 **옆에 함께 깔리는** 라이브러리 — 이 이름이 `asgard` 로 시작한다는 이유만으로
         걸린다. 금지 대상은 이름의 생김새가 아니라 무엇을 임포트하는가다 (같은 규칙이
-        test_architecture 의 `test_hooks_are_self_contained` 에 있다)."""
+        tests/architecture/test_layered.py 의 `test_hooks_are_self_contained` 에 있다)."""
         import ast
 
         from asgard.hooks import craft_gate

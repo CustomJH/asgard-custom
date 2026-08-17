@@ -1,6 +1,6 @@
 """배포 사본 계약 — `hooks/quest_log.py`는 asgard 없이도 자기 일을 한다.
 
-`tests/test_architecture.py`의 훅 시험 둘은 이 계약을 **모양**으로 본다: 상대 임포트가 없는지,
+`tests/architecture/test_layered.py`의 훅 시험 둘은 이 계약을 **모양**으로 본다: 상대 임포트가 없는지,
 try 밖에서 asgard를 부르지 않는지, 3.9 문법으로 파싱되는지. 셋 다 AST 검사라 "실제로 도는가"는
 아직 아무도 안 묻는다. 이 시험이 그 자리를 맡는다 — 파일을 다른 디렉터리에 복사하고 `asgard`
 임포트가 반드시 실패하는 환경에서 CLI를 통째로 태운다.

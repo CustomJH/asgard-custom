@@ -152,7 +152,7 @@ def _dotted(node) -> str:
 # `ast.parse` 가 스니펫을 못 읽을 때 나는 예외 둘. 튜플을 이름으로 두는 이유는 배포 계약이다 —
 # 포매터는 이 저장소를 py314 로 보고 `except (A, B):` 를 괄호 없는 형태로 고쳐 쓰는데, 훅은
 # 호스트가 들고 있는 아무 파이썬에서나 서야 해서 3.9 파싱을 시험이 지킨다
-# (`test_architecture.test_hooks_parse_on_old_python`). 이름 하나면 포매터가 건드릴 것이 없다.
+# (`test_layered.test_hooks_parse_on_old_python`). 이름 하나면 포매터가 건드릴 것이 없다.
 _PARSE_FAILED = (SyntaxError, ValueError)
 
 

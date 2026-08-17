@@ -26,7 +26,7 @@
 # Fail-open + stdlib-only: 주입이 실패해서 판정 턴이 죽으면 본말전도라 어떤 오류든 조용히 exit 0.
 #
 # `from __future__ import annotations` 는 문법 취향이 아니라 그 fail-open 의 조건이다. 훅은 이
-# 저장소의 venv 가 아니라 그 기계가 내주는 파이썬으로 돌고 바닥은 3.9 다 (test_architecture.py 의
+# 저장소의 venv 가 아니라 그 기계가 내주는 파이썬으로 돌고 바닥은 3.9 다 (tests/architecture/test_layered.py 의
 # `test_hooks_parse_on_old_python`). `list | None` 은 3.9 에서 **파싱은 되고** 함수를 정의하는
 # 순간 TypeError 로 죽는데, 그 죽음은 `main()` 의 예외 처리보다 앞이라 fail-open 이 못 받는다 —
 # 26-08-13 codex 독립 판정이 3.9.6 에서 실제로 그 traceback 을 냈다.

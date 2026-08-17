@@ -61,7 +61,7 @@ _COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 # 문법(PEP 758)이라 3.13 이하 기계에선 이 파일이 임포트 시점 SyntaxError가 되고, 훅 계약이
 # fail-open이라 그 죽음이 **조용하다** — 사용자는 계층이 켜진 줄 안다. 그렇다고 괄호로 쓰면
 # 이 리포의 포매터(target-version=py314)가 도로 벗긴다. 이름은 포매터가 못 건드린다.
-# tests/test_architecture.py의 문법 바닥 검사가 이 불변식을 지킨다.
+# tests/architecture/test_layered.py의 문법 바닥 검사가 이 불변식을 지킨다.
 _BAD_NUMBER = (TypeError, ValueError)
 _BAD_PATH = (OSError, ValueError)  # 끊어진 링크 · 순환 · 다른 드라이브(Windows) — 같은 이유로 이름
 

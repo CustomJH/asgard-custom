@@ -71,7 +71,7 @@ def brief(root: str, text: str = "", paths: object = (), cap: int = 3) -> str:
 
 def _normalise(paths: object) -> set[str]:
     """지목된 경로들. `tutor._normalise` 와 같은 규칙이지만 부르지 않는다 — 그쪽은 적용 등급이라
-    여기서 부르면 계층이 거꾸로 선다 (`tests/test_architecture.py` 가 잡는다)."""
+    여기서 부르면 계층이 거꾸로 선다 (`tests/architecture/test_layered.py` 가 잡는다)."""
     if not isinstance(paths, (list, tuple, set, frozenset)):
         return set()
     return {rel for raw in paths if (rel := str(raw).strip().replace(os.sep, "/"))}

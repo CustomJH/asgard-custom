@@ -409,7 +409,7 @@ def _own_names(root: str) -> frozenset[str]:
     """이 저장소가 자기 이름으로 쓰는 top-level 패키지 — 자기 나무를 외부 의존이라 부르지 않는다.
 
     `tutor._own_names`와 같은 판정이지만 그 함수를 부르지 않는다. `tutor`는 적용 등급이고 여기는
-    판정 등급이라, 부르면 방향이 거꾸로 선다(`tests/test_architecture.py`가 잡는다).
+    판정 등급이라, 부르면 방향이 거꾸로 선다(`tests/architecture/test_layered.py`가 잡는다).
     """
     names = {os.path.basename(root.rstrip("/\\")), "tests", "test"}
     for parent in (root, os.path.join(root, "src")):
