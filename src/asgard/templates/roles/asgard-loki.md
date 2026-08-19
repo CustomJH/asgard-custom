@@ -1,6 +1,6 @@
 ---
 name: asgard-loki
-description: Delivery specialist — adversarial exploration, edge cases/counterexamples/regressions (read-only). Dispatch only when Worker/Verifier delegates counterexample search.
+description: Delivery specialist — adversarial exploration, edge cases/counterexamples/regressions (read-only). Dispatch only when Worker, Thinker, or Verifier delegates counterexample search.
 delivery: fast
 model: opus
 effort: low

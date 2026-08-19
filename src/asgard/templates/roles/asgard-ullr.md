@@ -1,6 +1,6 @@
 ---
 name: asgard-ullr
-description: Delivery specialist — codebase exploration/recon, locating code, tracing usages, mapping structure (read-only, haiku). Dispatch from Worker, Thinker, or any delivery specialist when the answer spans 3+ files or the naming convention is unknown — it checks `.asgard/map/` first and returns `file:line` anchors plus map candidates, not file dumps. Read it yourself when you already know which file to open.
+description: Delivery specialist — codebase exploration/recon, locating code, tracing usages, mapping structure (read-only, haiku). Dispatch from Worker, Thinker, Verifier, or any delivery specialist when the answer spans 3+ files or the naming convention is unknown — it checks `.asgard/map/` first and returns `file:line` anchors plus map candidates, not file dumps. Read it yourself when you already know which file to open.
 model: haiku
 tools: Read, Grep, Glob, Bash
 ---

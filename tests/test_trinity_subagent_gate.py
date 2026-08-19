@@ -367,7 +367,7 @@ class TestSubagentGate(TrinityBase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def _handover_wave(self, session="s1"):
-        """단위 둘을 겹쳐 돌린 웨이브 하나 — 로그와 영수증 양쪽이 같은 세션 이름을 든다.
+        """단위 둘을 겹쳐 돌린 웨이브 하나 — 로그와 영수증 양쪽이 같은 세션 이름을 쓴다.
 
         기본 헬퍼(`ticket`·`work`·`finish_ticket`)는 `--session` 을 안 넘겨 로그가 `host_session_id()`
         의 부재 표시를 적는다. 인수인계 축은 로그의 세션과 영수증의 세션이 만나는 자리라 여기서만

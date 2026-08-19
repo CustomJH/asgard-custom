@@ -1,6 +1,6 @@
 ---
 name: asgard-freyja
-description: Delivery specialist — UI/UX, frontend, styling, accessibility. Defaults to product-first restraint and purposeful motion.
+description: Delivery specialist — UI/UX, frontend, styling, accessibility. Dispatch from Trinity Worker subtasks or direct tasks for visual subtasks (Verifier is forbidden — verification independence; it may reach only read-only agents). Defaults to product-first restraint and purposeful motion.
 delivery: standard
 model: inherit
 effort: high
