@@ -83,6 +83,8 @@ from asgard_hooklib.integrity import (  # noqa: E402
 )
 from asgard_hooklib.ledger import (  # noqa: E402
     APPEND_EVENTS,
+    EVENT_FIELDS,
+    HARNESS_FIELDS,
     SCHEMA,  # noqa: F401
     TICKET_STATUSES,
     VERDICTS,
@@ -497,6 +499,21 @@ def _append_payload(args) -> tuple[dict | None, int]:
 
 def _append_rejection(raw: dict) -> str:
     """append가 받지 않는 원문의 이유 — 빈 문자열이면 받는다."""
+    # normalize 는 코어 스키마만 남기고 나머지 키를 버린다 (`ledger.EVENT_FIELDS`). 버려진 서술을
+    # 쓴 쪽은 적었다고 보고 읽는 쪽은 빈 칸을 보므로, 침묵 대신 여기서 거절한다 — 아래 `outcome`
+    # 오타를 거절하는 것과 같은 이유다.
+    forged = sorted(set(raw) & HARNESS_FIELDS)
+    if forged:
+        return (
+            "harness-owned field(s): %s — the tool writes these itself at verdict time; "
+            "a caller-supplied value is a forgery and never reaches the record." % ", ".join(forged)
+        )
+    unknown = sorted(set(raw) - EVENT_FIELDS)
+    if unknown:
+        return (
+            "unknown field(s): %s — normalize keeps only the core schema, so these would be dropped "
+            "without a trace. Free-form narration belongs in 'subtask'." % ", ".join(unknown)
+        )
     if raw.get("event") not in APPEND_EVENTS:  # ticket_lease는 ticket-heartbeat 전용
         return "event must be one of %s" % sorted(APPEND_EVENTS)
     if raw.get("event") == "ticket":

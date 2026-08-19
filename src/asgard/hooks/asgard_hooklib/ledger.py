@@ -150,6 +150,28 @@ def write_event(root: str, qid: str, ev: dict) -> None:
         write_event_unlocked(root, qid, ev, load_events(root, qid))
 
 
+# `normalize` 가 읽는 이벤트 키 전부다. 여기 없는 키는 기록에 남지 않으므로, CLI 의 `append` 는
+# 그런 키를 받으면 거절한다 (`quest_log._append_rejection`). 판정은 이 기록만 읽으므로, 조용히
+# 버리면 워커는 근거를 적었다고 보고 판정자는 빈 칸을 읽는다. 자유 서술 칸은 `subtask` 하나다.
+# `normalize` 에 키를 더할 때 여기도 함께 더한다 — 어긋나면
+# `tests/test_quest_log_standalone.py` 의 소스 스캔이 실패한다.
+# 하네스가 PASS 판정 시점에 직접 붙이는 칸 (`quest_log._verify_evidence`). `normalize` 는 이 셋을
+# 안 읽으므로 stdin 이 값을 넣어도 기록에 안 남지만, 그 침묵은 위조 시도를 성공처럼 보이게 한다.
+# `append` 는 이 이름들을 따로 거절해 호출자가 쓰는 칸이 아님을 알린다.
+HARNESS_FIELDS = frozenset({"baseline", "criteria_checks", "peer_tree"})
+
+EVENT_FIELDS = frozenset(
+    {
+        "acceptance_hash", "access", "attempt", "base_ref", "changed_files", "claim_token_hash",
+        "commands", "criteria", "diff_hash", "event", "execution_id", "failure_count", "failure_sig",
+        "findings", "heartbeat_at", "ignored_snapshot", "lease_expires_at", "level", "max_attempts",
+        "model", "outcome", "peer_snapshot", "request", "research_findings", "research_only", "risk",
+        "role", "subtask", "ticket_error", "ticket_status", "tree_ref", "unit", "verdict",
+        "verification_id", "worker_id",
+    }
+)  # fmt: skip
+
+
 def normalize(ev: dict, events: list[dict], qid: str, session: str) -> dict:
     """고정 코어 스키마로 정규화 — 빠진 필드는 중립값, 모르는 stdin 필드는 버린다."""
     base_ref = next((e.get("base_ref") for e in events if e.get("base_ref")), None)

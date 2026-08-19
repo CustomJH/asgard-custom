@@ -95,7 +95,8 @@ class TestBaseline(TrinityBase):
         self.assertTrue(rows[0]["timed_out"])
         self.assertEqual(rows[0]["budget"], 1)
 
-    def test_stdin_baseline_forgery_dropped(self):
+    def test_stdin_baseline_forgery_is_refused(self):
+        """위조된 baseline 은 버려지는 대신 거절된다 — 조용히 버리면 시도한 쪽이 통과로 읽는다."""
         self.policy(baseline_checks=["false"])
         self.open_quest()
         self.write("app.py", "print('ok')\n")
@@ -103,9 +104,17 @@ class TestBaseline(TrinityBase):
             "role": "verifier",
             "event": "verify",
             "commands": [{"cmd": "python3 app.py", "exit_code": 0}],
-            "baseline": {"state": "green"},  # 위조 시도 — normalize가 버리고 하네스가 red 재계산
+            "baseline": {"state": "green"},  # 위조 시도
         }
-        self.qlog("append", "--verdict", "PASS", stdin=json.dumps(body))
+        forged = self.qlog("append", "--verdict", "PASS", stdin=json.dumps(body))
+        self.assertEqual(forged.returncode, 2, forged.stdout)
+        self.assertIn("baseline", forged.stderr)
+        self.assertEqual(self.last_event()["event"], "plan", "거절된 위조가 기록을 늘렸다")
+
+        # 같은 판정을 위조 없이 다시 적으면 하네스가 자기 손으로 red 를 계산해 붙인다.
+        del body["baseline"]
+        clean = self.qlog("append", "--verdict", "PASS", stdin=json.dumps(body))
+        self.assertEqual(clean.returncode, 0, clean.stderr)
         self.assertEqual(self.last_event()["baseline"]["state"], "red")
 
     def test_uv_project_autodetect_uses_uv_run(self):

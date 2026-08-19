@@ -15,15 +15,19 @@ try 밖에서 asgard를 부르지 않는지, 3.9 문법으로 파싱되는지. �
 
 from __future__ import annotations
 
+import ast
+import inspect
 import json
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 
 from asgard.hooks import library_files, script
+from asgard.hooks.asgard_hooklib.ledger import EVENT_FIELDS, HARNESS_FIELDS, normalize
 
 SRC = os.path.join(os.path.dirname(__file__), "..", "src", "asgard", "hooks", "quest_log.py")
 COMMANDS = (
@@ -153,7 +157,9 @@ class TestDeployedCopyRunsWithoutAsgard(unittest.TestCase):
             "thinker",
             "--event",
             "ticket",
-            stdin=json.dumps({"unit": "u1", "ticket_status": "todo", "files": ["app.py"], "access": []}),
+            # 단위의 파일 목록은 이벤트에 `changed_files` 로 들어간다 (`heimdall/ticket_lease.py:51`).
+            # `files` 는 계획 구조와 `fold_tickets` 의 접힌 뷰가 쓰는 이름이라 여기서는 버려진다.
+            stdin=json.dumps({"unit": "u1", "ticket_status": "todo", "changed_files": ["app.py"], "access": []}),
         )
         self.assertEqual(todo.returncode, 0, todo.stderr)
 
@@ -184,10 +190,86 @@ class TestDeployedCopyRunsWithoutAsgard(unittest.TestCase):
             self.assertNotIn("Traceback", proc.stderr, f"{cmd}: 배포 사본이 죽었다\n{proc.stderr}")
             self.assertIn(proc.returncode, (0, 1, 2), f"{cmd}: 뜻 없는 종료 코드 {proc.returncode}")
 
+    def test_a_field_the_schema_drops_is_refused_not_swallowed(self):
+        """스키마 밖 필드를 조용히 버리면 쓴 쪽과 읽는 쪽의 기록이 갈린다.
+
+        판정자는 이 로그만 읽는다. 워커가 `summary` 에 적은 근거가 사라지면 판정은 근거가 없다고
+        읽고, 워커는 적었다고 본다 — 그렇게 FAIL 이 한 번 났다. 거절이 그 침묵을 쓰는 쪽으로
+        되돌린다.
+        """
+        self.assertEqual(self.run_tool("open", "q5", "--criteria", "add stays total").returncode, 0)
+        refused = self.run_tool(
+            "append",
+            "--role",
+            "worker",
+            "--event",
+            "work",
+            stdin=json.dumps({"summary": "오딘이 범위를 좁혔다", "commands": []}),
+        )
+        self.assertEqual(refused.returncode, 2, refused.stdout)
+        self.assertIn("summary", refused.stderr, "버려질 필드 이름을 안 말하면 쓴 쪽이 뭘 고칠지 모른다")
+        self.assertIn("subtask", refused.stderr, "갈 곳을 안 말하는 거절은 막다른 길이다")
+        self.assertEqual([e["event"] for e in self._events("q5")], ["plan"], "거절된 append가 기록을 늘렸다")
+
+        accepted = self.run_tool(
+            "append",
+            "--role",
+            "worker",
+            "--event",
+            "work",
+            stdin=json.dumps({"subtask": "오딘이 범위를 좁혔다", "commands": []}),
+        )
+        self.assertEqual(accepted.returncode, 0, accepted.stderr)
+        self.assertEqual(self._events("q5")[-1]["subtask"], "오딘이 범위를 좁혔다")
+
     def _events(self, qid: str) -> list[dict]:
         path = os.path.join(self.root, ".asgard", "quest", qid + ".jsonl")
         with open(path, encoding="utf-8") as handle:
             return [json.loads(line) for line in handle if line.strip()]
+
+
+class TestEventFieldsCoversNormalize(unittest.TestCase):
+    """`EVENT_FIELDS` 가 `normalize` 보다 좁아지면 그 키는 다시 조용히 버려진다.
+
+    집합을 손으로 베껴 둔 시험은 다음 사람이 `normalize` 에 키를 더할 때 같이 낡는다. 그래서
+    목록을 대조하지 않고 `normalize` 의 소스를 읽어 그것이 실제로 꺼내는 키를 뽑는다.
+    """
+
+    def _keys_normalize_reads(self) -> set[str]:
+        fn = ast.parse(textwrap.dedent(inspect.getsource(normalize))).body[0]
+        keys: set[str] = set()
+        for node in ast.walk(fn):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "get":
+                target = node.func.value
+                if isinstance(target, ast.Name) and target.id == "ev" and node.args:
+                    if isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
+                        keys.add(node.args[0].value)
+            if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name) and node.value.id == "ev":
+                if isinstance(node.slice, ast.Constant) and isinstance(node.slice.value, str):
+                    keys.add(node.slice.value)
+            # `for key in ("a", "b"): ev.get(key)` — 이름으로 꺼내는 자리는 상수 튜플에서 읽는다.
+            if isinstance(node, ast.For) and isinstance(node.iter, ast.Tuple):
+                for element in node.iter.elts:
+                    if isinstance(element, ast.Constant) and isinstance(element.value, str):
+                        keys.add(element.value)
+        return keys
+
+    def test_the_scan_finds_something(self):
+        """스캔이 비면 아래 시험은 아무것도 증명하지 않는다."""
+        self.assertGreater(len(self._keys_normalize_reads()), 20)
+
+    def test_every_key_normalize_reads_is_declared(self):
+        missing = sorted(self._keys_normalize_reads() - EVENT_FIELDS)
+        self.assertEqual(missing, [], f"normalize가 읽지만 EVENT_FIELDS에 없다 — append가 이 키를 거절한다: {missing}")
+
+    def test_harness_owned_names_are_not_caller_writable(self):
+        """한 이름이 양쪽에 있으면 하네스가 쓰는 칸을 호출자도 쓴다는 뜻이라 둘 다 거짓이 된다."""
+        self.assertEqual(sorted(HARNESS_FIELDS & EVENT_FIELDS), [])
+
+    def test_no_declared_key_is_unread(self):
+        """읽지 않는 키를 선언해 두면 append가 받아 놓고 normalize가 버린다 — 원래 결함 그대로다."""
+        stale = sorted(EVENT_FIELDS - self._keys_normalize_reads())
+        self.assertEqual(stale, [], f"EVENT_FIELDS에 있지만 normalize가 안 읽는다: {stale}")
 
 
 if __name__ == "__main__":
