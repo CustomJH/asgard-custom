@@ -49,7 +49,7 @@ def tells(text: str, lang: str | None = None, source: str = "") -> list[Finding]
         matched.append(
             Finding(tell.id, tell.severity, tell.category, tell.hint, (m.group(0) if m else "").strip()[:60], len(hits))
         )
-    matched += _statistical(body, lang)
+    matched += _statistical(body, lang, text, source)
     # 군집 크기 = 함께 나타난 서로 다른 결정적·빈도 흔적의 종류 수 (약신호는 세지 않는다)
     cluster = sum(1 for f in matched if f.severity in ("S1", "S2"))
     strong = [f for f in matched if f.severity == "S1" or (f.hits >= _S2_MIN_HITS or cluster >= 2)]

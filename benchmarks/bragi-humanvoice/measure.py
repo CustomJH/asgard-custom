@@ -125,13 +125,16 @@ def _tracked_prose() -> list[str]:
     return out
 
 
-def part_b() -> dict:
-    sources = {
+def _part_b_sources() -> dict:
+    return {
         "commit bodies": _commit_bodies(),
         "tracked .md prose": _tracked_prose(),
         "memory docs": _memory_docs(),
         "module docstrings": _docstrings(),
     }
+
+
+def part_b(sources: dict) -> dict:
     out = {}
     for name, texts in sources.items():
         if not texts:
@@ -147,6 +150,67 @@ def part_b() -> dict:
             "examples": [{"id": f[0].id, "sample": f[0].sample, "text": t[:110]} for t, f in fired[:5]],
         }
     return out
+
+
+# ── 문장 완결성 축 — 채택한 절반(연결어미 종결)과 기각한 절반(명사구 종결)을 한 코퍼스에서 잰다.
+#
+# 기각한 쪽의 판정기는 배송되지 않으므로 여기 산다. 게이트에 안 들어간 이유를 문서가 주장만
+# 하고 다시 못 재면, 다음 사람이 같은 축을 같은 값으로 또 시도한다.
+BROKEN_KO = (
+    "먼저 설정 파일을 읽고.",
+    "값이 없으면 기본값을 쓰면.",
+    "그 다음 캐시를 지우도록.",
+    "다음 단계는 훅을 배포하고.",
+    "그 뒤에 게이트를 다시 돌리며.",
+    "테스트를 세 번 돌렸지만.",
+    "실패는 재현되지 않았으므로.",
+    "원인을 확인하는데.",
+    "로그를 남기면서.",
+    "값을 비교하니까.",
+)
+_BROKEN_PAD = "이 변경은 세 파일을 건드린다. 결과는 로그에 남는다. "
+# 서술어 + 종결어미로 끝나는 마지막 음절. 이 밖에서 끝나면 명사구·부사구 종결로 센다.
+_FINAL_SYLLABLES = set("다요죠까라자오네지군야어아여소걸게마니냐나")
+_NOUN_THRESHOLDS = (0.20, 0.25, 0.30, 0.35, 0.40, 0.50)
+
+
+def _noun_ending_ratio(text: str) -> float | None:
+    """명사구로 끝난 문장의 비율 — 배송 안 된 판정기. 문장이 6개 미만이면 안 잰다."""
+    sents = bragi._ko_sentences(bragi.lintable_spans(text))
+    if len(sents) < 6:
+        return None
+    return sum(1 for s in sents if s[-1] not in _FINAL_SYLLABLES) / len(sents)
+
+
+def sentence_completion(sources: dict) -> dict:
+    """채택한 축의 재현율·오탐과 사각, 그리고 기각한 축의 임계별 오탐.
+
+    사각을 여기서 같이 재는 이유는 한 번 틀렸기 때문이다 — 문서가 쉼표 면제분이라고 적은 값이
+    실은 쉼표와 대시의 합집합이었고, 판정이 그것을 잡았다 (26-08-19)."""
+    texts = [t for rows in sources.values() for t in rows]
+    sents = [s for t in texts for s in bragi._ko_sentences(bragi.lintable_spans(t))]
+    exempt = sum(1 for s in sents if bragi.stats._CONTINUATION.search(s))
+    with_comma = sum(1 for s in sents if "," in s)  # 대시·콜론을 함께 문 문장도 포함한다
+    fired = sum(1 for t in texts if any(f.id == "KO-unfinished-sentence" for f in bragi.tells(t)))
+    caught = sum(
+        1
+        for b in BROKEN_KO
+        if any(f.id == "KO-unfinished-sentence" for f in bragi.tells(_BROKEN_PAD + b + " 확인은 끝났다."))
+    )
+    ratios = sorted(r for r in (_noun_ending_ratio(t) for t in texts) if r is not None)
+    return {
+        "corpus_n": len(texts),
+        "connective_false_positive": fired,
+        "connective_recall": f"{caught}/{len(BROKEN_KO)}",
+        "korean_sentences": len(sents),
+        "exempt_by_continuation": exempt,
+        "sentences_with_comma": with_comma,
+        "noun_ending_n": len(ratios),
+        "noun_ending_false_positive": {
+            f"{thr:.2f}": sum(1 for r in ratios if r > thr) / len(ratios) if ratios else None
+            for thr in _NOUN_THRESHOLDS
+        },
+    }
 
 
 def _top_ids(fired: list) -> dict:
@@ -168,9 +232,10 @@ def main() -> None:
     args = ap.parse_args()
 
     corpus = json.load(open(args.corpus, encoding="utf-8"))
-    a, b = part_a(corpus), part_b()
+    sources = _part_b_sources()
+    a, b, c = part_a(corpus), part_b(sources), sentence_completion(sources)
     if args.json:
-        print(json.dumps({"part_a": a, "part_b": b}, ensure_ascii=False, indent=1))
+        print(json.dumps({"part_a": a, "part_b": b, "sentence_completion": c}, ensure_ascii=False, indent=1))
         return
 
     print("Part A — upstream labeled pairs (recall = AI text caught, FP = human text wrongly caught)")
@@ -204,6 +269,19 @@ def main() -> None:
     for name, r in b.items():
         for ex in r.get("examples", [])[:2]:
             print(f"\n  ! {name} · {ex['id']} · {ex['sample']!r}\n    {ex['text']}…")
+
+    print("\nSentence completion — the shipped half and the rejected half, on the same corpus")
+    print(
+        f"  KO-unfinished-sentence  fires on {c['connective_false_positive']} of {c['corpus_n']} human "
+        f"samples · catches {c['connective_recall']} hand-written broken sentences"
+    )
+    ks, ex, ca = c["korean_sentences"], c["exempt_by_continuation"], c["sentences_with_comma"]
+    print(
+        f"  blind spot              {ex} of {ks} Korean sentences ({ex / ks:.1%}) carry a dash, comma, or "
+        f"colon and are exempt — of those {ks}, {ca} carry a comma ({ca / ks:.1%})"
+    )
+    print(f"  noun-phrase endings     not shipped — misfire on {c['noun_ending_n']} samples by threshold:")
+    print("    " + "  ".join(f"{thr}={_pct(fp)}" for thr, fp in c["noun_ending_false_positive"].items()))
 
 
 if __name__ == "__main__":

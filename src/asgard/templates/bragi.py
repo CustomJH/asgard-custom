@@ -82,6 +82,12 @@ Compression removes filler, never grammar. A sentence that breaks its own langua
 concise, it is wrong. This applies everywhere prose is written — reports, docs, code comments, and
 commit subjects and bodies alike.
 
+- **Korean — end the sentence on a predicate.** A Korean sentence closes with a verb or adjective
+  carrying a final ending, not with a noun, a case-marked phrase, or a connective: write
+  `캐시를 지운다.`, not `캐시를 지우도록.` or `캐시 삭제.` Restore the particles and endings that
+  compression drops, and let the words say who did what to what rather than stacking 의 to shorten
+  the phrase: `지출한 비용을 추론하는 토큰 카운트 함수에 오류가 발생하면`, not
+  `지출 비용 추론 용도의 토큰 카운트 함수의 오류 상황에서`. Headings and list items are exempt.
 - **Korean — a particle attaches to the word before it.** 조사는 앞말에 붙여 쓴다 (한글 맞춤법
   제41항), and a Latin word, a number, or a code span is still 앞말: write `plugin.json의`,
   `UTF-8로`, `TERM이`, `HEAD와` — never `plugin.json 의`. Choose the allomorph from how the
@@ -136,7 +142,10 @@ translationese particles, chat residue (`I hope this helps`, `무엇이든 물�
 bolded inline headers, and — in Latin-script languages only — the em dash.
 
 **Grammar is never traded for brevity** — in reports, docs, code comments, and commit messages
-alike. In Korean a particle attaches to the word before it, and a Latin word, number, or code span
+alike. A Korean sentence ends on a predicate with a final ending, never on a noun, a case-marked
+phrase, or a connective (`캐시를 지운다`, not `캐시를 지우도록`), and the particles and endings that
+say who did what to what stay in even when they cost a token; headings and list items are exempt.
+In Korean a particle attaches to the word before it, and a Latin word, number, or code span
 is still that word (`plugin.json의`, `UTF-8로`, `TERM이` — never `plugin.json 의`); choose between
 은/는, 이/가, 을/를, 와/과, 으로/로 by how the preceding token is read aloud. Do not coin clipped words
 (불필요, not 불요; 일치 없음, not 무매칭). Do not drop an ordinary English word into a Korean

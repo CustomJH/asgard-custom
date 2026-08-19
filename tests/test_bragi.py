@@ -233,6 +233,106 @@ class TestStatisticalFeatures(unittest.TestCase):
         self.assertIn("U-ending-monotony", [f.id for f in bragi.tells(text + " I hope this helps.")])
 
 
+class TestKoreanSentenceCompletion(unittest.TestCase):
+    """한국어 문장은 서술어 + 종결어미로 끝난다. 연결어미로 끝나면 뒤 절이 통째로 빠진 것이다."""
+
+    def ids(self, text: str) -> list[str]:
+        return [f.id for f in bragi.tells(text)]
+
+    def test_sentence_ending_on_a_connective_is_caught(self):
+        text = "설정 파일을 먼저 읽는다. 값이 없으면 기본값을 쓴다. 그 다음 캐시를 지우도록. 결과는 로그에 남긴다."
+        self.assertIn("KO-unfinished-sentence", self.ids(text))
+
+    def test_the_finding_names_the_finished_form(self):
+        text = "게이트를 다시 돌렸다. 실패한 파일만 모아서 훅을 배포하고. 나머지는 그대로 두었다."
+        f = next(f for f in bragi.tells(text) if f.id == "KO-unfinished-sentence")
+        self.assertEqual(f.severity, "S1")
+        self.assertIn("종결어미", f.hint)
+        self.assertIn("배포하고", f.sample)
+
+    def test_prose_folded_across_lines_is_one_sentence_not_many(self):
+        """줄 하나를 문장으로 읽으면 접힌 자리의 조사가 문장 끝으로 잡힌다 — 그래서 문단부터 이어 붙인다."""
+        text = (
+            "판정기가 보는 것은 변경분의 주석이고, 그 판정을 받는 쪽은\n"
+            "훅이 아니라 사람이 읽는 보고문이라서 두 계층을 같은 사전으로\n"
+            "묶어 두었다. 사본을 두면 한쪽만 자란다."
+        )
+        self.assertNotIn("KO-unfinished-sentence", self.ids(text))
+
+    def test_inverted_reason_clause_after_a_dash_is_human_form(self):
+        """도치 — 이유절을 뒤로 돌린 형태는 절이 빠진 것이 아니라 옮겨진 것이다."""
+        text = "판정기의 오탐은 이 저장소에서 가장 비싼 결함이다 — 오탐을 내면 판정기를 끄기 때문이라서."
+        self.assertNotIn("KO-unfinished-sentence", self.ids(text))
+
+    def test_nouns_that_end_in_the_same_syllables_are_not_endings(self):
+        """`보고`·`참고`·`표면`·`화면`은 명사다 — 어간을 안 고정하면 이것들이 어미로 읽힌다."""
+        text = (
+            "siege 는 배차 장부를 사람이 읽는 표면. 배포 계약은 앞 문서 참고. "
+            "여기 남는 것은 운영 화면. 나머지는 주간 보고."
+        )
+        self.assertNotIn("KO-unfinished-sentence", self.ids(text))
+
+    def test_headings_and_list_items_are_exempt(self):
+        """항목은 문장이 아니다 — 종결어미가 없는 것이 정상이다."""
+        text = "## 남은 일\n\n- 캐시를 지우고\n- 결과를 남기며\n1. 훅을 배포하고\n\n확인은 끝났다."
+        self.assertNotIn("KO-unfinished-sentence", self.ids(text))
+
+    def test_a_particle_that_ends_in_the_same_syllables_is_not_a_connective(self):
+        """`까지만`의 끝 두 글자는 어미 `지만`과 같지만 조사다 — 사람 코퍼스가 한 번 내준 자리다."""
+        text = "이번 판정은 소스 판독까지만. 나머지는 다음 변경으로 넘긴다. 확인은 끝났다."
+        self.assertNotIn("KO-unfinished-sentence", self.ids(text))
+
+    def test_the_formal_question_ending_is_not_the_connective(self):
+        """`-습니까`·`-ㅂ니까`는 종결어미다 — 연결어미 `-니까`와 끝 두 글자가 같아서 갈라야 한다."""
+        for text in (
+            "설정을 새로 만들었다. 이 값을 지금 적용하시겠습니까? 확인이 끝나면 알려 준다.",
+            "설정을 새로 만들었다. 이 값을 지금 적용하시겠습니까. 확인이 끝나면 알려 준다.",
+        ):
+            self.assertNotIn("KO-unfinished-sentence", self.ids(text), text)
+        # 같은 두 글자라도 어간에 붙으면 연결어미다
+        self.assertIn(
+            "KO-unfinished-sentence",
+            self.ids("값이 안 맞는다. 원인을 알 수 없으니까. 다시 확인한다."),
+        )
+
+    def test_a_tail_carried_after_a_comma_is_a_continuation(self):
+        """앞 문장을 늘여 적은 꼬리 — 절이 빠진 것이 아니다 (판정자가 저장소 산문에서 찾아냈다)."""
+        text = "출력을 대조했다. 6회차, 전/후를 번갈아, 순서까지 번갈아 뒤집어서. 결과는 바이트로 같았다."
+        self.assertNotIn("KO-unfinished-sentence", self.ids(text))
+
+    def test_a_short_sentence_is_still_a_sentence(self):
+        """길이 문턱이 결함을 가리면 안 된다 — 여덟 글자짜리도 연결어미로 끝나면 안 끝난 문장이다."""
+        text = "이 변경은 세 파일을 건드린다. 로그를 남기면서. 확인은 끝났다."
+        self.assertIn("KO-unfinished-sentence", self.ids(text))
+
+    def test_a_purpose_clause_opened_by_a_colon_is_a_continuation(self):
+        """콜론 뒤의 목적절 — 서술어는 콜론 앞에서 이미 끝났다 (tests/hookscaffold.py 의 형태)."""
+        text = "여기 한 자리를 두는 이유가 그것이다: 시험 여섯이 각자 옛 배치를 계속 증명하지 않도록. 확인은 끝났다."
+        self.assertNotIn("KO-unfinished-sentence", self.ids(text))
+
+    def test_a_sentence_the_user_wrote_first_is_quotation_not_invention(self):
+        """나머지 흔적과 같은 면제 — 사용자가 먼저 쓴 문장은 새로 지은 것이 아니다."""
+        text = "이 변경은 세 파일을 건드린다. 로그를 남기면서. 확인은 끝났다."
+        self.assertIn("KO-unfinished-sentence", self.ids(text))
+        self.assertEqual(
+            [f for f in bragi.tells(text, source="로그를 남기면서.") if f.id == "KO-unfinished-sentence"], []
+        )
+
+    def test_asgard_own_korean_report_prose_is_not_flagged(self):
+        self.assertNotIn("KO-unfinished-sentence", self.ids(HUMAN["ko"]))
+
+    def test_the_rule_is_korean_only(self):
+        for lang in ("en", "vi", "ja", "zh"):
+            self.assertNotIn("KO-unfinished-sentence", self.ids(HUMAN[lang]), lang)
+
+    def test_contract_and_judge_name_the_same_axis(self):
+        """계약이 요구하는 것과 판정기가 재는 것이 갈리면 둘 다 못 믿는다."""
+        from asgard.templates.bragi import BRAGI_CANON
+
+        self.assertIn("end the sentence on a predicate", BRAGI_CANON)
+        self.assertIn("캐시를 지우도록", BRAGI_CANON)
+
+
 class TestGrading(unittest.TestCase):
     def test_grade_boundaries_follow_the_upstream_naturalness_scale(self):
         def f(sev, hits=1):

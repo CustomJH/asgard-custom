@@ -64,9 +64,12 @@ from .stats import (  # noqa: F401
     _SENT_SPLIT,
     _comma_density,
     _ending_monotony,
+    _formal_question,
+    _ko_sentences,
     _length_uniformity,
     _sentences,
     _statistical,
+    _unfinished_sentences,
 )
 from .tell import _GRADES, _S2_MIN_HITS, SEVERITIES, Finding, Tell, _t  # noqa: F401
 from .universal import _UNIVERSAL  # noqa: F401

@@ -85,6 +85,69 @@ The em dash went the same way. Wikipedia's guidance calls it the most reliable E
 `blader/humanizer` bans it outright, but this repository's human prose uses it constantly — so it
 is S3, contributing to a cluster and never firing alone.
 
+A fourth revision was rejected the same way on 2026-08-19, while porting the sentence-completion
+axis that [`snflkd/fluent-korean`](https://github.com/snflkd/fluent-korean) documents. Ending a
+sentence on a noun phrase (`… 갈리는 자리.`) is the defect that repository names first, and the
+Bragi contract already forbids it, but no threshold made it measurable here — the author's release
+notes and memory entries are written in note form and legitimately end on nouns.
+
+**The block below is what `measure.py` prints, from one dated run (2026-08-20).** The corpus is
+rebuilt from live git history, so it drifts by a commit or two between runs; read the printed line,
+not this page, when the two disagree. The block is pasted from that command's output rather than
+typed. Every count in this section lives in that block: the prose around it names the mechanism and
+points at the printed line, and it never restates a value or cites a figure for a draft that is no
+longer in the tree.
+
+```
+KO-unfinished-sentence  fires on 0 of 2004 human samples · catches 8/10 hand-written broken sentences
+blind spot              4532 of 8232 Korean sentences (55.1%) carry a dash, comma, or colon and are exempt — of those 8232, 2716 carry a comma (33.0%)
+noun-phrase endings     not shipped — misfire on 544 samples by threshold:
+  0.20=17.3%  0.25=14.2%  0.30=12.1%  0.35=10.8%  0.40= 9.7%  0.50= 7.4%
+```
+
+The rejected detector lives in `measure.py` (`_noun_ending_ratio`) rather than in the library, so
+the trade-off can be re-measured instead of taken on trust. No cut between 0.20 and 0.50 brings the
+misfire rate near zero, which is what kept the noun-phrase axis in the contract and out of the judge.
+
+What did ship is the narrow half — a sentence ending on a connective (`캐시를 지우도록.`), where the
+following clause is missing rather than reordered. The ten broken sentences it is scored against are
+checked in as `BROKEN_KO`. The two it misses end on `읽고` and `쓰면`, where the ending cannot be told
+from the nouns `보고` and `화면` without a morphological analyser, so those two stems are left
+uncovered on purpose.
+
+Four guards earned their place by measurement, each after the rule fired on something human:
+
+- Sentences are reassembled paragraph-first, because prose folds at the screen width and the fold
+  lands on a particle, so a line read as a sentence ends on 를 or 로 and every wrapped paragraph
+  looks broken. The line-splitting draft was discarded rather than tuned; `measure.py` measures the
+  rule that shipped, not the one that did not.
+- A tail carried after a dash, a comma, or a colon is a continuation of the sentence before it, not
+  a clause that went missing (`… 판정기를 끄는 것이라서.`, `6회차, 전/후를 번갈아, 뒤집어서.`,
+  `이유가 그것이다: 옛 배치를 계속 증명하지 않도록.`). **This guard is the rule's blind spot; the printed
+  `blind spot` line is its size.** Putting one comma into a `BROKEN_KO` sentence puts it out of the
+  rule's reach. Adding the
+  colon widened the exemption further and cost no detection, because none of the sentences it newly
+  exempted ended on a connective. The two shapes cannot be told apart without a morphological analyser, so the rule
+  claims only what it can see.
+- `까지만` ends in the same two syllables as the connective `지만` while being a particle. The rule
+  refuses it by lookbehind rather than by the length floor that happened to hide it.
+- `-습니까`/`-ㅂ니까` is the formal question ending, not the connective `-니까`. The verdict found this
+  one, on `적용하시겠습니까?` — a complete sentence the first draft called unfinished. Questions are
+  skipped outright, and the period-typo case is split by the ㅂ 종성 on the preceding syllable.
+
+Scanned across every tracked `.md` paragraph of 40 characters or more, plus all commit bodies,
+docstrings under `src/asgard`, and memory entries, the rule fires only inside vendored upstream text
+under `ref/` and `assets/skill_plugins/`, and those hits are real (`… 재시도 가능하도록.`).
+`measure.py` reads docstrings from `src/asgard` only; widening the scan to `tests/` is what turned
+up the colon case above.
+
+**The Part B table above is the 677-sample revision and has not been recomputed since.** The same
+harness on today's corpus, about three times that size, reports misfire rates between roughly a
+quarter and nearly all of each source, and `KO-josa-spacing` alone accounts for most of the hits.
+Those are mostly that rule's own true positives — the author does write `PASS 를` — which is what
+breaks the corpus's premise that human text must never fire. Run `measure.py` for the current
+numbers, and read the per-rule counts rather than the totals until the corpus is relabeled.
+
 ## Part C — live A/B on a real model
 
 Same task, same model, same seed; only the system prompt changes.
