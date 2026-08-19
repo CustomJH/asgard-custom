@@ -26,6 +26,17 @@ jobs:
           v="$(sed -n 's/.*__version__ = "\([^"]*\)".*/\1/p' src/asgard/__init__.py)"
           [ "v$v" = "$GITHUB_REF_NAME" ] || { echo "::error::tag $GITHUB_REF_NAME != __version__ $v — src/asgard/__init__.py 를 먼저 올리세요"; exit 1; }
 
+      # 버전을 드는 곳이 둘이다. 창(`studio-shell`)은 자기 매니페스트를 갖고, 그 값이 곧
+      # `Asgard.Studio_<버전>_x64-setup.exe` 라는 파일 이름이 된다. 위 검사가 파이썬 쪽만 봐서
+      # v0.10.18 릴리즈에 0.10.17 이름의 설치본이 붙어 나갔다 — 휠은 이름이 맞았으므로 어느
+      # 잡도 빨개지지 않았고, 어긋남은 릴리즈 페이지를 사람이 볼 때까지 안 보였다.
+      # 다섯 자리 전수 대조는 tests/test_release_gate.py 가 하고, 여기서는 빌드가 실제로 읽는
+      # 자리 하나를 초 단위로 먼저 본다.
+      - name: Verify the studio shell ships the same version
+        run: |
+          s="$(jq -r .version studio-shell/src-tauri/tauri.conf.json)"
+          [ "v$s" = "$GITHUB_REF_NAME" ] || { echo "::error::tag $GITHUB_REF_NAME != studio-shell $s — studio-shell 의 버전 다섯 자리를 먼저 올리세요 (package.json · package-lock.json · tauri.conf.json · Cargo.toml · Cargo.lock)"; exit 1; }
+
   # 26-08-02 부터 push/PR 에도 같은 quality 잡이 돈다(ci.yml) — 태그는 더 이상 유일한 검증
   # 지점이 아니다. 그래도 여기서 한 번 더 도는 이유는 태그가 **wheel 이 나가는** 자리이기
   # 때문이다: 브랜치 보호를 우회한 push, 체크 없이 민 태그, ci.yml 자체의 고장 — 어느 쪽이든

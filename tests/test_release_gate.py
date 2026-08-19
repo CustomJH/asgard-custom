@@ -81,5 +81,54 @@ class GateMatchesCI(unittest.TestCase):
         self.assertIn("gate:", text)
 
 
+class VersionSourcesAgree(unittest.TestCase):
+    """한 릴리즈가 내는 산출물은 한 버전을 말해야 한다.
+
+    이 저장소는 버전을 두 곳에 든다 — 파이썬 패키지의 `src/asgard/__init__.py` 와 윈도우 창의
+    `studio-shell`(자기 매니페스트 다섯). 태그를 대조하는 `verify-tag` 잡은 앞의 하나만 봐서,
+    v0.10.18 릴리즈에 `Asgard.Studio_0.10.17_x64-setup.exe` 가 붙어 나갔다. 휠은 이름이 맞아
+    `install.sh` 는 성립했고, 그래서 아무 잡도 빨개지지 않았다 — 어긋남이 파일 이름에만 남는
+    종류라 사람이 릴리즈 페이지를 볼 때까지 안 보인다.
+    """
+
+    def _asgard_version(self) -> str:
+        text = _read(os.path.join(ROOT, "src", "asgard", "__init__.py"))
+        found = re.search(r'__version__ = "([^"]+)"', text)
+        assert found, "src/asgard/__init__.py 에서 __version__ 을 못 읽었어요"
+        return found.group(1)
+
+    # (경로, 그 파일에서 버전을 집는 정규식). 락파일 둘이 목록에 있는 이유는 빌드가 그것을
+    # 읽어서다 — 매니페스트만 올리고 락을 두면 빌드가 옛 버전으로 이름을 짓는다.
+    _SOURCES = (
+        (("studio-shell", "package.json"), r'"version": "([^"]+)"'),
+        (("studio-shell", "package-lock.json"), r'"version": "([^"]+)"'),
+        (("studio-shell", "src-tauri", "tauri.conf.json"), r'"version": "([^"]+)"'),
+        (("studio-shell", "src-tauri", "Cargo.toml"), r'(?m)^version = "([^"]+)"'),
+        (("studio-shell", "src-tauri", "Cargo.lock"), r'name = "asgard-studio"\nversion = "([^"]+)"'),
+    )
+
+    def test_the_studio_shell_ships_the_version_the_package_ships(self) -> None:
+        expected = self._asgard_version()
+        for parts, pattern in self._SOURCES:
+            rel = os.path.join(*parts)
+            with self.subTest(file=rel):
+                found = re.search(pattern, _read(os.path.join(ROOT, rel)))
+                if found is None:  # `assertIsNotNone` 은 타입을 안 좁힌다 — 아래 group() 이 ty 에 걸린다
+                    self.fail(f"{rel} 에서 버전을 못 읽었어요 — 형식이 바뀌었으면 정규식도 바꿔요")
+                self.assertEqual(
+                    found.group(1),
+                    expected,
+                    f"{rel} 이 __version__({expected}) 과 갈렸어요 — 릴리즈 산출물 이름이 어긋납니다",
+                )
+
+    def test_the_tag_check_covers_every_version_source(self) -> None:
+        """`verify-tag` 가 파이썬 쪽만 보면, 창 버전은 태그를 밀 때까지 아무도 안 본다."""
+        workflow = _read(WORKFLOW)
+        start = workflow.index("\n  verify-tag:")
+        body = workflow[start : workflow.index("\n  quality:")]
+        self.assertIn("src/asgard/__init__.py", body)
+        self.assertIn("tauri.conf.json", body, "verify-tag 가 studio-shell 버전을 안 봐요")
+
+
 if __name__ == "__main__":
     unittest.main()
