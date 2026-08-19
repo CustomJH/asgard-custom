@@ -1,0 +1,695 @@
+/* 맵 화면 — 뿌리 선택기 · 그래프 무대 · 조작반.
+ *
+ * 여기가 이 화면의 색이 태어나는 유일한 자리다. 캔버스는 CSS 를 못 읽으므로 `map-draw.js` 가
+ * `getComputedStyle` 로 아래 `--map-*` 를 읽어 그린다 — 그래서 토큰을 여기서 손보면 DOM 과
+ * 그림이 같이 움직인다. 옛 창(`assets/map_view.html`)은 종류 색 열셋을 스크립트에 16진수로
+ * 박아 뒀고, 라이트 테마가 생긴 뒤로 그 열셋만 흰 바탕에 어두운 색으로 남았다.
+ *
+ * 종류 색은 값이 아니라 **각도**다. `oklch()` 의 세 칸 중 명도(L)와 채도(C)는 테마가 정하고
+ * 색상(H)만 종류마다 다르다. 그래서 열셋을 라이트·다크로 나눠 스물여섯 개를 손으로 고를 일이
+ * 없고, 명도 한 줄만 바꾸면 열셋이 같이 따라온다. 각도는 원본 팔레트의 배치를 지킨다 —
+ * 다수 종류(page·component·route)가 웜, 자료·인프라 계열이 쿨, 그리고 같은 색권끼리
+ * (composable↔db_access, store↔event) 갈라 둔다.
+ */
+
+.map-view {
+  /* 라이트 — 흰 바탕에 점을 찍으므로 어둡고 진해야 읽힌다. */
+  --map-kind-l: 62%;
+  --map-kind-c: 0.13;
+  /* 파일·컴포넌트는 수가 많아 배경이 된다 — 채도를 내려 개념 노드를 앞에 세운다. */
+  --map-kind-c-quiet: 0.045;
+
+  --map-kind-api-call: oklch(var(--map-kind-l) var(--map-kind-c) 15);
+  --map-kind-page: oklch(var(--map-kind-l) var(--map-kind-c) 45);
+  --map-kind-command: oklch(var(--map-kind-l) var(--map-kind-c) 65);
+  --map-kind-component: oklch(var(--map-kind-l) var(--map-kind-c-quiet) 82);
+  --map-kind-route: oklch(var(--map-kind-l) var(--map-kind-c) 95);
+  --map-kind-job: oklch(var(--map-kind-l) var(--map-kind-c) 120);
+  --map-kind-composable: oklch(var(--map-kind-l) var(--map-kind-c) 150);
+  --map-kind-db-access: oklch(var(--map-kind-l) var(--map-kind-c) 190);
+  --map-kind-model: oklch(var(--map-kind-l) var(--map-kind-c) 250);
+  --map-kind-file: oklch(var(--map-kind-l) var(--map-kind-c-quiet) 265);
+  --map-kind-event: oklch(var(--map-kind-l) var(--map-kind-c) 285);
+  --map-kind-store: oklch(var(--map-kind-l) var(--map-kind-c) 320);
+  --map-kind-external-service: oklch(var(--map-kind-l) var(--map-kind-c) 350);
+  /* 팔레트에 없는 종류 — 무채색이 곧 "스캐너가 모르는 것"이라는 신호다. */
+  --map-kind-unknown: oklch(var(--map-kind-l) 0 0);
+
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  color: var(--ink);
+}
+
+:root[data-theme="dark"] .map-view {
+  --map-kind-l: 78%;
+  --map-kind-c: 0.12;
+  --map-kind-c-quiet: 0.035;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .map-view {
+    --map-kind-l: 78%;
+    --map-kind-c: 0.12;
+    --map-kind-c-quiet: 0.035;
+  }
+}
+
+/* ── 머리 — 뿌리 선택기 + 카운트 계기 ─────────────────────────────────────── */
+
+.map-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-xs) var(--space-lg);
+  flex-wrap: wrap;
+  padding: var(--space-sm) var(--space-lg);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-1);
+}
+
+.map-roots {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.map-roots select {
+  min-width: 0;
+  max-width: 42ch;
+}
+
+/* 뿌리 아래 한 줄 — 지금 보는 자리가 어디인지 경로로 못 박는다. 이름만으로는 같은 이름의
+ * 저장소 둘을 구별할 수 없고, 맵은 "설정한 프로젝트 전부"를 보는 화면이다. */
+.map-rootpath {
+  color: var(--muted);
+  font: 11.5px var(--mono);
+  word-break: break-all;
+}
+
+.map-stats {
+  display: flex;
+  gap: var(--space-2xs) var(--space-lg);
+  flex-wrap: wrap;
+  align-items: baseline;
+}
+
+.map-stats .g {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.map-stats b {
+  font: 500 18px var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  line-height: 1.15;
+}
+
+.map-stats i {
+  font: 10.5px var(--mono);
+  font-style: normal;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+}
+
+.map-stats .rev {
+  color: var(--muted);
+  font: 10.5px var(--mono);
+  align-self: flex-end;
+}
+
+/* ── 몸 — 무대 + 조작반 ───────────────────────────────────────────────────── */
+
+.map-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  min-height: 0;
+}
+
+/* 무대 — 성좌(3차원)는 성운 헤이즈만 깐다. 평면 그리드는 부피를 부정한다.
+ * 레인은 결정론 평면이라 그리드가 자리를 읽는 데 쓰인다(`.is-flat` 에서만 켠다). */
+.map-stage {
+  position: relative;
+  min-height: 0;
+  background:
+    radial-gradient(120% 90% at 50% 40%, var(--glow), transparent 70%),
+    var(--canvas);
+}
+
+.map-stage.is-flat {
+  background:
+    radial-gradient(90% 75% at 50% 18%, var(--glow), transparent 65%),
+    repeating-linear-gradient(0deg, var(--sheen) 0, var(--sheen) 1px, transparent 1px, transparent 24px),
+    repeating-linear-gradient(90deg, var(--sheen) 0, var(--sheen) 1px, transparent 1px, transparent 24px),
+    var(--canvas);
+}
+
+.map-stage canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: grab;
+  touch-action: none;
+}
+
+.map-stage canvas:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+/* 무대 위에 뜨는 것들 — 상태 막, 배치 토글, 줌바, 힌트, 툴팁 */
+
+.map-modebar {
+  position: absolute;
+  top: var(--space-sm);
+  left: var(--space-sm);
+  display: flex;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r1);
+  overflow: hidden;
+}
+
+.map-modebar button {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: 11.5px var(--mono);
+  letter-spacing: 0.06em;
+  padding: 0 var(--space-md);
+  min-height: 36px;
+  cursor: pointer;
+  transition: color var(--dur-short) var(--ease);
+}
+
+.map-modebar button + button {
+  border-left: 1px solid var(--line);
+}
+
+.map-modebar button[aria-pressed="true"] {
+  color: var(--on-gold);
+  background: var(--gold-mark);
+  font-weight: 600;
+}
+
+.map-zoombar {
+  position: absolute;
+  top: var(--space-sm);
+  right: var(--space-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+/* 44px 은 WCAG 2.5.5 의 손가락 타깃 하한이다 — 무대 위 단추는 조밀해도 여기는 안 줄인다. */
+.map-zoombar button {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r1);
+  color: var(--gold);
+  cursor: pointer;
+  transition: border-color var(--dur-short) var(--ease);
+}
+
+.map-zoombar button:hover {
+  border-color: var(--gold-line);
+}
+
+.map-hint {
+  position: absolute;
+  /* 양쪽을 다 묶는다. `max-width: 72%` 는 무대보다 넓은 상자를 기준으로 풀려서 긴 줄이
+     오른쪽에서 잘렸다("… / v 성좌⇄레인 / t" 까지만 보였다). `right` 를 주면 무대 안으로
+     묶이고, 남는 것은 잘리는 대신 아랫줄로 넘어간다. */
+  left: var(--space-md);
+  right: var(--space-md);
+  bottom: var(--space-xs);
+  font: 10.5px var(--mono);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+/* 표시 카운터 — 필터 결과가 침묵하지 않게 하는 상시 미니 게이지 */
+.map-viscount {
+  position: absolute;
+  right: var(--space-sm);
+  bottom: var(--space-xs);
+  font: 10.5px var(--mono);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.map-visreset {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: var(--z-raised);
+}
+
+.map-tip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: var(--z-raised);
+  pointer-events: none;
+  background: var(--scrim);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r1);
+  padding: var(--space-xs) var(--space-sm);
+  font: 11.5px var(--mono);
+  max-width: 260px;
+  word-break: break-all;
+}
+
+.map-tip .k {
+  color: var(--muted);
+  font-size: 10.5px;
+}
+
+/* 상태 막 — 로딩·빈 그래프·미스캔·오류. 캔버스는 네트워크를 타는 화면이 되면서
+ * 더 이상 "항상 자료가 있는 무대"가 아니다. 넷 다 무대 자리를 그대로 덮는다. */
+.map-state {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-sticky);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  padding: var(--space-2xl);
+  text-align: center;
+  background: var(--scrim);
+}
+
+.map-state[hidden] {
+  display: none;
+}
+
+.map-state h2 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.map-state p {
+  color: var(--muted);
+  max-width: 52ch;
+}
+
+.map-state code {
+  font-family: var(--mono);
+  color: var(--ink);
+  background: var(--surface-2);
+  border-radius: var(--r1);
+  padding: 2px var(--space-xs);
+}
+
+.map-state--error h2 {
+  color: var(--danger);
+}
+
+/* 회전 없는 대기 표시 — 무대 전체가 비어 있는 동안 뼈대 세 줄이 무엇이 올지 말해 준다. */
+.map-state .ak-skeleton {
+  width: min(420px, 60%);
+}
+
+/* ── 조작반 ───────────────────────────────────────────────────────────────── */
+
+.map-panel {
+  border-left: 1px solid var(--line);
+  background: var(--surface-1);
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  padding: var(--space-md) var(--space-md) var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.map-sectitle {
+  font: 10.5px var(--mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: var(--space-xs);
+}
+
+.map-qhint,
+.map-subhint {
+  font: 11.5px var(--mono);
+  color: var(--muted);
+}
+
+.map-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+}
+
+.map-chips .ak-chip i {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-pill);
+  flex: none;
+  opacity: 0.35;
+}
+
+.map-chips .ak-chip[aria-pressed="true"] i {
+  opacity: 1;
+}
+
+.map-chips .ak-chip .n {
+  color: var(--muted);
+  font-size: 10.5px;
+}
+
+/* 후보 토글의 표식은 빈 원이다 — 캔버스에서 후보 노드를 빈 원으로 그리는 것과 같은 뜻이다. */
+.map-chips .ak-chip i.cand-dot {
+  background: transparent;
+  border: 1.5px solid var(--warn);
+  opacity: 1;
+}
+
+/* 엣지 언어 — 범례가 곧 필터다. 선 모양이 종류이므로 색이 아니라 대시가 구분한다. */
+.map-ekl {
+  list-style: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-2xs) var(--space-md);
+  font: 11.5px var(--mono);
+  color: var(--muted);
+  margin: 0;
+  padding: 0;
+}
+
+.map-ekl button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  min-height: 26px;
+  width: 100%;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.map-ekl button:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+.map-ekl button[aria-pressed="false"] {
+  opacity: 0.4;
+}
+
+.map-ekl button:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+.map-ekl b {
+  margin-left: auto;
+  color: var(--ink);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 상세 — 선택 노드의 증거 ──────────────────────────────────────────────── */
+
+.map-detail {
+  border-top: 1px solid var(--line);
+  padding-top: var(--space-sm);
+  font-size: 12.5px;
+}
+
+.map-detail .d-empty {
+  color: var(--muted);
+}
+
+.map-detail .d-kind {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font: 11.5px var(--mono);
+  color: var(--muted);
+  margin-bottom: var(--space-xs);
+  flex-wrap: wrap;
+}
+
+.map-detail .d-kind i,
+.map-detail .d-rel i {
+  width: 9px;
+  height: 9px;
+  border-radius: var(--r-pill);
+  flex: none;
+}
+
+.map-detail .d-deg {
+  margin-left: auto;
+  font-size: 10.5px;
+}
+
+.map-detail .d-id {
+  font-family: var(--mono);
+  font-size: 14.5px;
+  color: var(--gold);
+  word-break: break-all;
+  user-select: all;
+  margin-bottom: var(--space-2xs);
+}
+
+.map-detail .d-h {
+  font: 10.5px var(--mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin: var(--space-sm) 0 var(--space-2xs);
+}
+
+.map-detail ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.map-detail .d-ev li {
+  padding: var(--space-2xs) 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  word-break: break-all;
+  line-height: 1.5;
+}
+
+.map-detail .d-ev li:last-child,
+.map-detail .d-rel li:last-child,
+.map-detail .d-rec li:last-child {
+  border-bottom: 0;
+}
+
+.map-detail .d-ev b {
+  font: 500 12px var(--mono);
+  color: var(--ink);
+}
+
+/* 구문으로 증명되지 않은 후보 — 단정 전에 소스를 열어 보라는 표시다. */
+.map-detail .cand {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.map-detail .d-det {
+  color: var(--muted);
+}
+
+.map-detail .d-rec li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2xs) var(--space-xs);
+  padding: var(--space-2xs) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.map-detail .d-rec .rm {
+  color: var(--warn);
+  font: 10.5px var(--mono);
+  align-self: start;
+  border: 1px solid var(--warn-line);
+  border-radius: var(--r1);
+  padding: 0 var(--space-xs);
+}
+
+.map-detail .d-rec .rf {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font: 11.5px var(--mono);
+  word-break: break-all;
+}
+
+.map-detail .d-code {
+  display: block;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r1);
+  padding: var(--space-xs) var(--space-sm);
+  font: 11.5px var(--mono);
+  color: var(--ink);
+  word-break: break-all;
+  user-select: all;
+}
+
+.map-detail .d-rel li {
+  border-bottom: 1px solid var(--line);
+}
+
+.map-detail .d-rel button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  width: 100%;
+  background: none;
+  border: 0;
+  padding: var(--space-2xs) 0;
+  text-align: left;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--ink);
+  min-height: 28px;
+  cursor: pointer;
+}
+
+.map-detail .d-rel .rk,
+.map-detail .d-rel .rv,
+.map-detail .d-rel .deg {
+  font: 10.5px var(--mono);
+  color: var(--muted);
+  flex: none;
+}
+
+.map-detail .d-rel .rn {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map-detail .d-rel button:hover .rn {
+  color: var(--gold);
+}
+
+.map-detail .d-rel .rv,
+.map-detail .d-rel .deg {
+  margin-left: auto;
+  max-width: 38%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map-detail .d-rel .dep {
+  font: 10.5px var(--mono);
+  color: var(--gold);
+  flex: none;
+  min-width: 20px;
+}
+
+.map-detail .d-rel .more {
+  padding: var(--space-2xs) 0;
+  color: var(--muted);
+  font: 11.5px var(--mono);
+}
+
+.map-detail .d-act {
+  display: flex;
+  gap: var(--space-xs);
+  margin: var(--space-xs) 0 var(--space-2xs);
+}
+
+.map-detail .d-act button {
+  flex: 1;
+}
+
+/* 검색 결과 — 수천 개짜리 목록 상자보다 위에 있는 동선. 순회할 수 있어야 한다. */
+.map-results {
+  max-height: 224px;
+  overflow-y: auto;
+}
+
+.map-results li.is-active button {
+  background: var(--gold-hover);
+}
+
+.map-foot {
+  border-top: 1px solid var(--line);
+  padding-top: var(--space-sm);
+  color: var(--muted);
+  font-size: 11.5px;
+  margin-top: auto;
+}
+
+.map-foot code {
+  font-family: var(--mono);
+  color: var(--ink);
+}
+
+@media (max-width: 1080px) {
+  .map-body {
+    grid-template-columns: minmax(0, 1fr) 300px;
+  }
+
+  .map-panel {
+    padding: var(--space-sm) var(--space-sm) var(--space-md);
+  }
+}
+
+@media (max-width: 720px) {
+  .map-body {
+    display: block;
+    overflow-y: auto;
+  }
+
+  .map-stage {
+    height: 58vh;
+    min-height: 340px;
+  }
+
+  .map-panel {
+    border-left: 0;
+    border-top: 1px solid var(--line-strong);
+    overflow: visible;
+  }
+
+  /* 줌바가 아래로 내려오면 오른쪽 아래는 줌바 차지다 — 표시 카운터는 비는 왼쪽으로. */
+  .map-zoombar {
+    top: auto;
+    bottom: var(--space-sm);
+  }
+
+  .map-viscount {
+    right: auto;
+    left: var(--space-md);
+  }
+
+  .map-hint {
+    display: none;
+  }
+
+  .map-stats b {
+    font-size: 15px;
+  }
+}

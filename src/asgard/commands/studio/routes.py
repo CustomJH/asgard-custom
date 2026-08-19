@@ -95,14 +95,9 @@ def _dispatch(
         return 405, "text/plain; charset=utf-8", b"method not allowed"
     if path in ("/", "/index.html"):
         return 200, "text/html; charset=utf-8", render_html().encode()
-    if path == "/asset/logo":
-        return 200, "image/png", (_files("asgard") / "assets" / "gold-brand-logo.png").read_bytes()
-    if path == "/asset/mark":
-        # 위그드라실 마크 — asgard map · memory가 쓰는 것과 같은 파일이라 세 창이 같은 마크를 쓴다
-        return 200, "image/png", (_files("asgard") / "assets" / "yggdrasil-mark.png").read_bytes()
-    if path in ("/asset/app-icon", "/favicon.ico"):
-        # 네이티브 창의 앱 아이콘과 같은 그림 — 브라우저로 열어도 탭에 같은 얼굴이 뜬다
-        return 200, "image/png", (_files("asgard") / "assets" / "app-icon.png").read_bytes()
+    static = _static_asset(path)
+    if static is not None:
+        return static
     if path == "/api/snapshot":
         return _json_body(200, snapshot_data(root, explicit_agent))
     if path == "/api/runs":
@@ -170,6 +165,9 @@ def _dispatch(
         return agent_detail((params.get("name") or [""])[0], root)
     if path == "/api/plans" or path.startswith("/api/plans/"):
         return _plan_dispatch(method, path, None, root)
+    merged = _merged_view(method, path, params, root)
+    if merged is not None:
+        return merged
     from .. import ticket_api
 
     if ticket_api.owns(path):
@@ -177,6 +175,55 @@ def _dispatch(
     if path == "/health":
         return _json_body(200, {"ok": True, "surface": "studio"})
     return 404, "text/plain; charset=utf-8", b"not found"
+
+
+_NAMED_IMAGES = {
+    "/asset/logo": "gold-brand-logo.png",
+    # 위그드라실 마크 — asgard map · memory 가 쓰는 것과 같은 파일이라 세 화면이 같은 마크를 쓴다
+    "/asset/mark": "yggdrasil-mark.png",
+    # 네이티브 창의 앱 아이콘과 같은 그림 — 브라우저로 열어도 탭에 같은 얼굴이 뜬다
+    "/asset/app-icon": "app-icon.png",
+    "/favicon.ico": "app-icon.png",
+}
+
+
+def _static_asset(path: str) -> tuple[int, str, bytes] | None:
+    """`/asset/...`. 이 창의 것이 아니면 `None`.
+
+    이름이 정해진 그림 넷은 표에 있고, 나머지(토큰·컴포넌트·화면 모듈·벤더링)는 이름이
+    늘어나므로 `assets.serve` 가 경로를 검사해 내준다. 표를 먼저 보는 이유는 그 넷이
+    `ui/`·`js/`·`vendor/` 어느 갈래에도 안 들어가서다."""
+    named = _NAMED_IMAGES.get(path)
+    if named:
+        return 200, "image/png", (_files("asgard") / "assets" / named).read_bytes()
+    if path.startswith("/asset/"):
+        from . import assets
+
+        return assets.serve(path[len("/asset/") :])
+    return None
+
+
+def _merged_view(method: str, path: str, params: dict[str, list[str]], root: str) -> tuple[int, str, bytes] | None:
+    """합쳐 들어온 세 화면의 창구. 이 창의 것이 아니면 `None` — 부르는 쪽이 계속 찾는다.
+
+    맵과 메모리는 각자 창이었다. 자료를 만드는 쪽은 옮기지 않았고(`map_graph.graph`·
+    `memory_dashboard.data`), 주소만 이리로 낸다 — 옮기면 그 엔진들의 시험이 통째로 따라온다.
+    """
+    if path.startswith("/api/map/"):
+        from . import map_api
+
+        return map_api.dispatch(method, path, params, root)
+    if path.startswith("/api/memory/"):
+        from . import memory_api
+
+        return memory_api.dispatch(method, path, params, root)
+    if path.startswith("/api/terminal/"):
+        # 흘려보내는 갈래(`/api/terminal/stream`)는 여기까지 오지 않는다 — 길이를 모르는 응답이라
+        # `server._Handler._route` 가 `dispatch` 앞에서 가로챈다.
+        from . import terminal
+
+        return terminal.dispatch(method, path, params, root)
+    return None
 
 
 def dispatch_post(
@@ -199,6 +246,11 @@ def dispatch_post(
 def _dispatch_post(path: str, payload: dict, root: str) -> tuple[int, str, bytes]:
     if path == "/api/plans" or path.startswith("/api/plans/"):
         return _plan_dispatch("POST", path, payload, root)
+    if path.startswith("/api/terminal/"):
+        # 셸을 열고, 글자를 넣고, 크기를 바꾸고, 닫는다. 출력만 흘러 나가고 입력은 평범한 POST 다.
+        from . import terminal
+
+        return terminal.dispatch_post(path, payload, root)
     from .. import ticket_api
 
     if path == "/api/tickets/run":

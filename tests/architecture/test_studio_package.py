@@ -19,6 +19,9 @@ from architecture.layers import SRC
 # (그건 순환이다)이 항상 위반이 된다.
 STUDIO_CHAIN = (
     "state",
+    # assets — `/asset/...` 로 나가는 파일(토큰·컴포넌트·화면 모듈·벤더링)과 그 경로 검사.
+    # 맨 아래인 이유는 이 패키지의 무엇도 안 읽어서다: 받는 것은 이름 하나, 보는 것은 디스크뿐이다.
+    "assets",
     "dialog",
     "boundary",
     "tasks",
@@ -39,6 +42,17 @@ STUDIO_CHAIN = (
     # agents — 에인헤랴르(에이전트 프로파일) 창의 재료. tutor·orchestration 과 같은 자리다:
     # 엔진(asgard.profiles·settings·swarm)만 읽고 어느 주소에 걸지는 routes 가 정한다.
     "agents",
+    # map_api·memory_api — 각자 창이던 맵과 메모리가 이 창의 화면이 되면서 생긴 재료다.
+    # tutor·orchestration·load 와 같은 자리다: 엔진(map_graph.graph·memory_dashboard.data)만
+    # 읽고, 어느 주소에 걸지는 routes 가 정한다. 자료를 만드는 쪽은 옮기지 않았다 —
+    # 옮기면 그 엔진들의 시험이 통째로 따라와야 하고, 그럴 이유가 없다.
+    "map_api",
+    "memory_api",
+    # terminal — 셸 세션 등록부. routes 아래인 것은 같은 이유지만, 이 모듈만 소비자가 둘이다:
+    # 열고·넣고·닫는 것은 routes 가 부르고, 출력을 흘리는 것은 server 가 부른다. 흘리는 쪽이
+    # 핸들러를 통째로 받아야 해서(길이를 모르는 응답) routes 의 `(status, ctype, bytes)` 계약을
+    # 지나갈 수 없기 때문이다. 둘 다 이 모듈보다 위이므로 방향은 그대로다.
+    "terminal",
     "routes",
     "server",
     "__init__",

@@ -24,12 +24,17 @@ from urllib.parse import urlsplit
 
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "[::1]"})
 
-# 창이 실제로 쓰는 것만 연다. 인라인 style/script는 이 저장소의 배송 형태(자립형 단일 파일)
-# 라 필요하고, 나머지는 전부 닫는다 — 특히 `frame-src`(클릭재킹)·`base-uri`(상대경로 탈취)·
-# `form-action`(폼 유출)은 셋 다 걸어야 한다. 여태 Studio 에만 걸려 있었다.
+# 창이 실제로 쓰는 것만 연다. 나머지는 전부 닫는다 — 특히 `frame-src`(클릭재킹)·
+# `base-uri`(상대경로 탈취)·`form-action`(폼 유출)은 셋 다 걸어야 한다.
+#
+# `'self'` 가 script-src·style-src 에 있는 이유: 창이 더는 자립형 단일 파일이 아니다. 세 화면이
+# 토큰과 기본 컴포넌트를 한 곳에만 두려면 그것이 파일이어야 하고, 터미널의 xterm.js 는 283KB 라
+# 페이지마다 인라인으로 실을 것이 아니다. 둘 다 같은 출처(`/asset/...`)에서만 온다.
+# `'unsafe-inline'` 은 아직 남는다 — studio.html 의 인라인 블록이 모듈로 다 빠지기 전까지는
+# 지우면 화면이 죽는다. 그것이 빠지는 날 이 두 낱말도 같이 지운다.
 CSP = (
-    "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; "
-    "script-src 'unsafe-inline'; connect-src 'self'; "
+    "default-src 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+    "script-src 'self' 'unsafe-inline'; connect-src 'self'; font-src 'self'; "
     "frame-ancestors 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
 )
 SECURITY_HEADERS = (
@@ -135,6 +140,38 @@ class LoopbackHandler(BaseHTTPRequestHandler):
         self.end_headers()
         if not head_only:
             self.wfile.write(body)
+
+    def open_stream(self, ctype: str) -> None:
+        """길이를 모르는 응답을 연다 — 헤더만 보내고 몸통은 `write_chunk` 가 이어 붙인다.
+
+        `send_guarded` 는 `Content-Length` 를 박고 한 번에 쓴다. 터미널 출력은 길이를 미리 알 수
+        없으므로 그 계약으로는 못 낸다. 청크 전송으로 바꾸되 보안 헤더는 그대로 건다 — 스트리밍
+        응답만 헤더가 빠지면 그 자리가 곧 구멍이다.
+
+        HTTP/1.1 이어야 청크가 성립한다. `BaseHTTPRequestHandler` 의 기본은 1.0 이라
+        이 클래스가 올려 둔다(아래 `protocol_version`)."""
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Transfer-Encoding", "chunked")
+        for name, value in SECURITY_HEADERS:
+            self.send_header(name, value)
+        self.end_headers()
+
+    def write_chunk(self, body: bytes) -> bool:
+        """청크 하나. 창이 닫혀 끊기면 False — 부르는 쪽의 정상 종료 신호다."""
+        try:
+            self.wfile.write(b"%x\r\n" % len(body) + body + b"\r\n")
+            self.wfile.flush()
+        except BrokenPipeError, ConnectionResetError, TimeoutError:
+            return False
+        return True
+
+    def close_stream(self) -> None:
+        try:
+            self.wfile.write(b"0\r\n\r\n")
+            self.wfile.flush()
+        except BrokenPipeError, ConnectionResetError, TimeoutError:
+            return
 
     def guard_host(self, head_only: bool = False) -> bool:
         """루프백이 아니면 여기서 끝낸다. 통과하면 True."""

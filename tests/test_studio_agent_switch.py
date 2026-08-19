@@ -108,7 +108,10 @@ class TestWindowControls(unittest.TestCase):
         cls.page = routes.render_html()
 
     def test_scope_banner_keeps_the_header_on_its_own_row(self) -> None:
-        self.assertIn("display:flex;flex-wrap:wrap", self.page)
+        """규칙은 그대로다 — 사는 자리만 페이지 안의 `<style>` 에서 `/asset/ui/studio.css` 로 옮겼다."""
+        status, _, body = studio.dispatch("GET", "/asset/ui/studio.css")
+        self.assertEqual(status, 200)
+        self.assertIn("display:flex;flex-wrap:wrap", body.decode())
 
     def test_profile_switch_and_new_window_are_live_navigation(self) -> None:
         self.assertIn("location.assign(agentWindowUrl(name))", self.page)

@@ -13,6 +13,13 @@ from unittest import mock
 from asgard.commands import studio, studio_store
 
 
+def _studio_css() -> str:
+    """옛날엔 페이지 안의 `<style>` 이었다 — 지금은 `/asset/ui/studio.css` 파일이고 계약은 그대로다."""
+    status, ctype, body = studio.dispatch("GET", "/asset/ui/studio.css")
+    assert status == 200, (status, ctype)
+    return body.decode()
+
+
 class StudioCase(unittest.TestCase):
     def setUp(self):
         with studio.state._TASK_LOCK:
@@ -55,7 +62,7 @@ class TestDispatch(StudioCase):
         self.assertIn("어떤 기획을 할까요?", page)
         self.assertNotIn("plan-picks", page)
         # 증거 판은 기본으로 닫혀 있다 — 재설계로 클래스는 .evidence가 됐고 계약은 그대로다
-        self.assertIn(".evidence[hidden]{display:none}", page)
+        self.assertIn(".evidence[hidden]{display:none}", _studio_css())
         # 이 표면의 이름은 이제 Asgard Studio 다(사용자 결정). 그러니 이 검사가 지킬 것은
         # 이름이 아니라 **폐기된 세스룸니르 표면이 되살아나지 않는 것**이다.
         self.assertNotIn("세스룸니르", page)
@@ -87,11 +94,12 @@ class TestDispatch(StudioCase):
         self.assertIn('<nav class="dest foot"', rail)
         self.assertLess(rail.index('id="recent-list"'), rail.index('data-view="settings"'))
         # 접힘 = 폭 값 하나 · 기억은 이 기계에
-        self.assertIn(':root[data-rail="mini"]{--rail:', page)
+        css = _studio_css()
+        self.assertIn(':root[data-rail="mini"]{--rail:', css)
         self.assertIn("asgard.studio.rail", page)
         self.assertNotIn("studio_rail", page)  # 서버 설정으로 새면 여기서 걸린다
         # 좁은 폭에서는 되돌린다
-        sheet = page.split("@media(max-width:960px){", 1)[1]
+        sheet = css.split("@media(max-width:960px){", 1)[1]
         self.assertIn('[data-rail="mini"] .ledger-body{display:flex}', sheet)
         self.assertIn(".dest .rail-toggle{display:none}", sheet)
 
@@ -846,7 +854,7 @@ class TestCrossProjectFeed(StudioCase):
         보내기)이 '지금 여기'라는 뜻으로 쓰고 있었다. 다섯 번째 금은 배경이다. 그래서 호박으로
         옮기고 아이콘(방패→번개)·굵기·글자까지 넷이 같이 말하게 했다."""
         page = studio.dispatch("GET", "/")[1:][1].decode()
-        style = page.split("<style>", 1)[1].split("</style>", 1)[0]
+        style = _studio_css()
         # 선언 블록을 통째로 본다 — 줄 단위로 세면 규칙이 두 줄로 접히는 순간 검사가 눈을 감는다
         head, _, rest = style.partition('.dock-perm[data-mode="auto"]{')
         self.assertTrue(rest, "자동 실행에 제 표시가 없다")

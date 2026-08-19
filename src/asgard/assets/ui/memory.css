@@ -1,0 +1,1497 @@
+/* 기억 화면 — 탭 일곱 판 · 성좌 무대 · 열지도.
+ *
+ * 여기가 이 화면의 색이 태어나는 유일한 자리다. 캔버스는 CSS 를 못 읽으므로 `memory.js` 가
+ * `getComputedStyle(canvas)` 로 아래 `--mem-*` 를 읽어 그린다 — 그래서 토큰을 여기서 손보면 DOM 과
+ * 그림이 같이 움직인다. 옛 창(`assets/memory_dashboard.html`)은 캔버스 색 스물넷을 스크립트에
+ * 16진수와 `rgba()` 로 박아 뒀고, 라이트 테마가 생긴 뒤로는 화면만 밝아지고 성좌만 검게 남았다.
+ *
+ * 종류 색은 값이 아니라 **각도**다(`map.css` 와 같은 규율). `oklch()` 의 세 칸 중 명도(L)와
+ * 채도(C)는 테마가 정하고 색상(H)만 종류마다 다르다. 그래서 여섯을 라이트·다크로 나눠 열둘을
+ * 손으로 고를 일이 없고, 명도 한 줄만 바꾸면 여섯이 같이 따라온다. 색만으로 구분하지도 않는다 —
+ * 별의 모양(원·삼각·마름모·육각·사각·역삼각)이 같은 정보를 한 번 더 나른다.
+ *
+ * 값 층은 `ui/tokens.css` 하나뿐이다. 아래 `--mem-*` 는 전부 그쪽 의미 토큰이나 `oklch()` 계산이고,
+ * 이 파일에도 16진수·`rgba()` 리터럴은 없다.
+ */
+
+.mem {
+  /* 라이트 — 흰 바탕에 별을 찍으므로 어둡고 진해야 읽힌다(WCAG 1.4.11 은 도형에 3:1 을 건다). */
+  --mem-kind-l: 58%;
+  --mem-kind-c: 0.12;
+
+  /* 각도는 옛 팔레트의 배치를 지킨다 — 노트가 금, 사용자가 보라, 결정이 붉은 쪽, 통찰이 청록. */
+  --mem-kind-note: oklch(var(--mem-kind-l) var(--mem-kind-c) 85);
+  --mem-kind-user: oklch(var(--mem-kind-l) var(--mem-kind-c) 300);
+  --mem-kind-decision: oklch(var(--mem-kind-l) var(--mem-kind-c) 30);
+  --mem-kind-insight: oklch(var(--mem-kind-l) var(--mem-kind-c) 180);
+  --mem-kind-reference: oklch(var(--mem-kind-l) var(--mem-kind-c) 250);
+  --mem-kind-feedback: oklch(var(--mem-kind-l) var(--mem-kind-c) 350);
+
+  /* 성좌 무대 — 선·바닥·라벨. 알파는 캔버스가 `globalAlpha` 로 얹으므로 여기서는 불투명하다. */
+  --mem-grid: var(--line-strong);
+  --mem-link: var(--gold-mark);
+  --mem-sem: var(--ok);
+  --mem-dead: var(--danger);
+  --mem-orphan: var(--warn);
+  --mem-hit: var(--gold-lit);
+  --mem-label-bg: var(--panel);
+  --mem-label-line: var(--line-strong);
+  --mem-label-ink: var(--ink);
+  --mem-label-dim: var(--muted);
+  --mem-empty-ink: var(--faint);
+
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  min-height: 0;
+}
+
+/* 다크 — 어두운 바탕에서는 같은 각도를 밝게 올린다. 색상은 그대로다. */
+:root[data-theme="dark"] .mem {
+  --mem-kind-l: 76%;
+  --mem-kind-c: 0.11;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .mem {
+    --mem-kind-l: 76%;
+    --mem-kind-c: 0.11;
+  }
+}
+
+/* ── 머리띠 — 서고 경로 · 갱신 ─────────────────────────────────────────────── */
+
+.mem-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.mem-meta {
+  display: flex;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.mem-meta b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* 서고 경로는 길다 — 줄을 밀어내는 대신 가운데를 접는다. */
+.mem-meta .mono {
+  font-family: var(--mono);
+  max-width: 34ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+  display: inline-block;
+}
+
+.mem-meta b.on {
+  color: var(--ok);
+}
+
+.mem-meta b.off {
+  color: var(--muted);
+}
+
+.mem-panels {
+  min-height: 0;
+}
+
+.mem-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+/* ── 상태 넷 ──────────────────────────────────────────────────────────────── */
+
+.mem-skel {
+  display: grid;
+  gap: var(--space-xs);
+}
+
+.mem-skel .ak-skeleton {
+  height: 2.5em;
+}
+
+.mem-empty {
+  margin: 0;
+  padding: var(--space-md) 0;
+  font-size: 13px;
+}
+
+.mem-onboard {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-2xl) var(--space-lg);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r2);
+  text-align: center;
+  color: var(--muted);
+}
+
+.mem-onboard p {
+  margin: 0;
+  max-width: var(--measure);
+}
+
+.mem-onboard code,
+.mem-cmd {
+  display: inline-block;
+  padding: var(--space-2xs) var(--space-xs);
+  border: 1px solid var(--line);
+  border-radius: var(--r1);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.mem-cmd {
+  margin-top: var(--space-xs);
+  overflow-wrap: anywhere;
+}
+
+.mem-err {
+  gap: var(--space-sm);
+}
+
+/* ── 되풀이되는 조각 ──────────────────────────────────────────────────────── */
+
+.mem-vh {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.mem-dim {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.mem-ok {
+  color: var(--ok);
+}
+
+.mem .mono,
+.mem .num {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.mem-sectitle {
+  margin: 0 0 var(--space-xs);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* 목록 안의 이름은 단추다 — 눌러야 하는 자리를 밑줄 하나로만 알린다. */
+.mem-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--gold);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--gold-line);
+  text-underline-offset: 2px;
+}
+
+.mem-link:hover {
+  color: var(--gold-lit);
+}
+
+.mem-lchip {
+  padding: var(--space-2xs) var(--space-xs);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r1);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.mem-lchip:hover {
+  border-color: var(--gold-line);
+  background: var(--gold-hover);
+}
+
+.mem-kchip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.mem-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-sm);
+}
+
+.mem-chips .cnt {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.mem-poison-tag {
+  display: inline-block;
+  margin-right: var(--space-2xs);
+  padding: 0 var(--space-2xs);
+  border: 1px solid var(--danger-line);
+  border-radius: var(--r1);
+  background: var(--danger-fill);
+  color: var(--ink);
+  font-size: 10px;
+}
+
+.mem mark {
+  padding: 0;
+  border-radius: 2px;
+  background: var(--gold-fill);
+  color: var(--gold-lit);
+}
+
+.mem-two {
+  display: grid;
+  gap: var(--space-md);
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+/* ── 개요 — 통계 띠와 계기 격자 ───────────────────────────────────────────── */
+
+.mem-stats {
+  display: grid;
+  gap: var(--space-sm);
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.mem-stat {
+  padding: var(--space-md);
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  background: var(--surface-1);
+}
+
+.mem-stat .v {
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.mem-stat .l {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.mem-stat .s {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.mem-stat.crit .v {
+  color: var(--danger);
+}
+
+.mem-stat.warn .v {
+  color: var(--warn);
+}
+
+/* 12열 위의 서로 다른 폭 — 같은 크기 카드 세 장으로 늘어놓지 않는다. 넓어지면 열이 늘고,
+   글이 실리는 칸은 `--measure` 상한을 따로 갖는다(줄이 길어지지 않는다). */
+.mem-grid {
+  display: grid;
+  gap: var(--space-md);
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.mem-gauge-card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin: 0;
+}
+
+.mem-gauge-card .lab {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.mem-flist,
+.mem-log,
+.mem-uselist,
+.mem-drv,
+.mem-glist,
+.mem-arcs,
+.mem-lineage,
+.mem-contra,
+.mem-exlist {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mem-flist li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-xs);
+  padding: var(--space-2xs) 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.mem-fchip {
+  padding: 0 var(--space-2xs);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r1);
+  font-size: 10px;
+}
+
+.mem-fchip.f-crit {
+  border-color: var(--danger-line);
+  background: var(--danger-fill);
+}
+
+.mem-fchip.f-warn {
+  border-color: var(--warn-line);
+  background: var(--warn-fill);
+}
+
+.mem-fchip.f-info {
+  border-color: var(--info-line);
+  background: var(--info-fill);
+}
+
+.mem-flist .sl {
+  font-family: var(--mono);
+  color: var(--muted);
+}
+
+.mem-log li {
+  display: grid;
+  /* 시각(`2026-08-17T15:56Z`)은 17글자라 9.5em 에 안 들어간다. 고정폭으로 두면 개요의 좁은
+     칸에서 `2026-08-` / `17T15:56Z` 로 **토큰 한가운데가** 끊겼다. 최소를 max-content 로 잡아
+     시각과 연산이 제 폭을 가져가게 하고, 남는 폭은 슬러그가 쓴다 — 마지막 칸의 최소가 0이라
+     칸이 넘치지는 않는다. */
+  grid-template-columns: minmax(max-content, 9.5em) minmax(max-content, 7em) minmax(0, 1fr);
+  gap: var(--space-xs);
+  padding: var(--space-2xs) 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.mem-log .ts,
+.mem-log .op {
+  white-space: nowrap;
+}
+
+.mem-log .sl {
+  overflow-wrap: break-word;
+}
+
+.mem-log .ts {
+  color: var(--faint);
+  font-family: var(--mono);
+}
+
+.mem-log .op {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  font-family: var(--mono);
+}
+
+.mem-log .di {
+  color: var(--faint);
+}
+
+/* 슬러그는 하이픈이 많아 기본 규칙이 하이픈마다 줄을 넘긴다 — 좁은 칸에서 한 줄에 두세
+   조각씩 남아 목록이 조각보로 읽혔다. `keep-all` 은 하이픈 뒤 줄바꿈까지 막고, 그래도
+   넘치는 아주 긴 이름만 `break-word` 가 끊는다. */
+.mem-uselist .sl,
+.mem-uselist .sl * {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+.mem-uselist li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: var(--space-xs);
+  align-items: baseline;
+  padding: var(--space-2xs) 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.mem-uselist .u {
+  font-family: var(--mono);
+  color: var(--ink);
+}
+
+.mem-uselist .du,
+.mem-drv .qty {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.mem-drv li {
+  display: grid;
+  grid-template-columns: 5.5em 1fr auto;
+  gap: var(--space-xs);
+  align-items: baseline;
+  padding: var(--space-xs) 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.mem-drv .nt {
+  grid-column: 2 / -1;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.mem-drv .tag {
+  padding: 0 var(--space-2xs);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r1);
+  font-size: 10px;
+  text-align: center;
+}
+
+.mem-drv .tag.canon {
+  border-color: var(--gold-line);
+  color: var(--gold);
+}
+
+.mem-drv li.gone {
+  opacity: 0.5;
+}
+
+/* 켜짐·꺼짐은 색만으로 말하지 않는다 — 글자가 상태를 먼저 적는다. */
+.mem-sw-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-sm);
+}
+
+.mem-sw {
+  padding: 0 var(--space-xs);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.mem-sw.on {
+  border-color: var(--ok-line);
+  background: var(--ok-fill);
+  color: var(--ink);
+}
+
+.mem-sw.off {
+  border-color: var(--warn-line);
+  background: var(--warn-fill);
+  color: var(--ink);
+}
+
+.mem-sw-row .note {
+  flex: 1;
+  min-width: 12em;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* ── 한도 막대 — 전달·의미 준비가 같은 모양을 쓴다 ────────────────────────── */
+
+.mem-meter {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--space-sm);
+}
+
+.mem-meter .row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-xs);
+  font-size: 12px;
+}
+
+.mem-meter .nm {
+  flex: 1;
+  color: var(--ink);
+}
+
+.mem-meter .kd,
+.mem-meter .pc {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.mem-meter .track {
+  display: block;
+  height: 6px;
+  margin-top: var(--space-2xs);
+  border-radius: var(--r-pill);
+  background: var(--surface-3);
+  overflow: hidden;
+}
+
+.mem-meter .track i {
+  display: block;
+  height: 100%;
+  background: var(--gold-mark);
+}
+
+.mem-meter li.warn .track i {
+  background: var(--warn);
+}
+
+.mem-meter li.crit .track i {
+  background: var(--danger);
+}
+
+.mem-meter .drop,
+.mem-meter .mute {
+  margin: var(--space-2xs) 0 0;
+  font-size: 11px;
+}
+
+.mem-meter .drop {
+  color: var(--danger);
+}
+
+.mem-meter .mute {
+  color: var(--muted);
+}
+
+/* ── 성좌 ─────────────────────────────────────────────────────────────────── */
+
+.mem-constellation {
+  padding: var(--space-md);
+}
+
+.mem-gbody {
+  display: grid;
+  gap: var(--space-md);
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
+}
+
+@media (max-width: 900px) {
+  .mem-gbody {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.mem-gwrap {
+  position: relative;
+  min-height: 420px;
+  height: 58vh;
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  background: var(--surface-1);
+  overflow: hidden;
+}
+
+.mem-gwrap canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+}
+
+.mem-gctrl {
+  position: absolute;
+  top: var(--space-xs);
+  right: var(--space-xs);
+  display: flex;
+  gap: var(--space-2xs);
+}
+
+.mem-gctrl .ak-btn {
+  width: var(--row-h);
+  padding: 0;
+}
+
+.mem-gtip {
+  position: absolute;
+  z-index: var(--z-raised);
+  max-width: 220px;
+  padding: var(--space-xs);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r1);
+  background: var(--panel);
+  backdrop-filter: blur(6px);
+  font-size: 12px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur-quick) var(--ease);
+}
+
+.mem-gtip.on {
+  opacity: 1;
+}
+
+.mem-gtip .tt-t {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.mem-gtip .tt-k,
+.mem-gtip .tt-m {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.mem-gtip .tt-m {
+  color: var(--muted);
+}
+
+.mem-ghint {
+  position: absolute;
+  left: var(--space-xs);
+  bottom: var(--space-2xs);
+  right: var(--space-xs);
+  margin: 0;
+  color: var(--faint);
+  font-size: 11px;
+}
+
+.mem-gside {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  min-width: 0;
+  max-height: 58vh;
+  overflow-y: auto;
+}
+
+.mem-gstats {
+  display: grid;
+  gap: var(--space-2xs);
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.mem-gstats .cell {
+  padding: var(--space-xs);
+  border: 1px solid var(--line);
+  border-radius: var(--r1);
+}
+
+.mem-gstats .v {
+  font-family: var(--mono);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.mem-gstats .l {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.mem-gstats .cell.bad .v {
+  color: var(--danger);
+}
+
+.mem-fitem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  padding: var(--space-2xs) 0;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mem-fitem .mono {
+  color: var(--faint);
+  font-size: 10px;
+}
+
+.mem-fitem .cnt {
+  margin-left: auto;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+/* 선의 뜻 — 캔버스가 그리는 것과 같은 세 가지를 작은 견본으로 보여 준다. */
+.mem-legend {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--space-2xs);
+  font-size: 12px;
+}
+
+.mem-legend li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.mem-legend .ln {
+  width: 26px;
+  height: 0;
+  border-top: 2px solid var(--mem-link);
+}
+
+.mem-legend .ln.sem {
+  border-top-style: dashed;
+  border-top-color: var(--mem-sem);
+}
+
+.mem-legend .ln.dead {
+  border-top-style: dotted;
+  border-top-color: var(--mem-dead);
+}
+
+.mem-glist li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  padding: var(--space-2xs) 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.mem-glist .cnt,
+.mem-more {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.mem-glist .mem-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mem-glist .cnt {
+  margin-left: auto;
+  flex: none;
+  font-family: var(--mono);
+}
+
+.mem-alt {
+  max-height: 18em;
+  overflow-y: auto;
+}
+
+.mem-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* ── 페이지 상세 — 성좌 옆 패널과 서고 펼침이 같은 카드를 쓴다 ───────────── */
+
+.mem-det {
+  padding: var(--space-sm);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r2);
+  background: var(--surface-1);
+}
+
+.mem-det-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-xs);
+}
+
+.mem-det-head .bad {
+  color: var(--danger);
+  font-size: 11px;
+}
+
+.mem-gclose {
+  margin-left: auto;
+  padding: 0 var(--space-xs);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r1);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.mem-gclose:hover {
+  color: var(--ink);
+  background: var(--surface-2);
+}
+
+.mem-det-title {
+  margin: 0;
+  font-size: 14px;
+}
+
+.mem-det-slug {
+  margin: 0 0 var(--space-xs);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.mem-det-meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 var(--space-xs);
+  margin: 0 0 var(--space-xs);
+  font-size: 11px;
+}
+
+.mem-det-meta dt {
+  color: var(--muted);
+}
+
+.mem-det-meta dd {
+  margin: 0;
+  font-family: var(--mono);
+}
+
+.mem-det-body,
+.mem-injblock {
+  margin: 0;
+  padding: var(--space-xs);
+  border: 1px solid var(--line);
+  border-radius: var(--r1);
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 22em;
+  overflow: auto;
+}
+
+.mem-det-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2xs);
+}
+
+.mem-poison {
+  margin: 0;
+  padding: var(--space-xs);
+  border: 1px solid var(--danger-line);
+  border-radius: var(--r1);
+  background: var(--danger-fill);
+  color: var(--ink);
+  font-size: 12px;
+}
+
+/* ── 서고 ─────────────────────────────────────────────────────────────────── */
+
+.mem-search {
+  display: flex;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-sm);
+}
+
+.mem-search .ak-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.mem-legend-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-sm);
+  font-size: 11px;
+}
+
+.mem-legend-row .mem-sectitle {
+  margin: 0;
+}
+
+/* 검색 경로 표식 — 점 하나로 어느 길이 이 결과를 물어 왔는지 말한다. */
+.mem-lg {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  color: var(--muted);
+}
+
+.mem-lg::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-pill);
+}
+
+.mem-lg.fts::before {
+  background: var(--gold-mark);
+}
+
+.mem-lg.scan::before {
+  background: var(--info);
+}
+
+.mem-lg.sem::before {
+  background: var(--ok);
+}
+
+.mem-tablewrap {
+  overflow-x: auto;
+}
+
+.mem .ak-table .rt {
+  text-align: right;
+}
+
+.mem .ak-table caption {
+  padding-bottom: var(--space-xs);
+  color: var(--muted);
+  font-size: 11px;
+  text-align: left;
+}
+
+.mem .ak-table .di {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.mem-ubar {
+  display: inline-block;
+  width: 40px;
+  height: 4px;
+  margin-right: var(--space-2xs);
+  border-radius: var(--r-pill);
+  background: var(--surface-3);
+  vertical-align: middle;
+  overflow: hidden;
+}
+
+.mem-ubar i {
+  display: block;
+  height: 100%;
+  background: var(--gold-mark);
+}
+
+.mem-qrow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-sm);
+  padding: var(--space-xs);
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.mem-qrow:hover {
+  background: var(--surface-2);
+}
+
+.mem-qrow .sub,
+.mem-qrow .snip {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.mem-qrow .snip {
+  margin-top: var(--space-2xs);
+  font-size: 12px;
+}
+
+.mem-lanes {
+  display: grid;
+  gap: 2px;
+  align-content: start;
+  font-size: 9px;
+}
+
+.mem-lane {
+  display: grid;
+  grid-template-columns: 3em 24px;
+  gap: var(--space-2xs);
+  align-items: center;
+  color: var(--faint);
+  font-family: var(--mono);
+}
+
+.mem-lane .bar {
+  height: 3px;
+  border-radius: var(--r-pill);
+  background: var(--surface-3);
+}
+
+.mem-lane.on {
+  color: var(--ink);
+}
+
+.mem-lane.on.fts .bar {
+  background: var(--gold-mark);
+}
+
+.mem-lane.on.scan .bar {
+  background: var(--info);
+}
+
+.mem-lane.on.sem .bar {
+  background: var(--ok);
+}
+
+.mem-dwrap {
+  padding: var(--space-xs) 0;
+}
+
+.mem-dbox {
+  border-bottom: 1px solid var(--line);
+}
+
+/* ── 전달 ─────────────────────────────────────────────────────────────────── */
+
+.mem-injgrid {
+  display: grid;
+  gap: var(--space-md);
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.mem-injblock {
+  max-height: 30em;
+}
+
+.mem-injblock .fence {
+  color: var(--gold);
+}
+
+.mem-injblock .head {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.mem-injblock .warnline {
+  color: var(--warn);
+}
+
+.mem-exlist li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  padding: var(--space-2xs) 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+
+/* ── 정리 ─────────────────────────────────────────────────────────────────── */
+
+.mem-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-md);
+}
+
+.mem-mode {
+  padding: var(--space-2xs) var(--space-xs);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r1);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.mem-mode b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.mem-mode.on {
+  border-color: var(--gold-line);
+  background: var(--gold-fill);
+}
+
+.mem-nrngrid {
+  display: grid;
+  gap: var(--space-lg);
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.mem-nrngrid h4 {
+  margin: 0 0 var(--space-2xs);
+  font-size: 13px;
+}
+
+.mem-lineage li,
+.mem-contra li {
+  padding: var(--space-xs) 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.mem-lineage .row,
+.mem-contra .pair {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-xs);
+}
+
+.mem-lineage .row .mem-dim,
+.mem-contra .pair .mem-dim {
+  margin-left: auto;
+}
+
+.mem-lineage .src {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2xs);
+  margin-top: var(--space-2xs);
+}
+
+.mem-lineage .arrow {
+  color: var(--faint);
+}
+
+.mem-conf {
+  padding: 0 var(--space-2xs);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r1);
+  font-size: 10px;
+}
+
+.mem-conf.conf-high {
+  border-color: var(--ok-line);
+  background: var(--ok-fill);
+}
+
+.mem-conf.conf-medium {
+  border-color: var(--warn-line);
+  background: var(--warn-fill);
+}
+
+.mem-conf.conf-low {
+  border-color: var(--line-strong);
+}
+
+.mem-contra .why {
+  margin: var(--space-2xs) 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.mem-arcs li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-2xs);
+  padding: var(--space-xs) 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.mem-arcs .sl {
+  font-family: var(--mono);
+  /* `anywhere` 는 넘칠 때만이 아니라 **최소 너비 계산까지** 바꾼다. 그래서 격자가 이 칸을
+     한 글자 폭까지 줄여도 된다고 보고, 긴 슬러그가 하이픈마다 조각났다. `break-word` 는
+     최소 너비를 건드리지 않고 실제로 넘칠 때만 끊는다. */
+  overflow-wrap: break-word;
+}
+
+.mem-arcs .sl.wrap {
+  font-family: var(--sans);
+}
+
+.mem-arcs .dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.mem-arcs .mem-cmd {
+  grid-column: 1 / -1;
+}
+
+/* ── 연대기 — 좌우 교차 타임라인 ──────────────────────────────────────────── */
+
+.mem-chrono {
+  position: relative;
+  display: grid;
+  gap: var(--space-xs);
+  padding-left: var(--space-lg);
+}
+
+/* 축은 왼쪽에 한 줄이다 — 넓은 화면에서만 가운데로 옮겨 좌우 교차가 된다. */
+.mem-chrono::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--space-xs);
+  width: 1px;
+  background: var(--line-strong);
+}
+
+.mem-cdate {
+  margin: var(--space-sm) 0 var(--space-2xs);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.mem-citem {
+  position: relative;
+}
+
+.mem-cdot {
+  position: absolute;
+  left: calc(var(--space-lg) * -1 + var(--space-xs) - 3px);
+  top: var(--space-sm);
+  width: 7px;
+  height: 7px;
+  border-radius: var(--r-pill);
+}
+
+.mem-ccard {
+  padding: var(--space-xs);
+  border: 1px solid var(--line);
+  border-radius: var(--r1);
+  background: var(--surface-1);
+}
+
+.mem-ccard .head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-xs);
+  font-size: 12px;
+}
+
+.mem-ccard .obadge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  padding: 0 var(--space-2xs);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r1);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.mem-ccard .time {
+  margin-left: auto;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.mem-ccard .det {
+  margin-top: var(--space-2xs);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+@media (min-width: 900px) {
+  .mem-chrono {
+    padding-left: 0;
+  }
+
+  .mem-chrono::before {
+    left: 50%;
+  }
+
+  .mem-citem {
+    width: calc(50% - var(--space-md));
+  }
+
+  .mem-citem.right {
+    margin-left: calc(50% + var(--space-md));
+  }
+
+  .mem-citem.left .mem-cdot {
+    left: auto;
+    right: calc(var(--space-md) * -1 - 3px);
+  }
+
+  .mem-citem.right .mem-cdot {
+    left: calc(var(--space-md) * -1 - 3px);
+  }
+}
+
+.mem-pgn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.mem-dayflt {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin-bottom: var(--space-sm);
+  padding: var(--space-2xs) var(--space-xs);
+  border: 1px solid var(--gold-line);
+  border-radius: var(--r-pill);
+  background: var(--gold-fill);
+  font-size: 12px;
+}
+
+.mem-dayflt .ak-btn {
+  height: 24px;
+  padding: 0 var(--space-xs);
+  font-size: 11px;
+}
+
+/* ── 활동 — 52주 열지도 ───────────────────────────────────────────────────── */
+
+.mem-heatwrap {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-2xs);
+}
+
+.mem-heat-days {
+  display: grid;
+  grid-template-rows: repeat(7, 12px);
+  gap: 3px;
+  color: var(--faint);
+  font-size: 9px;
+  line-height: 12px;
+}
+
+.mem-heat-scroll {
+  overflow-x: auto;
+}
+
+.mem-heat-grid {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(7, 12px);
+  gap: 3px;
+}
+
+.mem-heat-cell {
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--surface-2);
+}
+
+/* 네 단계 — 금 채움의 농도로 오른다. 빈 칸은 면 색이라 "없음"과 "적음"이 갈린다. */
+.mem-heat-cell.lv1 {
+  border-color: var(--gold-line);
+  background: var(--gold-fill);
+}
+
+.mem-heat-cell.lv2 {
+  border-color: var(--gold-line);
+  background: color-mix(in srgb, var(--gold-mark) 40%, var(--canvas));
+}
+
+.mem-heat-cell.lv3 {
+  border-color: var(--gold-line);
+  background: color-mix(in srgb, var(--gold-mark) 70%, var(--canvas));
+}
+
+.mem-heat-cell.lv4 {
+  border-color: var(--gold-line);
+  background: var(--gold-mark);
+}
+
+button.mem-heat-cell {
+  cursor: pointer;
+}
+
+button.mem-heat-cell:hover {
+  border-color: var(--focus);
+}
+
+.mem-heat-legend {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  margin-top: var(--space-xs);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.mem-bars {
+  display: grid;
+  gap: var(--space-2xs);
+}
+
+.mem-bar-row {
+  display: grid;
+  grid-template-columns: 7em minmax(0, 1fr) 3em;
+  gap: var(--space-xs);
+  align-items: center;
+  font-size: 12px;
+}
+
+.mem-bar-row .lb {
+  font-family: var(--mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mem-bar-row .track {
+  height: 8px;
+  border-radius: var(--r-pill);
+  background: var(--surface-3);
+  overflow: hidden;
+}
+
+.mem-bar-row .fill {
+  height: 100%;
+}
+
+.mem-bar-row .val {
+  color: var(--muted);
+  font-family: var(--mono);
+  text-align: right;
+}
+
+/* 움직임을 줄여 달라고 한 사용자에게는 전환도 걷어 낸다. 성좌의 물리 시뮬은 `memory.js` 가
+   `prefers-reduced-motion` 을 읽어 정착 결과만 한 번 그린다 — 여기서는 DOM 쪽만 맡는다. */
+@media (prefers-reduced-motion: reduce) {
+  .mem-gtip {
+    transition: none;
+  }
+}

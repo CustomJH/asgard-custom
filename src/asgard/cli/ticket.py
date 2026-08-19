@@ -342,9 +342,13 @@ def open_map(
 
 @open_app.command("memory", help=t("hc_open_memory"))
 def open_memory(
-    port: int = typer.Option(8765, "--port", "-p", help=t("hc_port")),
+    port: int = typer.Option(8766, "--port", "-p", help=t("hc_port")),
     no_open: bool = typer.Option(False, "--no-open", help=t("hc_no_browser")),
 ) -> None:
-    from ..commands.memory_dashboard import run_dashboard
+    # 메모리는 이제 스튜디오의 한 화면이다 — `open map` 과 같은 자리로 간다. 기본 포트가
+    # 8765 에서 스튜디오의 8766 으로 바뀌는 이유가 그것이다: 창이 하나라 포트도 하나다.
+    # 옛 대시보드 서버(`memory_dashboard.run_dashboard`)는 자료를 만드는 쪽이라 그대로 있고,
+    # 창구는 `studio.memory_api` 가 그것에 위임한다.
+    from ..commands.studio import run_studio
 
-    raise typer.Exit(run_dashboard(port=port, open_browser=not no_open))
+    raise typer.Exit(run_studio(port=port, open_browser=not no_open, view="memory"))

@@ -1,0 +1,371 @@
+/* Asgard 공용 디자인 토큰 — studio · map · memory 세 화면이 같은 한 묶음을 읽는다.
+ *
+ * 층은 둘이다.
+ *   1. 원시(`--ak-c-*`, `--ak-s-*`, …) — 값이 여기에만 한 번 적힌다. 컴포넌트는 읽지 않는다.
+ *   2. 의미(`--canvas`, `--ink`, …) — 자리와 역할의 이름. 컴포넌트가 읽는 층은 이쪽뿐이다.
+ * 이 분리 전에는 `#0C0A07` 이 studio.html · map_view.html · memory_dashboard.html 에 세 번
+ * 적혀 있었고, 한 곳을 고치면 나머지 둘이 조용히 갈라졌다.
+ *
+ * 기본은 라이트다. `:root` 가 라이트 전체를 갖고, `:root[data-theme="dark"]` 가 테마별 의미
+ * 토큰만 다시 가리킨다. 어떤 색값도 미디어 쿼리나 `[data-theme]` 안에서만 태어나지 않는다 —
+ * 그 안에는 원시 층을 가리키는 `var()` 만 있다.
+ *
+ * 라이트 기준선은 ChatGPT 앱 라이트의 실측 골격이다: canvas #FFFFFF · sidebar #F9F9F9 ·
+ * hover #ECECEC · line #E3E3E3 · ink #0D0D0D · muted #5D5D5D · faint #737373.
+ * 다크 기준선은 studio.html 이 쓰던 값 그대로다 — 다크는 새로 만든 게 아니라 옮겨 온 것이다.
+ */
+
+:root {
+  /* ─────────────────────────────────────────────────────────────────────────
+   * 원시 — 색. 이 저장소에서 색 리터럴을 적는 자리는 여기뿐이다.
+   * 괄호 안 숫자는 WCAG 2.1 대비 실측값(coloraide), 별말 없으면 흰 바탕 기준이다.
+   * ───────────────────────────────────────────────────────────────────────── */
+
+  /* 중립 — 라이트 골격 */
+  --ak-c-white: #ffffff;
+  --ak-c-n-50: #f9f9f9;
+  --ak-c-n-100: #ececec;
+  --ak-c-n-150: #e3e3e3;
+  --ak-c-n-250: #c9c9c9;
+  /* 참조 화면(ChatGPT)은 이 자리에 #8f8f8f 를 쓰는데 흰 바탕 대비가 3.23 이라 본문 기준에
+     못 미친다. 거기서는 비활성·장식에만 쓰이지만, 이 창의 studio.css 는 같은 토큰으로 글자를
+     171곳 적는다(타임스탬프·경로·모노 메타데이터). 그래서 값을 내렸다.
+     #737373 을 고른 것은 재서다: #767676 은 흰 바탕에서 4.54 로 통과하지만 사이드바
+     (#f9f9f9) 위에서 4.31 로 떨어진다. 두 바닥을 다 넘는 첫 값이 이것이다 — 4.74 / 4.50.
+     3단 위계는 그대로 산다: 19.44 · 6.58 · 4.74. */
+  --ak-c-n-400: #737373; /* 4.74 (흰 바탕) · 4.50 (사이드바) */
+  --ak-c-n-600: #5d5d5d; /* 6.58 */
+  --ak-c-n-900: #0d0d0d; /* 19.44 */
+
+  /* 밤 — 어두운 면 4단, 0 이 가장 어둡다. studio.html 이 쓰던 값이다. */
+  --ak-c-night-0: #0c0a07;
+  --ak-c-night-1: #14110c;
+  --ak-c-night-2: #1b160e;
+  --ak-c-night-3: #241c11;
+  --ak-c-night-rail: #100d09;
+  --ak-c-parchment: #e9e0ca; /* 밤 바탕 15.05 */
+  --ak-c-parchment-dim: #9c9179; /* 밤 바탕 6.35 */
+  --ak-c-parchment-a55: rgb(233 224 202 / 0.55); /* 밤 바탕에 겹치면 #868072, 5.01 */
+
+  /* 금 — 한 hue 의 명도 램프. OKLCH 로 재면 500·600·700 이 hue 84.1 · chroma 0.098 로
+   * 같고 L 만 0.734 / 0.601 / 0.560 이라 눈에는 "같은 금"으로 읽힌다. 다크에서 글자로
+   * 쓰던 500 하나가 라이트에서는 셋으로 갈라진다 — 흰 바탕에서 2.37 이라 글자 색으로 쓸 수 없다. */
+  --ak-c-gold-050: #fdf0d9; /* 라이트 금 틴트 (OKLCH L 0.96) */
+  --ak-c-gold-300: #e8c87e; /* 밤 바탕 12.23 */
+  --ak-c-gold-500: #c6a45e; /* 흰 바탕 2.37 · 밤 바탕 8.35 */
+  --ak-c-gold-600: #9c7b34; /* 3.96 — 큰 글자·경계 */
+  --ak-c-gold-700: #8f6f26; /* 4.70 — 본문 글자 */
+  --ak-c-gold-800: #745500; /* 6.90 — 강조 글자, 금 틴트 위 잉크 */
+  --ak-c-gold-950: #1c1710; /* 다크 금 채움 */
+  --ak-c-gold-a10: rgb(143 111 38 / 0.1);
+  --ak-c-gold-a18: rgb(198 164 94 / 0.18);
+
+  /* 다크의 가는 선 — 알파 색이다. 밤 면 위에서 1.2~1.6 이라 글자나 상태를 나타내지
+   * 못하고 칸만 구분한다. 대비 하한을 걸 대상이 아니다. */
+  --ak-c-hairline-a09: rgb(230 208 150 / 0.09);
+  --ak-c-hairline-a17: rgb(230 208 150 / 0.17);
+  --ak-c-hairline-a14: rgb(230 208 150 / 0.14);
+  --ak-c-hairline-a34: rgb(230 208 150 / 0.34);
+  --ak-c-sheen-a05: rgb(230 208 150 / 0.05);
+  --ak-c-glow-a06: rgb(198 164 94 / 0.06);
+  --ak-c-glow-a10: rgb(198 164 94 / 0.1);
+
+  /* 상태 — 050 이 가장 밝고 950 이 가장 어둡다. 라이트 잉크는 650, 다크 잉크는 500 이다.
+   * 500 은 흰 바탕에서 2.6~4.3 이라 라이트에서 글자로 쓰지 않는다. */
+  --ak-c-ok-050: #f2f7ec;
+  --ak-c-ok-300: #b6ce9c;
+  --ak-c-ok-500: #86a860; /* 밤 바탕 7.33 */
+  --ak-c-ok-650: #608039; /* 4.52 */
+  --ak-c-ok-750: #3b5c46;
+  --ak-c-ok-950: #0e1710;
+
+  --ak-c-warn-050: #fbf4e6;
+  --ak-c-warn-300: #e0b87a;
+  --ak-c-warn-500: #e8b673; /* 밤 바탕 10.71 */
+  --ak-c-warn-650: #a46800; /* 4.61 */
+  --ak-c-warn-750: #7a5b26;
+  --ak-c-warn-950: #2a1608;
+
+  --ak-c-danger-050: #fdf1ee;
+  --ak-c-danger-300: #e9ac9f;
+  --ak-c-danger-500: #e88a73; /* 밤 바탕 7.83 */
+  --ak-c-danger-650: #bd5742; /* 4.56 */
+  --ak-c-danger-750: #7a392b;
+  --ak-c-danger-950: #1e100c;
+
+  --ak-c-info-050: #eff4f9;
+  --ak-c-info-300: #aec4d8;
+  --ak-c-info-500: #9cbedc; /* 밤 바탕 10.18 */
+  --ak-c-info-650: #5b7894; /* 4.61 */
+  --ak-c-info-750: #3b566b;
+  --ak-c-info-950: #0e151c;
+
+  /* 그림자·가림막 — 라이트는 검정 알파, 다크는 순검정 알파를 쓴다. */
+  --ak-c-shade-light: rgb(13 13 13 / 0.1);
+  --ak-c-shade-dark: rgb(0 0 0 / 0.45);
+  --ak-c-scrim-light: rgb(255 255 255 / 0.95);
+  --ak-c-scrim-dark: rgb(12 10 7 / 0.95);
+  --ak-c-panel-light: rgb(255 255 255 / 0.88);
+  --ak-c-panel-dark: rgb(20 17 12 / 0.88);
+  --ak-c-overlay-light: rgb(13 13 13 / 0.32);
+  --ak-c-overlay-dark: rgb(8 6 4 / 0.62);
+  --ak-c-sheen-light: rgb(13 13 13 / 0.03);
+  --ak-c-bar-light: rgb(13 13 13 / 0.22);
+  --ak-c-bar-lit-light: rgb(13 13 13 / 0.42);
+
+  /* 그림자 목록 — 라이트는 흰 면 위라 한 겹으로는 면이 구분되지 않아 세 겹을 겹친다(가까운
+   * 겹은 좁고 진하게, 먼 겹은 넓고 옅게). 다크는 밝은 면으로 깊이를 내므로 한 겹이면 된다. */
+  --ak-shadow-light: 0 1px 2px rgb(13 13 13 / 0.06), 0 6px 16px rgb(13 13 13 / 0.08),
+    0 18px 40px rgb(13 13 13 / 0.06);
+  --ak-shadow-dark: 0 18px 45px var(--ak-c-shade-dark);
+
+  /* ─────────────────────────────────────────────────────────────────────────
+   * 원시 — 치수·시간·글꼴
+   * ───────────────────────────────────────────────────────────────────────── */
+
+  /* 4pt 리듬 */
+  --ak-s-1: 4px;
+  --ak-s-2: 8px;
+  --ak-s-3: 12px;
+  --ak-s-4: 16px;
+  --ak-s-5: 20px;
+  --ak-s-6: 24px;
+  --ak-s-8: 32px;
+  --ak-s-12: 48px;
+
+  --ak-r-1: 8px;
+  --ak-r-2: 12px;
+  --ak-r-3: 16px;
+  --ak-r-pill: 999px;
+
+  /* 시간 — 세 화면이 지금 쓰는 네 값이다(studio 120·180, map 120·160,
+   * memory 120·160·220). 하나로 합치지 않는 이유는 움직이는 면적이 다르기 때문이다:
+   * 색만 바뀌는 hover 는 120, 떠오르는 판은 180 이상이 필요하다. */
+  --ak-t-quick: 120ms;
+  --ak-t-short: 160ms;
+  --ak-t-base: 180ms;
+  --ak-t-mid: 220ms;
+
+  --ak-e-out: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --ak-f-serif: "Iowan Old Style", "Palatino Linotype", "Palatino", "AppleMyungjo", "Nanum Myeongjo",
+    "Times New Roman", serif;
+  --ak-f-sans: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", "Segoe UI",
+    Roboto, sans-serif;
+  --ak-f-mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, "Cascadia Code", monospace;
+
+  /* ⠶ 테마별 의미 토큰 — 아래 다크 블록이 이 집합을 그대로 덮는다.
+   * 여기에 이름을 하나 더하면 다크 블록에도 같은 이름을 더해야 한다
+   * (tests/test_studio_theme.py 가 두 집합의 차이를 0 으로 잠근다). */
+
+  /* 면 */
+  --canvas: var(--ak-c-white);
+  --surface-1: var(--ak-c-n-50);
+  --surface-2: var(--ak-c-n-100);
+  --surface-3: var(--ak-c-n-150);
+  --sidebar: var(--ak-c-n-50);
+  --panel: var(--ak-c-panel-light);
+  --scrim: var(--ak-c-scrim-light);
+  --overlay: var(--ak-c-overlay-light);
+
+  /* 글자 */
+  --ink: var(--ak-c-n-900);
+  --muted: var(--ak-c-n-600);
+  --faint: var(--ak-c-n-400);
+  --on-gold: var(--ak-c-n-900);
+  --on-danger: var(--ak-c-white);
+
+  /* 선 */
+  --line: var(--ak-c-n-150);
+  --line-strong: var(--ak-c-n-250);
+
+  /* 금 — 넷의 쓰임이 다르다. mark 는 채움과 마크 전용이고 글자가 되면 안 된다. */
+  --gold-mark: var(--ak-c-gold-500);
+  --gold-line: var(--ak-c-gold-600);
+  --gold: var(--ak-c-gold-700);
+  --gold-lit: var(--ak-c-gold-800);
+  --gold-fill: var(--ak-c-gold-050);
+  --gold-hover: var(--ak-c-gold-a10);
+
+  --focus: var(--ak-c-gold-600);
+
+  /* 상태 — `--<역할>` 은 글자와 점, `-fill` 은 틴트 면, `-line` 은 그 면의 테두리다.
+   * 틴트 면 위의 글자는 `--ink` 로 적는다: 상태 잉크를 틴트 위에 올리면 4.1~4.4 로
+   * 내려가 본문 기준을 놓친다. */
+  --ok: var(--ak-c-ok-650);
+  --ok-fill: var(--ak-c-ok-050);
+  --ok-line: var(--ak-c-ok-300);
+  --warn: var(--ak-c-warn-650);
+  --warn-fill: var(--ak-c-warn-050);
+  --warn-line: var(--ak-c-warn-300);
+  --danger: var(--ak-c-danger-650);
+  --danger-fill: var(--ak-c-danger-050);
+  --danger-line: var(--ak-c-danger-300);
+  --info: var(--ak-c-info-650);
+  --info-fill: var(--ak-c-info-050);
+  --info-line: var(--ak-c-info-300);
+
+  /* 깊이·빛 */
+  --shade: var(--ak-c-shade-light);
+  --shadow: var(--ak-shadow-light);
+  --glow: var(--ak-c-glow-a10);
+  --sheen: var(--ak-c-sheen-light);
+  --bar: var(--ak-c-bar-light);
+  --bar-lit: var(--ak-c-bar-lit-light);
+
+  /* ⠶ 테마 불변 토큰 — 간격·반지름·모션·글꼴·층. 다크 블록에 없어야 한다. */
+  --space-2xs: var(--ak-s-1);
+  --space-xs: var(--ak-s-2);
+  --space-sm: var(--ak-s-3);
+  --space-md: var(--ak-s-4);
+  --space-lg: var(--ak-s-5);
+  --space-xl: var(--ak-s-6);
+  --space-2xl: var(--ak-s-8);
+  --space-3xl: var(--ak-s-12);
+
+  --r1: var(--ak-r-1);
+  --r2: var(--ak-r-2);
+  --r3: var(--ak-r-3);
+  --r-pill: var(--ak-r-pill);
+
+  --dur-quick: var(--ak-t-quick);
+  --dur-short: var(--ak-t-short);
+  --dur: var(--ak-t-base);
+  --dur-mid: var(--ak-t-mid);
+  --ease: var(--ak-e-out);
+
+  --serif: var(--ak-f-serif);
+  --sans: var(--ak-f-sans);
+  --mono: var(--ak-f-mono);
+
+  /* 줄 높이 — 손가락 타깃 하한은 WCAG 2.5.8 의 24px 이고, 40px 은 그 위다.
+   * 밀도를 조이면 32px 로 내려가되 24px 밑으로는 가지 않는다. */
+  --row-h: 40px;
+  --pane-pad: var(--ak-s-6);
+  --measure: 72ch;
+
+  --z-raised: 10;
+  --z-sticky: 200;
+  --z-sheet: 300;
+  --z-modal: 400;
+  --z-toast: 500;
+
+  color-scheme: light;
+}
+
+:root[data-density="compact"] {
+  --row-h: 32px;
+  --pane-pad: var(--ak-s-4);
+}
+
+/* 다크 — 테마별 의미 토큰만 다시 가리킨다. 여기에 색 리터럴은 없다.
+ * 값 자체는 studio.html 이 쓰던 것 그대로이고, 이 블록은 그 값을 옮겨 온 것이지
+ * 새로 고른 것이 아니다. */
+:root[data-theme="dark"] {
+  --canvas: var(--ak-c-night-0);
+  --surface-1: var(--ak-c-night-1);
+  --surface-2: var(--ak-c-night-2);
+  --surface-3: var(--ak-c-night-3);
+  --sidebar: var(--ak-c-night-rail);
+  --panel: var(--ak-c-panel-dark);
+  --scrim: var(--ak-c-scrim-dark);
+  --overlay: var(--ak-c-overlay-dark);
+
+  --ink: var(--ak-c-parchment);
+  --muted: var(--ak-c-parchment-dim);
+  --faint: var(--ak-c-parchment-a55);
+  --on-gold: var(--ak-c-night-0);
+  --on-danger: var(--ak-c-night-0);
+
+  --line: var(--ak-c-hairline-a09);
+  --line-strong: var(--ak-c-hairline-a17);
+
+  --gold-mark: var(--ak-c-gold-500);
+  --gold-line: var(--ak-c-gold-500);
+  --gold: var(--ak-c-gold-500);
+  --gold-lit: var(--ak-c-gold-300);
+  --gold-fill: var(--ak-c-gold-950);
+  --gold-hover: var(--ak-c-gold-a18);
+
+  --focus: var(--ak-c-gold-500);
+
+  --ok: var(--ak-c-ok-500);
+  --ok-fill: var(--ak-c-ok-950);
+  --ok-line: var(--ak-c-ok-750);
+  --warn: var(--ak-c-warn-500);
+  --warn-fill: var(--ak-c-warn-950);
+  --warn-line: var(--ak-c-warn-750);
+  --danger: var(--ak-c-danger-500);
+  --danger-fill: var(--ak-c-danger-950);
+  --danger-line: var(--ak-c-danger-750);
+  --info: var(--ak-c-info-500);
+  --info-fill: var(--ak-c-info-950);
+  --info-line: var(--ak-c-info-750);
+
+  --shade: var(--ak-c-shade-dark);
+  --shadow: var(--ak-shadow-dark);
+  --glow: var(--ak-c-glow-a06);
+  --sheen: var(--ak-c-sheen-a05);
+  --bar: var(--ak-c-hairline-a14);
+  --bar-lit: var(--ak-c-hairline-a34);
+
+  color-scheme: dark;
+}
+
+/* 시스템 설정 존중 — 사용자가 라이트를 명시하지 않았을 때만 걸린다.
+ * 아래 매핑은 위 다크 블록과 선언이 같아야 하고, 시험이 두 블록을 대조한다.
+ * 순수 CSS 로는 한 선언 묶음을 선택자와 미디어 질의에 동시에 걸 수 없어 그 대조를
+ * 시험으로 대신한다 — 색값은 원시 층에 한 번만 있으므로 여기서 갈라질 수 있는 것은
+ * 이름 대응뿐이다. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --canvas: var(--ak-c-night-0);
+    --surface-1: var(--ak-c-night-1);
+    --surface-2: var(--ak-c-night-2);
+    --surface-3: var(--ak-c-night-3);
+    --sidebar: var(--ak-c-night-rail);
+    --panel: var(--ak-c-panel-dark);
+    --scrim: var(--ak-c-scrim-dark);
+    --overlay: var(--ak-c-overlay-dark);
+
+    --ink: var(--ak-c-parchment);
+    --muted: var(--ak-c-parchment-dim);
+    --faint: var(--ak-c-parchment-a55);
+    --on-gold: var(--ak-c-night-0);
+    --on-danger: var(--ak-c-night-0);
+
+    --line: var(--ak-c-hairline-a09);
+    --line-strong: var(--ak-c-hairline-a17);
+
+    --gold-mark: var(--ak-c-gold-500);
+    --gold-line: var(--ak-c-gold-500);
+    --gold: var(--ak-c-gold-500);
+    --gold-lit: var(--ak-c-gold-300);
+    --gold-fill: var(--ak-c-gold-950);
+    --gold-hover: var(--ak-c-gold-a18);
+
+    --focus: var(--ak-c-gold-500);
+
+    --ok: var(--ak-c-ok-500);
+    --ok-fill: var(--ak-c-ok-950);
+    --ok-line: var(--ak-c-ok-750);
+    --warn: var(--ak-c-warn-500);
+    --warn-fill: var(--ak-c-warn-950);
+    --warn-line: var(--ak-c-warn-750);
+    --danger: var(--ak-c-danger-500);
+    --danger-fill: var(--ak-c-danger-950);
+    --danger-line: var(--ak-c-danger-750);
+    --info: var(--ak-c-info-500);
+    --info-fill: var(--ak-c-info-950);
+    --info-line: var(--ak-c-info-750);
+
+    --shade: var(--ak-c-shade-dark);
+    --shadow: var(--ak-shadow-dark);
+    --glow: var(--ak-c-glow-a06);
+    --sheen: var(--ak-c-sheen-a05);
+    --bar: var(--ak-c-hairline-a14);
+    --bar-lit: var(--ak-c-hairline-a34);
+
+    color-scheme: dark;
+  }
+}

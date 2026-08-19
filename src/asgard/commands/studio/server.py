@@ -32,15 +32,37 @@ origin_allowed = loopback.origin_allowed
 
 class _Handler(loopback.LoopbackHandler):
     server_version = "AsgardStudio"
+    # 청크 전송은 HTTP/1.1 부터다. 기본값 1.0 으로는 터미널 출력을 흘려보낼 수 없다.
+    # 1.1 은 연결을 이어 쓴다는 뜻이기도 하다 — 그래서 아래 `timeout` 과 `_mutate` 의 몸통 처리가
+    # 같이 따라온다. 이어 쓰는 연결에서는 안 읽은 몸통과 놀고 있는 소켓이 둘 다 사고가 된다.
+    protocol_version = "HTTP/1.1"
+    # 다음 요청을 기다리는 시간의 상한. 없으면 놀고 있는 연결 하나가 스레드 하나를 영원히 붙든다
+    # (`ThreadingHTTPServer` 는 연결마다 스레드다). 흘려보내는 응답은 읽지 않고 쓰기만 하므로
+    # 이 값에 걸리지 않는다 — 상한은 `readline` 이 다음 요청 줄을 기다릴 때만 센다.
+    timeout = 30
 
     _send = loopback.LoopbackHandler.send_guarded
 
+    # 길이를 미리 모르는 응답. `dispatch` 는 `(status, ctype, bytes)` 를 돌려주는 계약이라
+    # 이 갈래는 그 앞에서 갈라져야 한다 — 40개가 넘는 나머지 경로의 모양을 하나 때문에
+    # 바꾸지 않기 위해서다.
+    _STREAMS = ("/api/terminal/stream",)
+
     def _route(self, head_only: bool = False) -> None:
+        # 읽기에도 몸통이 올 수 있다. `GET` 은 몸통을 쓰지 않으므로 여태 아무도 안 읽었고,
+        # 연결을 이어 쓰기 시작한 뒤로는 그 바이트가 다음 요청의 첫 줄이 됐다. 쓰기 쪽과
+        # 같은 처리를 건다 — 길이가 확정되면 제거하고, 아니면 끊는다.
+        self._drain(self._declared_length())
         if not host_allowed(self.headers.get("Host")):
             self._send(403, "text/plain; charset=utf-8", b"forbidden host", head_only)
             return
         parts = urlsplit(self.path)
         root = getattr(self.server, "root", os.getcwd())
+        if parts.path in self._STREAMS and not head_only:
+            from . import terminal
+
+            terminal.stream(self, parse_qs(parts.query))
+            return
         try:
             status, ctype, body = dispatch(self.command, parts.path, parse_qs(parts.query), root)
         except Exception as exc:
@@ -55,18 +77,84 @@ class _Handler(loopback.LoopbackHandler):
     def do_HEAD(self) -> None:
         self._route(head_only=True)
 
+    # 한 요청이 남긴 바이트가 다음 요청의 첫 줄로 읽히지 않도록, 몸통은 **읽거나 끊거나** 한다.
+    # HTTP/1.0 일 때는 응답 뒤 소켓이 닫혀서 남은 바이트가 그냥 버려졌다. 연결을 이어 쓰기
+    # 시작하면 그 바이트가 다음 요청으로 파싱된다 — 거절한 요청의 몸통이 다음 명령이 된다.
+    _BODY_LIMIT = 256_000
+
+    def _drain(self, size: int) -> None:
+        """읽지 않을 몸통을 소켓에서 제거한다. 너무 크면 제거하는 대신 연결을 끊는다."""
+        if size <= 0:
+            return
+        if size > self._BODY_LIMIT:
+            self.close_connection = True
+            return
+        try:
+            self.rfile.read(size)
+        except OSError:
+            self.close_connection = True
+
+    def _declared_length(self) -> int:
+        """몸통 길이가 **하나로 확정될 때만** 그 값을, 아니면 0 과 함께 연결을 끊는다.
+
+        나쁜 모양을 하나씩 세어 막으려다 네 갈래를 놓쳤다(중복 `Content-Length`, 음수,
+        콜론 앞 공백이 붙은 `Transfer-Encoding`, 몸통 달린 `GET`). 그래서 방향을 뒤집었다:
+        길이를 의심 없이 셀 수 있는 요청만 통과시키고 나머지는 전부 끊는다. 새 우회 모양이
+        생겨도 그것은 "확정되지 않음"으로 떨어지지 통과하지 않는다.
+
+        끊는 이유는 하나다 — 안 읽은 몸통이 이어 쓰는 연결에서 다음 요청의 첫 줄이 된다.
+        헤더 이름은 공백을 떼고 소문자로 맞춰 본다. `email` 파서는 `Transfer-Encoding :`
+        처럼 콜론 앞에 공백이 있으면 이름에 그 공백을 남기므로, `.get()` 한 번으로는 못 잡는다."""
+        if getattr(self.headers, "defects", None):
+            # 헤더 한 줄이 망가지면 `email` 파서는 거기서 **머리 읽기를 멈춘다** — 뒤따르는
+            # 헤더가 통째로 사라지고 그 바이트는 몸통 자리에 남는다. 실측: `Transfer-Encoding :`
+            # (콜론 앞 공백) 하나로 `Content-Type` 이하가 전부 없어지고 `MissingHeaderBody
+            # SeparatorDefect` 만 남았다. 이름을 맞춰 보는 검사로는 못 잡는다 — 그 이름 자체가
+            # 파싱되지 않았기 때문이다. 머리를 믿을 수 없으면 길이도 믿을 수 없다.
+            self.close_connection = True
+            return 0
+        names = {str(k).strip().lower() for k in self.headers.keys()}
+        if "transfer-encoding" in names:
+            # 길이가 몸통 안 청크에 적혀 있다. 이 표면은 청크를 안 읽으므로 셀 수가 없다.
+            self.close_connection = True
+            return 0
+        declared = [v for k, v in self.headers.items() if str(k).strip().lower() == "content-length"]
+        if not declared:
+            return 0
+        if len({v.strip() for v in declared}) != 1:
+            # 값이 갈리면 어느 쪽이 몸통인지 우리가 정할 일이 아니다.
+            self.close_connection = True
+            return 0
+        raw = declared[0].strip()
+        # `isdecimal()` 이어야 한다. `isdigit()` 은 위첨자 `²`·`³`·`¹` 에 참을 내는데 `int()` 는
+        # 그것을 거절하므로, 검사를 통과한 값이 아래에서 `ValueError` 로 터져 나간다 — 요청은
+        # 거절되는 대신 응답 없이 죽는다. 그 셋이 여기까지 닿는 이유는 latin-1 에 있어서다:
+        # `http.client` 가 머리를 iso-8859-1 로 읽으므로 회선을 타고 올 수 있는 글자는 그 범위뿐이고,
+        # 그래서 실제로 통과할 수 있는 값은 ASCII 숫자열 하나뿐이다.
+        if not raw.isdecimal():  # 음수·16진수·공백·빈 값도 여기서 걸린다
+            self.close_connection = True
+            return 0
+        return int(raw)
+
     def _mutate(self, method: str) -> None:
         trusted_json = self.headers.get("X-Asgard-Studio") == "1" and self.headers.get(
             "Content-Type", ""
         ).lower().startswith("application/json")
+        declared = self._declared_length()
         if not host_allowed(self.headers.get("Host")) or (
             not origin_allowed(self.headers.get("Origin")) and not trusted_json
         ):
+            # 거절해도 몸통은 제거한다 — 안 걷으면 그것이 다음 요청 줄이 된다.
+            self._drain(declared)
             self._send(403, "text/plain; charset=utf-8", b"forbidden")
             return
+        if declared > self._BODY_LIMIT:
+            # 상한을 넘은 몸통은 잘라 읽지 않는다. 잘라 읽으면 나머지가 소켓에 남는다.
+            self.close_connection = True
+            self._send(413, "text/plain; charset=utf-8", b"payload too large")
+            return
         try:
-            size = min(int(self.headers.get("Content-Length") or 0), 256_000)
-            payload = json.loads(self.rfile.read(size).decode() or "{}")
+            payload = json.loads(self.rfile.read(declared).decode() or "{}")
             if not isinstance(payload, dict):
                 payload = {}
         except Exception:

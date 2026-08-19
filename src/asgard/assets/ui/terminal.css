@@ -1,0 +1,109 @@
+/* 터미널 화면 — 판의 뼈대만 여기 있다. 글자판 자체의 색은 xterm 이 JS 객체로 받으므로
+ * `terminal.js` 가 이 토큰들을 읽어서 넣는다(CSS 변수로는 못 준다).
+ *
+ * 읽는 층은 tokens.css 의 의미 토큰 하나뿐이다 — 색 리터럴도 `--ak-*` 원시 토큰도 없다.
+ */
+
+/* 담는 판. 바깥 `.view` 의 배치 규칙을 모르는 채로 놓이므로 세 가지를 같이 건다:
+ * 부모가 flex 열이면 `flex`, 높이가 정해져 있으면 `height`, 둘 다 아니면 `min-height`
+ * 가 화면을 만든다. 하나만 두면 나머지 두 경우에서 판이 한 줄 높이로 접힌다. */
+.trm {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-sm);
+  height: 100%;
+  min-height: 60vh;
+}
+
+/* ── 머리줄 ──────────────────────────────────────────────────────────────── */
+
+.trm__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex: none;
+}
+
+/* 지금 셸이 선 자리. 길면 앞을 자른다 — 뒤쪽 디렉터리가 구별에 쓰인다. */
+.trm__where {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: nowrap;
+  direction: rtl;
+  text-overflow: ellipsis;
+}
+
+.trm__where > span {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.trm__acts {
+  display: flex;
+  gap: var(--space-xs);
+  flex: none;
+}
+
+/* 머리줄 단추는 본문 단추보다 한 단계 작다. 타깃은 WCAG 2.5.8 의 24px 위에 둔다. */
+.trm__acts .ak-btn {
+  height: 32px;
+  padding: 0 var(--space-sm);
+  font-size: 12px;
+}
+
+/* ── 글자판 ──────────────────────────────────────────────────────────────── */
+
+.trm__screen {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--space-sm);
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  background: var(--surface-1);
+  overflow: hidden;
+}
+
+/* 초점이 글자판에 있는 동안은 테두리가 그 사실을 말한다. xterm 은 안쪽 textarea 로
+ * 초점을 받으므로 판 자체에는 `:focus-visible` 이 오지 않는다. */
+.trm__screen:has(.xterm.focus) {
+  border-color: var(--gold-line);
+}
+
+.trm__screen .xterm {
+  height: 100%;
+}
+
+/* 값을 읽으려고만 두는 자리. 그려지지 않아도 계산된 색은 나온다. */
+.trm__probe {
+  display: none;
+}
+
+/* ── 알림 ────────────────────────────────────────────────────────────────── */
+
+/* 셸 종료·오류·재연결이 여기로 온다. `.ak-error`·`.ak-empty` 를 그대로 쓰되
+ * 가운데 정렬 대신 왼쪽 정렬이다 — 한 줄이 아니라 이유와 처방 두 줄이 온다.
+ * 선택자를 `.trm >` 로 한 단 올린 이유는 두 파일의 적재 순서에 기대지 않기 위해서다.
+ * 같은 무게면 나중에 온 규칙이 이기는데, 그 순서를 정하는 것은 이 파일이 아니다. */
+.trm > .trm__notice {
+  flex: none;
+  align-items: flex-start;
+  gap: var(--space-xs);
+  padding: var(--space-md);
+  text-align: left;
+}
+
+/* `.ak-empty` 가 `display: flex` 를 걸어 두므로 `hidden` 만으로는 안 사라진다. */
+.trm > .trm__notice[hidden] {
+  display: none;
+}
+
+.trm__notice p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}

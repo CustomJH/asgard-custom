@@ -176,6 +176,11 @@ exclude = ["**/__pycache__/**", "**/*.pyc"]
 artifacts = [
   "src/asgard/assets/*.png",
   "src/asgard/assets/*.html",
+  # 창이 파일로 읽는 것들. 이 세 줄이 없으면 개발 트리에서는 멀쩡하고 **설치본에서만** 404 가 난다 —
+  # 소스에서 돌리는 시험은 통과하므로 아무도 못 본다. tests/test_packaging_assets.py 가 못박는다.
+  "src/asgard/assets/ui/**",  # 디자인 토큰·기본 컴포넌트·화면별 스타일
+  "src/asgard/assets/js/**",  # 맵·메모리·터미널 화면 모듈
+  "src/asgard/assets/vendor/**",  # 벤더링 (xterm.js)
   "src/asgard/assets/container_kit/**",  # cross-platform Docker/Podman runtime
   "src/asgard/assets/sandbox_kit/**",  # Docker Sandboxes custom-agent kit
   "src/asgard/assets/k6_kit/**",  # asgard-k6 — 부하 시나리오·시나리오 라이브러리·기준 표적(pacer)

@@ -1,0 +1,553 @@
+/* Asgard 기본 컴포넌트 — studio · map · memory 가 실제로 쓰는 부품만 있다.
+ *
+ * 읽는 층은 tokens.css 의 의미 토큰 하나뿐이다. 이 파일에 색 리터럴이나 `--ak-*` 원시
+ * 토큰이 나오면 그 규칙은 테마를 따라오지 못한다.
+ * 클래스 접두는 `ak-` 이고, 상태는 요소의 상태로 적는다 — `:disabled`, `[aria-selected]`,
+ * `[open]` 처럼 브라우저와 보조기술이 이미 아는 것을 클래스로 다시 적지 않는다.
+ *
+ * 모든 조작 부품은 다섯 상태를 배송한다: 기본 · hover · focus-visible · active · disabled.
+ */
+
+/* ── 바탕과 초점 ─────────────────────────────────────────────────────────── */
+
+/* `hidden` 은 브라우저가 `display:none` 으로 구현한다 — 그래서 컴포넌트가 `display` 를 적는
+   순간 그 속성이 **무력해진다.** 이 키트는 거의 모든 부품에 `display` 를 적으므로(`.ak-btn` 은
+   `inline-flex`), 규칙이 없으면 `hidden` 을 단 요소가 그대로 화면에 남는다. 실측: 지도의
+   "필터로 모두 숨겨졌어요" 단추가 `hidden` 인 채 노드 265개 위에 떠 있었다.
+   `!important` 를 쓰는 이유는 부품의 `display` 가 항상 더 구체적이기 때문이다 — 여기서
+   지지 않으려면 이 한 줄뿐이다. */
+[hidden] {
+  display: none !important;
+}
+
+.ak-root {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.55;
+  /* 한국어는 기본값에서 음절 사이 아무 데나 끊긴다. 어절을 지키되 넘칠 때는 강제로 끊는다. */
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+/* 초점 테두리는 두 테마 모두에서 보인다: `--focus` 는 라이트 3.96 · 다크 8.35 로
+ * WCAG 2.4.11 의 3:1 위에 있다. 마우스 클릭에는 뜨지 않게 `:focus-visible` 로만 건다. */
+:where(.ak-root) :focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* 스크롤막대 — 기본 막대는 굵고 밝은 회색이라 다크에서 혼자 다른 제품처럼 보인다.
+ * 표준 표기가 정본이고, 아래 가상요소는 그것을 못 읽는 옛 엔진용 대비책이다.
+ * 투명 테두리 + content-box 는 보이는 굵기 5px · 잡는 자리 11px 을 만든다. */
+.ak-root * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--bar) transparent;
+}
+
+.ak-root ::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+
+.ak-root ::-webkit-scrollbar-track,
+.ak-root ::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.ak-root ::-webkit-scrollbar-thumb {
+  background-color: var(--bar);
+  background-clip: content-box;
+  border: 3px solid transparent;
+  border-radius: var(--r-pill);
+}
+
+.ak-root ::-webkit-scrollbar-thumb:hover {
+  background-color: var(--bar-lit);
+  border-width: 2px;
+}
+
+/* ── 버튼 ────────────────────────────────────────────────────────────────── */
+
+.ak-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  height: var(--row-h);
+  padding: 0 var(--space-lg);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r1);
+  background: var(--surface-1);
+  color: var(--ink);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+  /* 색과 이동만 움직인다 — `all` 은 레이아웃 속성까지 끌고 들어가 프레임을 넘긴다. */
+  transition:
+    background-color var(--dur-quick) var(--ease),
+    border-color var(--dur-quick) var(--ease),
+    transform var(--dur-quick) var(--ease);
+}
+
+.ak-btn:hover:not(:disabled) {
+  background: var(--surface-2);
+  border-color: var(--line-strong);
+}
+
+.ak-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.ak-btn:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.ak-btn--primary {
+  border-color: var(--gold-line);
+  background: var(--gold-mark);
+  color: var(--on-gold);
+}
+
+/* 금 채움 위의 잉크는 라이트 8.21 · 다크 8.35 다. 금을 글자로 쓰는 게 아니라
+ * 글자를 금 위에 올리는 쪽이라 라이트에서도 2.37 문제에 걸리지 않는다.
+ * hover 는 `--ink` 를 12% 섞는다. 라이트에서는 잉크가 검정이라 채움이 내려가고(#B09254,
+ * 잉크 대비 6.56), 다크에서는 잉크가 양피지라 올라간다(#CAAB6B, 8.99) — 테마마다 다른
+ * hover 토큰을 두 개 더 만들지 않고 한 선언으로 양쪽을 맞춘다. */
+.ak-btn--primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--gold-mark) 88%, var(--ink));
+  border-color: color-mix(in srgb, var(--gold-mark) 88%, var(--ink));
+}
+
+.ak-btn--secondary {
+  border-color: var(--gold-line);
+  background: var(--gold-fill);
+  color: var(--gold-lit);
+}
+
+.ak-btn--secondary:hover:not(:disabled) {
+  background: var(--gold-hover);
+}
+
+.ak-btn--danger {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: var(--on-danger);
+}
+
+/* 라이트 #A84E3C 위 흰 글자 5.50 · 다크 #E8947D 위 밤 글자 8.44. */
+.ak-btn--danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 88%, var(--ink));
+  border-color: color-mix(in srgb, var(--danger) 88%, var(--ink));
+}
+
+/* ── 입력 ────────────────────────────────────────────────────────────────── */
+
+.ak-input,
+.ak-textarea,
+.ak-select {
+  width: 100%;
+  padding: 0 var(--space-sm);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r1);
+  background: var(--canvas);
+  color: var(--ink);
+  font: inherit;
+  transition:
+    border-color var(--dur-quick) var(--ease),
+    background-color var(--dur-quick) var(--ease);
+}
+
+.ak-input,
+.ak-select {
+  height: var(--row-h);
+}
+
+.ak-textarea {
+  min-height: calc(var(--row-h) * 2);
+  padding: var(--space-xs) var(--space-sm);
+  resize: vertical;
+  line-height: 1.55;
+}
+
+.ak-input::placeholder,
+.ak-textarea::placeholder {
+  color: var(--faint);
+}
+
+.ak-input:hover:not(:disabled),
+.ak-textarea:hover:not(:disabled),
+.ak-select:hover:not(:disabled) {
+  border-color: var(--gold-line);
+}
+
+.ak-input:disabled,
+.ak-textarea:disabled,
+.ak-select:disabled {
+  opacity: 0.38;
+  background: var(--surface-1);
+  cursor: not-allowed;
+}
+
+/* 오류는 색만으로 말하지 않는다 — 이 테두리 옆에는 `.ak-field__error` 문장이 같이 선다. */
+.ak-input[aria-invalid="true"],
+.ak-textarea[aria-invalid="true"],
+.ak-select[aria-invalid="true"] {
+  border-color: var(--danger);
+  background: var(--danger-fill);
+}
+
+.ak-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2xs);
+}
+
+.ak-field__label {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ak-field__error {
+  color: var(--danger);
+  font-size: 12px;
+}
+
+/* ── 카드 ────────────────────────────────────────────────────────────────── */
+
+.ak-card {
+  padding: var(--pane-pad);
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  background: var(--surface-1);
+}
+
+.ak-card__title {
+  margin: 0 0 var(--space-xs);
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.ak-card__note {
+  color: var(--muted);
+  font-size: 13px;
+  max-width: var(--measure);
+}
+
+/* ── 탭 ──────────────────────────────────────────────────────────────────── */
+
+.ak-tabs {
+  display: flex;
+  gap: var(--space-xs);
+  border-bottom: 1px solid var(--line);
+}
+
+.ak-tab {
+  height: var(--row-h);
+  padding: 0 var(--space-sm);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+  transition:
+    color var(--dur-quick) var(--ease),
+    border-color var(--dur-quick) var(--ease);
+}
+
+.ak-tab:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+.ak-tab[aria-selected="true"] {
+  color: var(--gold);
+  border-bottom-color: var(--gold-line);
+}
+
+.ak-tab:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.ak-tab:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+/* ── 대화상자 ────────────────────────────────────────────────────────────── */
+
+/* 표준 `<dialog>` 를 쓴다 — 초점 가두기, Esc 닫기, 배경 inert 를 브라우저가 이미 한다.
+ * 직접 만든 오버레이는 그 셋을 매번 다시 틀린다. */
+.ak-dialog {
+  width: min(92vw, 520px);
+  padding: var(--pane-pad);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r3);
+  background: var(--surface-1);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+}
+
+.ak-dialog::backdrop {
+  background: var(--overlay);
+}
+
+.ak-dialog[open] {
+  animation: ak-rise var(--dur) var(--ease);
+}
+
+.ak-dialog__title {
+  margin: 0 0 var(--space-xs);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.ak-dialog__body {
+  color: var(--muted);
+  max-width: var(--measure);
+}
+
+.ak-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-xs);
+  margin-top: var(--space-lg);
+}
+
+/* ── 토스트 ──────────────────────────────────────────────────────────────── */
+
+.ak-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-xs);
+  max-width: 420px;
+  padding: var(--space-sm) var(--space-md);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r2);
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+  animation: ak-rise var(--dur) var(--ease);
+}
+
+.ak-toast--ok {
+  border-color: var(--ok-line);
+  background: var(--ok-fill);
+}
+
+.ak-toast--warn {
+  border-color: var(--warn-line);
+  background: var(--warn-fill);
+}
+
+.ak-toast--danger {
+  border-color: var(--danger-line);
+  background: var(--danger-fill);
+}
+
+.ak-toast--info {
+  border-color: var(--info-line);
+  background: var(--info-fill);
+}
+
+/* ── 배지·칩 ─────────────────────────────────────────────────────────────── */
+
+/* 틴트 면 위의 글자는 `--ink` 다. 상태 잉크를 자기 틴트 위에 올리면 라이트에서
+ * 4.09~4.36 으로 내려가 본문 기준을 놓친다. 상태는 앞의 점이 나타낸다. */
+.ak-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  padding: 2px var(--space-xs);
+  border: 1px solid var(--line);
+  border-radius: var(--r1);
+  background: var(--surface-2);
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ak-badge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: var(--r-pill);
+  background: var(--muted);
+  flex: none;
+}
+
+.ak-badge--ok::before {
+  background: var(--ok);
+}
+
+.ak-badge--warn::before {
+  background: var(--warn);
+}
+
+.ak-badge--danger::before {
+  background: var(--danger);
+}
+
+.ak-badge--info::before {
+  background: var(--info);
+}
+
+.ak-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2xs);
+  height: 28px;
+  padding: 0 var(--space-sm);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-quick) var(--ease),
+    color var(--dur-quick) var(--ease);
+}
+
+.ak-chip:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.ak-chip[aria-pressed="true"] {
+  border-color: var(--gold-line);
+  background: var(--gold-fill);
+  color: var(--gold-lit);
+}
+
+.ak-chip:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.ak-chip:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+/* ── 표 ──────────────────────────────────────────────────────────────────── */
+
+.ak-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.ak-table th {
+  padding: var(--space-xs) var(--space-sm);
+  border-bottom: 1px solid var(--line-strong);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.ak-table td {
+  padding: var(--space-xs) var(--space-sm);
+  border-bottom: 1px solid var(--line);
+}
+
+.ak-table tbody tr:hover {
+  background: var(--surface-2);
+}
+
+/* ── 빈 상태 · 오류 상태 · 로딩 ──────────────────────────────────────────── */
+
+.ak-empty,
+.ak-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-2xl) var(--space-lg);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r2);
+  text-align: center;
+}
+
+.ak-empty {
+  color: var(--muted);
+}
+
+/* 바탕이 `--danger-fill` 이 아니라 `--canvas` 인 이유: 붉은 틴트 위에 붉은 제목을
+ * 올리면 라이트에서 4.09 로 내려간다. 캔버스 위면 4.56 이라 본문 기준을 지킨다. */
+.ak-error {
+  border-style: solid;
+  border-color: var(--danger-line);
+  background: var(--canvas);
+  color: var(--ink);
+}
+
+.ak-error__title {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+/* 뼈대는 무엇이 올지 아는 자리에만 쓴다. 높이를 미리 잡아 두면 내용이 도착할 때
+ * 줄이 밀리지 않는다(CLS). */
+.ak-skeleton {
+  display: block;
+  min-height: 1em;
+  border-radius: var(--r1);
+  background: linear-gradient(90deg, var(--surface-2), var(--surface-3), var(--surface-2));
+  background-size: 200% 100%;
+  animation: ak-sweep 1200ms linear infinite;
+}
+
+.ak-skeleton + .ak-skeleton {
+  margin-top: var(--space-xs);
+}
+
+/* ── 모션 ────────────────────────────────────────────────────────────────── */
+
+@keyframes ak-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ak-sweep {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* 움직임을 줄여 달라고 한 사용자에게는 이동을 없애고 넘어가는 것만 남긴다.
+ * 초점 테두리는 여기서 건드리지 않는다 — 그건 대체 없이 지우면 안 되는 것이다. */
+@media (prefers-reduced-motion: reduce) {
+  .ak-root *,
+  .ak-root *::before,
+  .ak-root *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .ak-btn:active:not(:disabled),
+  .ak-tab:active:not(:disabled),
+  .ak-chip:active:not(:disabled) {
+    transform: none;
+  }
+
+  .ak-skeleton {
+    animation: none;
+    background: var(--surface-2);
+  }
+}
