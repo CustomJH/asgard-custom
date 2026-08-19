@@ -506,6 +506,7 @@ _PARITY_HOOKS = (
     "unattended-context.py",
     "subagent-gate.py",
     "craft-gate.py",
+    "style-gate.py",
     "budget-guard.py",
     "tutor-note.py",
     "lagom-activate.py",

@@ -368,6 +368,17 @@ def cc_settings() -> str:
                                 }
                             ],
                         },
+                        # 저장소가 정한 코드 스타일 — 규칙은 checkstyle.xml·eslint.config.js 쪽에 있고
+                        # 이 훅은 그것을 이 세션이 쓴 파일에만 물린다. `code_style` 을 선언하지 않은
+                        # 저장소에서는 설정 파일 한 번 읽고 끝난다 (자식 프로세스 없음).
+                        {
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/style-gate.py"',
+                                }
+                            ],
+                        },
                     ],
                     # Canon Law 10 (Trinity) — Stop-time verifier gate: diff-hash physical comparison.
                     "Stop": [
@@ -376,6 +387,12 @@ def cc_settings() -> str:
                                 {
                                     "type": "command",
                                     "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/verifier-gate.py"',
+                                },
+                                # 코드 스타일 — 조율자가 직접 쓴 코드는 SubagentStop 을 안 지나므로
+                                # 그 자리 하나로는 메인 루프의 쓰기가 통째로 판정 밖에 남는다.
+                                {
+                                    "type": "command",
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/style-gate.py"',
                                 },
                                 # Canon Law 9 — the same tracker, second observation site. This host
                                 # does not call PostToolUse when a tool call fails (measured; see the

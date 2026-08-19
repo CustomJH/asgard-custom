@@ -46,11 +46,36 @@ def project_settings() -> str:
             "enabled": True,
         },
     }
+    # 코드 스타일은 시드에 주석만 둔다 — 실 키가 없으면 게이트가 안 돌기 때문에, 이 자리는
+    # "무엇을 적으면 켜지는지"를 보여 주는 용도다 (project_memory 와 같은 규약).
+    code_style_seed = {
+        "_comment": (
+            "Code style this repository already enforces — Checkstyle, ESLint, clang-format and the like. "
+            "`asgard style init` scans for their config files and fills `tools` in; edit it afterwards. "
+            "While `tools` is empty the style gate never runs. One entry: "
+            '{"name": …, "check": <command>, "fix": <command>, "languages": [".java"], "paths": ["be"], '
+            '"cwd": "be", "diagnostic": <regex with file/line/message groups>, "autofix": false}. '
+            "`{files}` inside a command is replaced with the paths being judged. "
+            "Keys starting with `_` are comments and ignored."
+        ),
+        "_example": {
+            "enabled": True,
+            "tools": [
+                {
+                    "name": "checkstyle",
+                    "check": "./gradlew checkstyleMain --console=plain",
+                    "fix": "./gradlew spotlessApply",
+                    "languages": [".java"],
+                }
+            ],
+        },
+    }
     return (
         json.dumps(
             {
                 "lagom": {"mode": DEFAULT_MODE},
                 "project_memory": project_memory_seed,
+                "code_style": code_style_seed,
                 "agent_models": {},
                 "trinity_policy": _POLICY,
             },

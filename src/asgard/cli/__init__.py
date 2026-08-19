@@ -30,6 +30,7 @@ _GROUPS = (
     "agent",
     "map",
     "just",
+    "style",
     "role",
     "siege",
     "skills",

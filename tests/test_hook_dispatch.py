@@ -262,7 +262,14 @@ class TestWiringBoundary(unittest.TestCase):
                 "memory-activate",
                 "subagent-gate",
             },
-            "Stop": {"verifier-gate", "memory-activate", "map-activate", "failure-tracker", "tutor-note"},
+            "Stop": {
+                "verifier-gate",
+                "style-gate",
+                "memory-activate",
+                "map-activate",
+                "failure-tracker",
+                "tutor-note",
+            },
         }
         for event, names in expected.items():
             reached = {n for command in self._commands(event) for n in _HOOK_IN_COMMAND.findall(command)}

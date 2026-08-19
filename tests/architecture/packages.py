@@ -200,6 +200,7 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
                     "agent",
                     "map",
                     "just",
+                    "style",
                     "role",
                     "siege",
                     "skills",
@@ -261,6 +262,9 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
                     "just",
                     "manual",
                     "memory_dashboard",
+                    # style — 저장소가 선언한 스타일 규격의 표면. craft·just 와 같은 자리다:
+                    # 저장소 뿌리를 health 에서 받고, 판정 자체는 도메인(code_style)이 한다.
+                    "style",
                     # automations — commands.health의 프로젝트 경계 해석을 읽으므로 명령 소비 등급이다.
                     "automations",
                     # orchestrate — 정책·엔진 준비 상태의 표면. tutor 와 같은 자리인 이유도 같다:
@@ -391,6 +395,7 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
                     "budget_guard",
                     "charter_activate",
                     "craft_gate",
+                    "style_gate",
                     "dispatch_context",
                     "failure_tracker",
                     "git_guard",

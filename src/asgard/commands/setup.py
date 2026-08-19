@@ -323,6 +323,7 @@ def hook_files(hooks_dir: str, client: str = "claude-code") -> list[tuple[str, s
         (j(hooks_dir, "unattended-context.py"), hook("unattended-context")),  # Canon 8 무인 감지
         (j(hooks_dir, "subagent-gate.py"), hook("subagent-gate")),  # 역할 로그 규율 (SubagentStop)
         (j(hooks_dir, "craft-gate.py"), hook("craft-gate")),  # 미시 형상 래칫 (SubagentStop)
+        (j(hooks_dir, "style-gate.py"), hook("style-gate")),  # 저장소 코드 스타일 (Stop/SubagentStop)
         (j(hooks_dir, "budget-guard.py"), hook("budget-guard")),  # 소비 상한 (UserPromptSubmit/PreToolUse Agent)
         (j(hooks_dir, "tutor-note.py"), hook("tutor-note")),  # 되짚기 카드 (Stop, 안 막음)
         # Lagom — 훅 3종 + 캐논 단일 소스 (훅이 모드 필터해 주입)

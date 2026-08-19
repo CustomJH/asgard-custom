@@ -42,6 +42,7 @@ REGISTRY: dict[str, str] = {
     "unattended-context": "unattended_context",  # Canon 8 — 무인 세션 감지·계약 주입
     "subagent-gate": "subagent_gate",  # Trinity — SubagentStop 역할 로그 규율 강제 (3클라이언트 공통)
     "craft-gate": "craft_gate",  # 미시 형상 래칫 — SubagentStop, 이 세션의 쓰기만 판정
+    "style-gate": "style_gate",  # 저장소가 정한 코드 스타일 — Stop/SubagentStop, 안 들인 저장소는 무개입
     "budget-guard": "budget_guard",  # 소비 상한 — UserPromptSubmit/PreToolUse(Task), 쓰기 전 차단
     "tutor-note": "tutor_note",  # 되짚기 — Stop, 사용자에게 물음을 넘긴다 (막지 않는다)
     "lagom-activate": "lagom_activate",  # Lagom — SessionStart 모드 초기화·룰 주입

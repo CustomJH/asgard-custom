@@ -71,6 +71,13 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 # justfile — 실행 표면. code_map 과 같은 층이고 그 감지기를 부른다: 저장소가
                 # 무엇을 돌릴 수 있는지 읽어 파일 하나로 낸다. 명령을 도는 것은 just 자신이다.
                 "justfile",
+                # code_style — 저장소가 선언한 스타일 도구를 부르고 그 출력을 판정으로 바꾼다.
+                # justfile 과 같은 자리인 이유는 방향이 같아서다: 규칙을 스스로 갖지 않고,
+                # 저장소가 이미 정해 둔 것(Justfile·checkstyle.xml)을 읽어 하나의 산출물을 낸다.
+                # code_style_catalog 는 그 도구를 저장소에서 찾아내는 목록이고, Tool 하나만 보므로
+                # code_style 보다 위 등급이다.
+                "code_style",
+                "code_style_catalog",
                 "health",
                 # loop — 컨트롤러. health(센서)·craft_rules(단위) 위에 서고, 고르기만 한다.
                 # 센서와 같은 층인 이유는 둘 다 판단을 내리지 않기 때문이다 — 적용은 위층 몫.
@@ -311,7 +318,11 @@ SUBTIERS: dict[str, list[tuple[str, frozenset[str]]]] = {
         # 계측을 합쳐 결론을 낸다. tutor_teach 가 craft 옆인 이유는 방향이다 — 탐침(tutor_probes)과
         # 기록(tutor_growth)을 읽어 "무엇을 어떤 순서로 읽어야 하는가"를 만들고, 그 결론을
         # 적용 등급의 tutor 가 화면에 넣는다. craft 를 부르지 않는 것이 이 자리의 조건이다.
-        ("판정", frozenset({"craft", "tutor_teach", "tutor_brief"})),
+        # code_style 이 craft 옆인 이유는 산출물이 같아서다 — 막는 판정 목록 하나. 규칙의
+        # 출처만 다르다(craft 는 이 저장소가, code_style 은 사용자가 선언한 도구가 갖는다).
+        ("판정", frozenset({"craft", "code_style", "tutor_teach", "tutor_brief"})),
+        # code_style_catalog — 판정 등급의 Tool 하나를 얹는다. 언어가 늘어도 판정은 안 바뀐다.
+        ("규격 목록", frozenset({"code_style_catalog"})),
         # 결론을 소비한다 — 막고(thor_gate·freyja_gate) 고치고(craft_fix) 되짚는다(tutor).
         ("적용", frozenset({"craft_fix", "freyja_gate", "thor_gate", "tutor"})),
         # 적용 결과와 튜터의 결정론적 사실을 읽어 승인형 제안 기록으로 만든다. 자동 적용은 없다.

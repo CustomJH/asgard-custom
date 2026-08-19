@@ -162,6 +162,8 @@ def cursor_hooks_json() -> str:
                         {"command": f"{py} .cursor/hooks/subagent-gate.py stop"},
                         # 미시 형상 래칫 — 매처 없음: 규율은 역할이 아니라 쓴 코드를 따라간다
                         {"command": f"{py} .cursor/hooks/craft-gate.py cursor"},
+                        # 저장소가 정한 코드 스타일 — 선언이 없으면 설정 한 번 읽고 끝난다
+                        {"command": f"{py} .cursor/hooks/style-gate.py cursor"},
                     ],
                     "postToolUse": [
                         {
@@ -178,6 +180,7 @@ def cursor_hooks_json() -> str:
                     ],
                     "stop": [
                         {"command": f"{py} .cursor/hooks/verifier-gate.py cursor"},
+                        {"command": f"{py} .cursor/hooks/style-gate.py cursor"},
                         {"command": f"{py} .cursor/hooks/memory-activate.py cursor"},
                         {"command": f"{py} .cursor/hooks/map-activate.py cursor"},
                         {"command": f"{py} .cursor/hooks/tutor-note.py cursor"},

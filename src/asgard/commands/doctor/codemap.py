@@ -172,6 +172,40 @@ def _run_surface_check(root: str) -> dict | None:
         return None  # 진단이 진단 대상을 막지 않는다
 
 
+def _code_style_check(root: str) -> dict | None:
+    """코드 스타일 — 이 저장소가 규격을 들였다면, 선언한 도구가 몇이고 무엇인가.
+
+    실행 표면과 같은 규약으로 **안 들인 저장소에는 행이 없다**. 다만 규격 파일은 있는데 선언이
+    없는 경우는 한 줄 세운다 — `checkstyle.xml` 이 저장소에 있는데 게이트가 한 번도 안 도는
+    상태는 사용자가 고를 만한 것이지, 모르고 지나갈 것이 아니다."""
+    try:
+        from ... import code_style, code_style_catalog
+
+        declared = code_style.declared(root)
+        if not declared:
+            found = code_style_catalog.detect(root)
+            if not found:
+                return None  # 규격도 선언도 없다 — 진단할 것이 없다
+            return {
+                "name": "code style",
+                "ok": True,
+                "detail": f"{len(found)} tool(s) found in the repo, none declared — {', '.join(t.name for t in found[:4])}",
+                "fix": "asgard style init",
+            }
+        autofix = sum(1 for t in declared if t.autofix)
+        detail = f"{len(declared)} tool(s) — {', '.join(t.name for t in declared[:4])}"
+        if autofix:
+            detail += f" · {autofix} run their fix command automatically"
+        return {
+            "name": "code style",
+            "ok": code_style.configured(root),
+            "detail": detail if code_style.configured(root) else detail + " · disabled (enabled: false)",
+            "fix": "asgard style check",
+        }
+    except Exception:
+        return None  # 진단이 진단 대상을 막지 않는다
+
+
 def _custom_manual_check(root: str) -> dict | None:
     """커스텀 매뉴얼 — 오딘이 쓴 프로젝트 규칙. 이 계층은 조용히 실패한다(이름 오타·주석 안·별칭
     중복·상한 절단) — 어느 쪽이든 에이전트는 평소처럼 돌고 사용자는 규칙이 적용된 줄 안다.

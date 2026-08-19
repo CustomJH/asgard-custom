@@ -258,11 +258,23 @@ command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/subagent-gate.py"
 type = "command"
 command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/craft-gate.py" codex'
 
+# Code style the repository itself declared — the rules live in checkstyle.xml / eslint.config.js,
+# this hook only holds the files this session wrote to them. No declaration, no child process.
+[[hooks.SubagentStop]]
+
+[[hooks.SubagentStop.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/style-gate.py" codex'
+
 [[hooks.Stop]]
 
 [[hooks.Stop.hooks]]
 type = "command"
 command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/verifier-gate.py" codex'
+
+[[hooks.Stop.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/style-gate.py" codex'
 
 [[hooks.Stop.hooks]]
 type = "command"
