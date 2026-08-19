@@ -152,17 +152,25 @@ def _entry_text(root: str, target: str, absolute: bool) -> str:
 
     이 파일은 팀이 함께 읽는 Git 자산이라 `/Users/<이름>/…` 을 적으면 다른 사람 기계에서 아무
     자리도 안 가리킨다. 짝 저장소는 대개 형제 폴더여서 `../helios-application` 로 적힌다.
-    두 단계 이상 거슬러 올라가는 꼴(`../../../..`)은 절대 경로로 적는다 — 디프를 읽는 사람이
-    그 점 여덟 개가 어디를 가리키는지 셀 수 없다. 드라이브가 다르면 상대 경로가 성립하지
-    않으므로(Windows) 그때도 절대 경로다."""
+    두 단계 이상 거슬러 올라가는 꼴(`../../../..`)은 상대 경로로 안 적는다 — 디프를 읽는 사람이
+    그 점 여덟 개가 어디를 가리키는지 셀 수 없다. 그 자리를 절대 경로로 메우면 위에 적은 이유가
+    그대로 되살아나므로, 홈 아래라면 `~/…` 로 적는다: 사용자 이름이 안 들어가고, 이 선언을 읽는
+    두 자리가 모두 `expanduser` 를 거친다 (`settings.declared_roots` — 프로젝트 메모리도 여기로
+    들어온다 — 와 훅 쪽 `asgard_hooklib.workspace.work_roots`). 홈 밖이거나 드라이브가
+    다르면(Windows) 남는 길은 절대 경로뿐이다."""
     if absolute:
         return target
     try:
         relative = os.path.relpath(target, root)
     except ValueError:
-        return target
+        relative = ""
     climbing = os.pardir + os.sep + os.pardir
-    return target if relative.startswith(climbing) else relative
+    if relative and not relative.startswith(climbing):
+        return relative
+    home = os.path.realpath(os.path.expanduser("~"))
+    if target == home or target.startswith(home + os.sep):
+        return "~" + target[len(home) :].replace(os.sep, "/")
+    return target
 
 
 def _fail(message: str, json_out: bool) -> int:

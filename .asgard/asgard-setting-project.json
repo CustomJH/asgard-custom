@@ -112,8 +112,8 @@
   },
   "paths": {
     "additional_roots": [
-      "/Users/yun/develop/work_space/vn_onm/helios-asgard",
-      "../satellite-pilot"
+      "../satellite-pilot",
+      "~/develop/work_space/vn_onm/helios-asgard"
     ]
   }
 }

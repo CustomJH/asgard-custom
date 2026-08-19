@@ -17,6 +17,7 @@ from unittest import mock
 from cli_boundary import run_cli
 
 from asgard.hooks import readonly_guard
+from asgard.settings import declared_roots
 
 
 def _settings(root: str) -> dict:
@@ -140,6 +141,22 @@ class TestWhatGetsWritten(Paired):
         self.assertTrue(os.path.relpath(distant, self.repo).startswith(os.pardir + os.sep + os.pardir))
         run_cli("root", "add", distant, "--yes")
         self.assertEqual(_settings(self.repo)["paths"]["additional_roots"], [distant])
+
+    def test_a_distant_directory_under_home_keeps_the_username_out_of_the_file(self) -> None:
+        """이 파일은 커밋돼 팀에 전달된다 — `/Users/<이름>/…` 은 남의 기계에서 아무 자리도 아니다.
+
+        점 여덟 개를 안 적는 규칙과 사용자 이름을 안 적는 규칙이 같이 서는 자리가 `~/…` 다.
+        선언을 읽는 두 자리가 모두 `expanduser` 를 거치므로 뜻은 절대 경로와 같다."""
+        home = tempfile.TemporaryDirectory()
+        self.addCleanup(home.cleanup)
+        distant = os.path.join(os.path.realpath(home.name), "work", "pair")
+        os.makedirs(os.path.join(distant, ".git"))
+        with mock.patch.dict(os.environ, {"HOME": os.path.realpath(home.name)}):
+            run_cli("root", "add", distant, "--yes")
+        declared = _settings(self.repo)["paths"]["additional_roots"]
+        self.assertEqual(declared, ["~/work/pair"])
+        with mock.patch.dict(os.environ, {"HOME": os.path.realpath(home.name)}):
+            self.assertIn(distant, declared_roots(self.repo))
 
     def test_declaring_twice_does_not_duplicate(self) -> None:
         run_cli("root", "add", self.pair, "--yes")
