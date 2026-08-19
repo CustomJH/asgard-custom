@@ -74,7 +74,15 @@ def _snippet(body: str, i: int) -> str:
     whole = body.strip()
     if len(whole) <= SNIPPET_MAX:
         return whole
-    return body[max(i - 40, 0) : i + 80].strip()
+    start, end = max(i - 40, 0), i + 80
+    window = body[start:end]
+    # 창 경계는 글자 수로 잡히므로 낱말 한가운데를 지난다. 어절 경계까지 물러서고 잘렸다는
+    # 표시를 남긴다 — 표시가 없으면 읽는 쪽이 `배포된 asg` 를 온전한 값으로 읽는다.
+    if end < len(body) and (cut := window.rfind(" ")) > len(window) // 2:
+        window = window[:cut] + "…"
+    if start > 0 and 0 < (cut := window.find(" ")) < len(window) // 3:
+        window = "…" + window[cut:]
+    return window.strip()
 
 
 def query(

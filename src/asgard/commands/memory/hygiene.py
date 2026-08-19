@@ -35,15 +35,24 @@ def _open_contradiction_findings(d: str) -> list[dict]:
     return out
 
 
-def run_lint(json_out: bool) -> int:
+def run_lint(json_out: bool, fix: bool = False) -> int:
     def _do() -> int:
         # ensure_home 이 아니라 memory_dir 이다 — lint 는 읽기다. 건강을 물었을 뿐인데
         # 없던 홈이 생기면, 아무것도 안 고쳤다는 이 명령의 약속이 첫 줄에서 깨진다.
         d = memory.memory_dir()
+        # 수리는 판정 **전에** 돈다 — 고친 뒤의 상태를 판정해야 남은 것만 보고된다.
+        retitled = memory.retitle(d) if fix else []
+        if retitled and not json_out:
+            for slug, old_title, new_title in retitled:
+                ui.ok(f"retitle {slug}: {old_title} → {new_title}")
         contradictions = _open_contradiction_findings(d)
         findings = memory.lint(d) + contradictions  # 두 판정에 같은 디렉터리를 준다 — 각자 고르면 갈린다
         if json_out:
-            print(_json.dumps(findings, ensure_ascii=False, indent=1))
+            payload = {
+                "findings": findings,
+                "retitled": [{"slug": s, "from": o, "to": n} for s, o, n in retitled],
+            }
+            print(_json.dumps(payload if fix else findings, ensure_ascii=False, indent=1))
         elif not findings:
             ui.ok("memory healthy — no findings")
         else:

@@ -27,7 +27,18 @@ from .norn import _FORBIDDEN_INSIGHT, INSIGHT_AUTO_FLOOR, _confidence, spawn_pas
 from .pages import add, lint
 from .policy import scan_secrets, scan_threats
 from .recall import _containment, _content_words, _jaccard, _neutralize, _stem_hit, _stopword
-from .store import _atomic_write, _pages, _read, _today, ensure_home, log_op, poisoned, render_page
+from .store import (
+    TITLE_MAX,
+    _atomic_write,
+    _pages,
+    _read,
+    _today,
+    derive_title,
+    ensure_home,
+    log_op,
+    poisoned,
+    render_page,
+)
 
 STATE_FILE = "pattern-state.json"
 REPORTS_DIR = "reports"
@@ -70,6 +81,8 @@ Produce two kinds of observation:
 
 Rules:
 - Each observation is one self-contained sentence that starts with the subject "오딘".
+- Give each observation a `title`: a short noun phrase in Korean naming what the fact is about,
+  not the first words of the sentence. Under 40 characters, no trailing period.
 - Write it so it still makes sense a year from now: absolute dates, named tools, no "yesterday".
 - Cite the turn numbers you used in `evidence` (integers from the input).
 - Prefer durable traits over one-off events. Skip anything about a broken tool, a missing
@@ -78,7 +91,7 @@ Rules:
 - Say nothing you cannot ground in the turns. Fewer, sturdier observations beat many guesses.
 
 Return JSON only:
-{"observations": [{"kind": "explicit|deductive", "text": "...", "evidence": [1, 4], "why": "..."}]}
+{"observations": [{"kind": "explicit|deductive", "title": "...", "text": "...", "evidence": [1, 4], "why": "..."}]}
 """
 
 
@@ -320,6 +333,10 @@ def validate_observations(rows: list[dict], turns: list[dict], d: str) -> tuple[
         if any(_jaccard(text, other) >= DUP_FLOOR for other in seen_texts):
             _drop(row, "duplicate of another observation in this pass")
             continue
+        # 제목은 관측을 기각하지 않는다 — 걸리면 비우고, 승격이 본문에서 다시 뽑는다.
+        title = re.sub(r"\s+", " ", str(row.get("title") or "")).strip()[:TITLE_MAX]
+        if title and (scan_threats(title) or scan_secrets(title)):
+            title = ""
         seen_texts.append(text)
         counts[kind] += 1
         accepted.append(
@@ -330,6 +347,7 @@ def validate_observations(rows: list[dict], turns: list[dict], d: str) -> tuple[
                 "grounding": round(score, 3),
                 # confidence는 LLM 자기 신고가 아니라 근거 수가 정한다. deductive는 한 단계 낮춘다.
                 "confidence": _confidence(len(evidence) + (0 if kind == "deductive" else 1)),
+                "title": title,
                 "why": str(row.get("why", ""))[:200],
             }
         )
@@ -365,12 +383,6 @@ def plan_pattern(root: str, d: str | None = None) -> dict:
 # ── 적용 (결정론) ─────────────────────────────────────────────────────────────
 
 
-def _title_for(text: str) -> str:
-    """관측 제목 — 첫 절을 짧게. 슬러그 충돌은 _fresh_slug가 푼다."""
-    head = re.split(r"[.·—–]|(?:다|요)\s*$", text.strip())[0].strip()
-    return (head or text)[:60]
-
-
 def apply_pattern(root: str, plan: dict, d: str | None = None) -> dict:
     """검증 통과 관측만 페이지로 승격한다. 반환 = {"applied", "failed", "report", "peer_card"}."""
     d = ensure_home(d)
@@ -385,7 +397,8 @@ def apply_pattern(root: str, plan: dict, d: str | None = None) -> dict:
                 f"pattern: {observation['kind']} · confidence: {observation['confidence']} · "
                 f"grounding: {observation['grounding']} · evidence: {evidence} ({_today()})"
             )
-            slug, _ = add(body, title=_title_for(observation["text"]), kind=kind, d=d)
+            title = str(observation.get("title") or "") or derive_title(observation["text"])
+            slug, _ = add(body, title=title, kind=kind, d=d)
             applied.append({**observation, "slug": slug})
         except ValueError as exc:  # 예산 초과·경합 — 부분 실패를 정직하게 남긴다
             failed.append({**observation, "error": str(exc)})

@@ -143,6 +143,12 @@ MEMORY_SAVE_TOOL: dict = {
     "input_schema": {
         "type": "object",
         "properties": {
+            "title": {
+                "type": "string",
+                "description": "A short noun phrase naming what this fact is about — not the first "
+                "words of the sentence. Under 40 characters, no trailing period. Without it the page "
+                "title becomes the sentence itself, cut off mid-word.",
+            },
             "text": {
                 "type": "string",
                 "description": "One self-contained fact — one or two sentences, "
@@ -154,7 +160,7 @@ MEMORY_SAVE_TOOL: dict = {
                 "description": "Default user (a fact about the user).",
             },
         },
-        "required": ["text"],
+        "required": ["title", "text"],
     },
 }
 
@@ -170,8 +176,9 @@ def _memory_save_support(saved: list[tuple[str, str]]) -> tuple[str, list[dict],
 
         text = str(inp.get("text") or "").strip()
         kind = str(inp.get("kind") or "user")
+        title = str(inp.get("title") or "").strip()
         try:
-            action, slug = ingest(text, kind=kind)
+            action, slug = ingest(text, kind=kind, title=title)
         except Exception as e:
             return f"Save failed: {type(e).__name__}: {e}"
         saved.append((action, slug))

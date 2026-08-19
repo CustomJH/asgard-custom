@@ -18,6 +18,7 @@ from .store import (
     DEFAULT_KIND,
     INDEX,
     KINDS,
+    TITLE_MAX,
     _atomic_write,
     _fm_value,
     _identity_slot,
@@ -28,6 +29,7 @@ from .store import (
     _read,
     _read_all_cached,
     _today,
+    derive_title,
     ensure_home,
     log_op,
     poisoned,
@@ -73,9 +75,7 @@ def add(
         raise ValueError("empty memory text")
     if kind not in KINDS:
         raise ValueError(f"unknown kind: {kind!r} — one of {', '.join(KINDS)}")
-    title = _fm_value(title or next((ln.strip().lstrip("# ") for ln in text.splitlines() if ln.strip()), "untitled"))[
-        :80
-    ]
+    title = _fm_value(title)[:TITLE_MAX] if title else derive_title(text)
     links = _fm_value(links)
     threat = scan_threats(text, title, links)  # 본문 + 주입 메타 전부 (P0)
     if threat:
@@ -297,7 +297,13 @@ def _absorb_slot_dups(d: str, plan: dict) -> list[str]:
     return absorbed
 
 
-def ingest(text: str, kind: str = DEFAULT_KIND, d: str | None = None, plan: dict | None = None) -> tuple[str, str]:
+def ingest(
+    text: str,
+    kind: str = DEFAULT_KIND,
+    d: str | None = None,
+    plan: dict | None = None,
+    title: str | None = None,
+) -> tuple[str, str]:
     """자가 학습 쓰기 — plan 대로 생성·병합·선호 갱신·동일 사실 no-op. 반환 = (action, slug).
 
     plan을 넘기면(CLI 승인 게이트가 이미 계산·표시한 계획) 재계산하지 않는다 (TOCTOU 차단, P1):
@@ -307,10 +313,12 @@ def ingest(text: str, kind: str = DEFAULT_KIND, d: str | None = None, plan: dict
         raise ValueError("empty memory text")
     if kind not in KINDS:
         raise ValueError(f"unknown kind: {kind!r} — one of {', '.join(KINDS)}")
-    threat = scan_threats(text)
+    title = _fm_value(title)[:TITLE_MAX] if title else ""
+    # 제목도 주입면에 나가는 값이다 — 본문만 태우면 제목 칸이 스캔을 비껴가는 통로가 된다.
+    threat = scan_threats(text, title)
     if threat:
         raise ValueError(f"injection scan: {threat}")
-    if secret := scan_secrets(text):
+    if secret := scan_secrets(text, title):
         raise ValueError(f"secret scan: {secret}")
     with _lock(d):
         approved = plan is not None
@@ -351,9 +359,7 @@ def ingest(text: str, kind: str = DEFAULT_KIND, d: str | None = None, plan: dict
                     log_op(d, "ingest:unchanged", slug)
                     return action, slug
                 if action == "updated":
-                    meta["title"] = _fm_value(next(ln.strip().lstrip("# ") for ln in text.splitlines() if ln.strip()))[
-                        :80
-                    ]
+                    meta["title"] = title or derive_title(text)
             else:
                 merged = body.rstrip() + f"\n\n{_today()}: {text.strip()}"
                 action = "merged"
@@ -370,8 +376,7 @@ def ingest(text: str, kind: str = DEFAULT_KIND, d: str | None = None, plan: dict
         if existing:
             log_op(d, "ingest:unchanged", existing)
             return "unchanged", existing
-        title = _fm_value(next(ln.strip().lstrip("# ") for ln in text.splitlines() if ln.strip()))[:80]
-        slug, _ = _add_unlocked(d, text, title, kind, "")
+        slug, _ = _add_unlocked(d, text, title or derive_title(text), kind, "")
         log_op(d, "ingest:created", slug)
         return "created", slug
 
@@ -492,6 +497,53 @@ def _duplicate_pairs(texts: list[str], grams: _Grams, threshold: float) -> list[
     return sorted(pairs)
 
 
+def _stale_title(meta: dict, body: str) -> str:
+    """다시 뽑으면 나아지는 제목이면 그 새 제목, 아니면 빈 문자열.
+
+    본문 앞부분을 그대로 베낀 제목만 대상이다 — 부르는 쪽이 지어 준 제목은 본문 첫 줄의
+    접두사가 아니라서 걸리지 않는다. 글자 수로만 자르던 시절의 제목이 여기 걸린다."""
+    title = str(meta.get("title") or "")
+    if not title:
+        return ""
+    first = next((ln.strip().lstrip("# ") for ln in body.splitlines() if ln.strip()), "")
+    if not first.startswith(title):
+        return ""
+    fresh = derive_title(body)
+    return fresh if fresh != title else ""
+
+
+def retitle(d: str | None = None) -> list[tuple[str, str, str]]:
+    """본문에서 베껴 온 제목을 다시 뽑는다. 반환 = (slug, 옛 제목, 새 제목) 목록.
+
+    본문도 slug 도 안 건드린다 — slug 을 따라 바꾸면 페이지 경로가 바뀌어 `[[링크]]` 가 끊기고,
+    끊긴 링크는 lint 가 죽은 링크로 다시 보고한다. 제목 칸 하나만 고쳐도 주입면과 목차는 바뀐다."""
+    d = ensure_home(d)
+    changed: list[tuple[str, str, str]] = []
+    with _lock(d):
+        for slug in sorted(_pages(d)):
+            pg = _read(d, slug)
+            if not pg:
+                continue
+            meta, body = pg
+            fresh = _stale_title(meta, body)
+            if not fresh:
+                continue
+            changed.append((slug, str(meta.get("title") or ""), fresh))
+            meta["title"] = fresh
+            _atomic_write(_page_path(d, slug), render_page(meta, body))
+        if changed:
+            write_index(d)
+            with contextlib.suppress(Exception):
+                conn = _db(d)
+                with conn:
+                    for slug, _old, _new in changed:
+                        _fts_upsert(conn, d, slug)
+                conn.close()
+    for slug, _old, _new in changed:
+        log_op(d, "retitle", slug)
+    return changed
+
+
 def _page_findings(
     slug: str,
     meta: dict,
@@ -511,6 +563,10 @@ def _page_findings(
     ]:
         if slugify(ref) not in slugs and ref not in slugs:
             findings.append({"level": "warn", "code": "dead-link", "slug": slug, "msg": f"[[{ref}]]"})
+    if fresh := _stale_title(meta, body):
+        findings.append(
+            {"level": "info", "code": "title-truncated", "slug": slug, "msg": f"제목을 다시 뽑으면: {fresh}"}
+        )
     # 외부 편집으로 스캔을 우회한 오염 소급 탐지 — 본문 + 주입 메타 전부, kind 포함 (P0)
     if threat:
         findings.append({"level": "error", "code": "threat", "slug": slug, "msg": threat})

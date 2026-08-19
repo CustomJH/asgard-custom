@@ -32,13 +32,14 @@ def memory_add(
 def memory_ingest(
     text: str = typer.Argument(...),
     kind: str = typer.Option("note", "--kind"),
+    title: str = typer.Option(None, "--title", help="the page title (default: the first sentence of the text)"),
     yes: bool = typer.Option(False, "--yes", "-y", help="save without asking first"),
     plan_id: str = typer.Option(None, "--plan-id", help="carry out the exact plan you already approved"),
     json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
 ) -> None:
     from ..commands.memory import run_ingest
 
-    raise typer.Exit(run_ingest(text, kind, yes, plan_id, json_out))
+    raise typer.Exit(run_ingest(text, kind, yes, plan_id, json_out, title))
 
 
 @memory_app.command("query", help="search the wiki — plain text search, no model, and every hit is counted")
@@ -92,10 +93,13 @@ def memory_episodes(
 @memory_app.command(
     "lint", help="how the wiki is holding up — broken links, pages going stale, duplicates, size, open contradictions"
 )
-def memory_lint(json_: bool = typer.Option(False, "--json")) -> None:
+def memory_lint(
+    json_: bool = typer.Option(False, "--json"),
+    fix: bool = typer.Option(False, "--fix", help="rewrite titles that were copied from the body and cut mid-word"),
+) -> None:
     from ..commands.memory import run_lint
 
-    raise typer.Exit(run_lint(json_))
+    raise typer.Exit(run_lint(json_, fix))
 
 
 # 모순은 노른이 고치지 않고 사람에게 넘기는 유일한 op 다. 넘길 자리를 두 개 둔다 —

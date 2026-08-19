@@ -86,7 +86,7 @@ from .rerank import (  # noqa: F401
     _rerank_order,
     rerank_enabled,
 )
-from .rows import SNIPPET_MAX, _hit_row, _neutralize, _row  # noqa: F401
+from .rows import SNIPPET_MAX, _fuse, _hit_row, _neutralize, _row  # noqa: F401
 from .search import (  # noqa: F401
     RRF_K,
     SEM_FLOOR,

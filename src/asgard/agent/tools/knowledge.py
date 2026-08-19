@@ -202,8 +202,9 @@ def run_memory_propose(root: str, tool_input: dict) -> str:
 
     text = str(tool_input.get("text") or "").strip()
     kind = str(tool_input.get("kind") or "note").strip()
+    title = str(tool_input.get("title") or "").strip()
     try:
-        outcome = propose.submit(text, kind=kind)
+        outcome = propose.submit(text, kind=kind, title=title)
     except ValueError as exc:
         raise ToolError(str(exc)) from exc
     return propose.outcome_text(outcome)

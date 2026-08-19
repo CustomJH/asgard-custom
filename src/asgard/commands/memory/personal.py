@@ -27,7 +27,9 @@ def run_add(text: str, title: str | None, kind: str, links: str, json_out: bool 
     return _guard(_do)
 
 
-def run_ingest(text: str, kind: str, yes: bool, plan_id: str | None = None, json_out: bool = False) -> int:
+def run_ingest(
+    text: str, kind: str, yes: bool, plan_id: str | None = None, json_out: bool = False, title: str | None = None
+) -> int:
     errors.set_json_surface(json_out)
 
     def _do() -> int:
@@ -83,7 +85,7 @@ def run_ingest(text: str, kind: str, yes: bool, plan_id: str | None = None, json
                 ui.step("skipped")
                 return 0
         try:
-            action, slug = memory.ingest(text, kind=kind, plan=plan)  # 승인한 그 계획 그대로
+            action, slug = memory.ingest(text, kind=kind, plan=plan, title=title)  # 승인한 그 계획 그대로
         except Exception:
             if plan_id and claim_token:
                 _finish_plan(plan_id, claim_token, success=False)
@@ -109,7 +111,13 @@ def run_query(text: str, k: int, json_out: bool) -> int:
             ui.step("no matches")
             return 0
         for h in hits:
-            print(f"{h['slug']}  `{h['kind']}`  {h['title']}\n    {h['snippet']}")
+            # 제목과 발췌가 같은 문장에서 왔으면 하나로 잇는다 — 주입면과 같은 규율이다
+            # (`recall.rows._fuse`). 화면에서만 같은 문장을 두 번 읽을 이유가 없다.
+            fused = memory.recall._fuse(str(h["title"]), str(h["snippet"]))
+            if fused:
+                print(f"{h['slug']}  `{h['kind']}`  {fused}")
+            else:
+                print(f"{h['slug']}  `{h['kind']}`  {h['title']}\n    {h['snippet']}")
         return 0
 
     return _guard(_do)

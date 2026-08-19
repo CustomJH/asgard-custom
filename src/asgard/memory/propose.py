@@ -173,10 +173,16 @@ def _prepare(text: str, kind: str) -> str:
     return body
 
 
-def stage(text: str, *, kind: str = DEFAULT_KIND, d: str | None = None) -> dict:
+def stage(text: str, *, kind: str = DEFAULT_KIND, d: str | None = None, title: str = "") -> dict:
     """제안 하나를 대기열에 올린다 — **저장은 안 한다**. 반환 = 제안 레코드."""
     d = ensure_home(d)
     body = _prepare(text, kind)
+    title = " ".join(str(title or "").split())
+    # 제목도 제안 시점·승인 시점 두 번 태운다 — 본문만 태우면 제목 칸이 스캔을 비껴간다.
+    if threat := scan_threats(title):
+        raise ValueError(f"injection scan: {threat} — 저장 거부")
+    if secret := scan_secrets(title):
+        raise ValueError(f"{secret} — 자격증명으로 보이는 내용은 기억에 안 넣는다")
 
     now = time.time()
     # 같은 사실을 두 번 제안하면 대기열이 아니라 잡음이 된다. 이미 대기 중인 같은 본문은
@@ -191,6 +197,9 @@ def stage(text: str, *, kind: str = DEFAULT_KIND, d: str | None = None) -> dict:
     record = {
         "id": secrets.token_hex(8),
         "text": body,
+        # 제목은 제안한 쪽이 지은 것이라 승인까지 실려 가야 한다 — 여기서 떨구면 승인 경로로
+        # 저장된 페이지만 제목이 본문 앞부분으로 되돌아간다.
+        "title": title,
         "kind": kind,
         "agent": _agent(),
         "created": now,
@@ -216,7 +225,7 @@ def stage(text: str, *, kind: str = DEFAULT_KIND, d: str | None = None) -> dict:
     return dict(record)
 
 
-def submit(text: str, *, kind: str = DEFAULT_KIND, d: str | None = None) -> dict:
+def submit(text: str, *, kind: str = DEFAULT_KIND, d: str | None = None, title: str = "") -> dict:
     """에이전트의 저장 요청 하나 — 자동저장이면 바로 쓰고, 아니면 대기열에 올린다.
 
     툴 표면(네이티브 `memory_propose`·MCP `memory_propose`)이 부르는 **단 하나의** 진입점이다.
@@ -230,8 +239,8 @@ def submit(text: str, *, kind: str = DEFAULT_KIND, d: str | None = None) -> dict
     d = ensure_home(d)
     body = _prepare(text, kind)
     if not autosave_enabled():
-        return {"saved": False, **stage(body, kind=kind, d=d)}
-    action, slug = ingest(body, kind=kind, d=d)
+        return {"saved": False, **stage(body, kind=kind, d=d, title=title)}
+    action, slug = ingest(body, kind=kind, d=d, title=title)
     # 같은 사실이 대기열에 남아 있으면 사람이 "이미 저장된 것"을 다시 승인하게 된다 — 자동저장은
     # 그 사실에 대한 승인 요청을 함께 거둔다 (설정을 켜기 전에 쌓인 제안이 남을 수 있다).
     for row in pending(d):
@@ -366,7 +375,9 @@ def commit(proposal_id: str, d: str | None = None) -> tuple[str, str]:
         discard(proposal_id, d)
         raise ValueError(f"{secret} — 승인 취소, 제안 폐기")
     kind = str(record.get("kind") or DEFAULT_KIND)
-    action, slug = ingest(body, kind=kind, d=d, plan=_approved_plan(proposal_id, record, body, d))
+    action, slug = ingest(
+        body, kind=kind, d=d, plan=_approved_plan(proposal_id, record, body, d), title=str(record.get("title") or "")
+    )
     discard(proposal_id, d)
     log_op(d, "propose-commit", slug, f"{proposal_id} -> {action}")
     return action, slug

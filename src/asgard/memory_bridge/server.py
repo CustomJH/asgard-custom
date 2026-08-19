@@ -40,6 +40,10 @@ _PERSONAL_TOOLS = [
         "inputSchema": {
             "type": "object",
             "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "A short noun phrase naming what this fact is about — not the first words of the sentence. Under 40 characters, no trailing period. Without it the page title becomes the sentence itself, cut off mid-word.",
+                },
                 "text": {"type": "string", "description": "The fact, as one self-contained sentence."},
                 "kind": {
                     "type": "string",
@@ -51,7 +55,7 @@ _PERSONAL_TOOLS = [
                     ),
                 },
             },
-            "required": ["text", "kind"],
+            "required": ["title", "text", "kind"],
         },
     },
     {
@@ -220,7 +224,9 @@ def _call_personal_tool(name: str, args: dict) -> tuple[str, bool]:
     from ..memory import propose
 
     try:
-        outcome = propose.submit(str(args.get("text") or ""), kind=str(args.get("kind") or "note"))
+        outcome = propose.submit(
+            str(args.get("text") or ""), kind=str(args.get("kind") or "note"), title=str(args.get("title") or "")
+        )
     except ValueError as exc:
         return f"{exc}", True
     except Exception as exc:

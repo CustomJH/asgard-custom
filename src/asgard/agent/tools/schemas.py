@@ -41,6 +41,12 @@ MEMORY_PROPOSE_TOOL = {
     "input_schema": {
         "type": "object",
         "properties": {
+            "title": {
+                "type": "string",
+                "description": (
+                    "A short noun phrase naming what this fact is about — not the first words of the sentence. Under 40 characters, no trailing period. Without it the page title becomes the sentence itself, cut off mid-word."
+                ),
+            },
             "text": {
                 "type": "string",
                 "description": "The fact, as one self-contained sentence.",
@@ -55,7 +61,7 @@ MEMORY_PROPOSE_TOOL = {
                 ),
             },
         },
-        "required": ["text", "kind"],
+        "required": ["title", "text", "kind"],
     },
 }
 INGEST_DOCUMENT_TOOL = {

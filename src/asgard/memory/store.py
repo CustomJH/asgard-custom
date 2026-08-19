@@ -154,6 +154,38 @@ def _fm_value(v: object) -> str:
     return re.sub(r"[\r\n]+", " ", str(v)).strip()
 
 
+TITLE_MAX = 80  # frontmatter title 상한 — slugify 가 64자에서 다시 자르므로 그보다 넉넉하다
+
+# 문장 끝 — 마침표류 뒤에 공백이나 문자열 끝이 와야 한다. 숫자 안의 점(`7.5~9.0초`, `0.10.9`)과
+# 파일 이름의 점(`memory_context.py`)까지 문장 끝으로 읽으면 제목이 한 어절에서 끝난다.
+_SENTENCE_END = re.compile(r"[.!?](?=\s|$)")
+# 문장 끝으로 인정할 최소 길이 — 약어(`e.g.`, `Mr.`)와 서수(`3.`)도 마침표 뒤에 공백을 두므로
+# 위 정규식만으로는 안 갈린다. 약어를 목록으로 세는 대신 길이로 거른다: 이보다 짧은 조각은
+# 제목이 될 만한 문장이 아니다.
+_SENTENCE_MIN = 10
+
+
+def derive_title(text: str) -> str:
+    """본문에서 제목 한 줄 — 첫 문장까지, 상한을 넘으면 어절 경계에서 끊고 말줄임표를 붙인다.
+
+    부르는 쪽이 제목을 주지 않을 때만 쓴다. 글자 수로만 자르던 동안 50페이지 중 16개가 낱말
+    중간에서 끊겼고(실측 26-08-19), 그 제목이 slug 에도 들어가
+    `...진짜-사슬은-26-08-04-실측-trinit` 같은 경로가 남았다. 어절 경계에서 끊고 말줄임표를
+    붙이면 읽는 사람이 뒤에 무슨 말이 더 있었는지 안다."""
+    line = _fm_value(next((ln.strip().lstrip("# ") for ln in text.splitlines() if ln.strip()), "untitled"))
+    # 상한 안에 들어가는 줄은 문장을 가르지 않는다 — 자를 이유가 없는데 가르면 `e.g.` 나 `3.`
+    # 하나가 제목 전체가 된다.
+    if len(line) <= TITLE_MAX:
+        return line
+    end = next((m for m in _SENTENCE_END.finditer(line) if _SENTENCE_MIN <= m.end() <= TITLE_MAX), None)
+    if end:
+        return line[: end.end()]
+    head = line[: TITLE_MAX - 1]
+    cut = head.rfind(" ")
+    # 상한 앞쪽에 공백이 하나도 없으면(붙여 쓴 긴 한 덩어리) 어절 경계가 없는 것이라 그대로 자른다.
+    return (head[:cut] if cut >= TITLE_MAX // 2 else head).rstrip() + "…"
+
+
 def parse_page(text: str) -> tuple[dict, str]:
     """frontmatter(`--- k: v ---`) + 본문. yaml 미사용 — k: v 평문만 (외부 편집 관용)."""
     meta: dict = {}
