@@ -14,6 +14,7 @@ v0.10.15 는 포맷에서, v0.10.16 은 `ty check` 에서 멈췄고 둘 다 휠�
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import unittest
@@ -97,22 +98,59 @@ class VersionSourcesAgree(unittest.TestCase):
         assert found, "src/asgard/__init__.py 에서 __version__ 을 못 읽었어요"
         return found.group(1)
 
-    # (경로, 그 파일에서 버전을 집는 정규식). 락파일 둘이 목록에 있는 이유는 빌드가 그것을
-    # 읽어서다 — 매니페스트만 올리고 락을 두면 빌드가 옛 버전으로 이름을 짓는다.
-    _SOURCES = (
-        (("studio-shell", "package.json"), r'"version": "([^"]+)"'),
-        (("studio-shell", "package-lock.json"), r'"version": "([^"]+)"'),
-        (("studio-shell", "src-tauri", "tauri.conf.json"), r'"version": "([^"]+)"'),
-        (("studio-shell", "src-tauri", "Cargo.toml"), r'(?m)^version = "([^"]+)"'),
+    # 버전을 **필드로** 읽는다. 정규식 첫 일치로 읽던 판은 조용히 덜 쟀다 — `package-lock.json`
+    # 에서 `"version": "..."` 은 14번 걸리고 그중 열둘이 의존성 버전이라, `re.search` 는 첫 자리
+    # 하나만 보고 `re.findall` 은 남의 버전까지 우리 것과 견준다. 어느 쪽도 "이 패키지의 버전"을
+    # 재지 않는다. JSON 은 파서로 열어 이름으로 집고, 나머지 둘은 그 값이 사는 구간에 앵커를 건다.
+    #
+    # 락파일 둘이 목록에 있는 이유는 빌드가 그것을 읽어서다 — 매니페스트만 올리고 락을 두면
+    # 빌드가 옛 버전으로 이름을 짓는다. `package-lock.json` 은 자기 버전을 두 자리에 든다.
+    _JSON_SOURCES = (
+        (("studio-shell", "package.json"), (("version",),)),
+        (("studio-shell", "package-lock.json"), (("version",), ("packages", "", "version"))),
+        (("studio-shell", "src-tauri", "tauri.conf.json"), (("version",),)),
+    )
+    # `Cargo.toml` 의 앵커가 `[package]` 인 이유: `[dependencies.foo]` 절 안의 `version` 도 줄
+    # 머리에 서므로 `(?m)^version` 만으로는 의존성을 우리 것으로 읽는다.
+    _TEXT_SOURCES = (
+        (("studio-shell", "src-tauri", "Cargo.toml"), r'\[package\][^\[]*?^version = "([^"]+)"'),
         (("studio-shell", "src-tauri", "Cargo.lock"), r'name = "asgard-studio"\nversion = "([^"]+)"'),
     )
 
+    def _field(self, data: object, path: tuple[str, ...], rel: str) -> str:
+        """`path` 가 가리키는 값. 없으면 시험을 세운다 — 조용히 건너뛰면 안 재고 통과한다."""
+        node: object = data
+        for key in path:
+            # `self.fail` 이 아니라 `raise` 인 이유: ty 는 `fail` 을 종료로 안 읽어서 그 뒤의 접근이
+            # 여전히 `object` 위에서 도는 것으로 본다. 그리고 좁혀진 `dict` 는 키 타입이 미지라
+            # 문자열로 첨자를 걸 수 없으므로, JSON 객체의 키가 문자열이라는 사실을 여기서 적는다.
+            if not isinstance(node, dict):
+                raise AssertionError(f"{rel} 의 {'.'.join(path)} 위쪽이 객체가 아니에요")
+            table: dict[str, object] = {str(k): v for k, v in node.items()}
+            if key not in table:
+                raise AssertionError(f"{rel} 에 {'.'.join(path) or '(root)'} 가 없어요 — 형식이 바뀌었으면 표도 바꿔요")
+            node = table[key]
+        if not isinstance(node, str):
+            raise AssertionError(f"{rel} 의 {'.'.join(path)} 가 문자열이 아니에요: {type(node).__name__}")
+        return node
+
     def test_the_studio_shell_ships_the_version_the_package_ships(self) -> None:
         expected = self._asgard_version()
-        for parts, pattern in self._SOURCES:
+        for parts, paths in self._JSON_SOURCES:
+            rel = os.path.join(*parts)
+            data = json.loads(_read(os.path.join(ROOT, rel)))
+            for path in paths:
+                with self.subTest(file=rel, field=".".join(path)):
+                    self.assertEqual(
+                        self._field(data, path, rel),
+                        expected,
+                        f"{rel} 의 {'.'.join(path)} 이 __version__({expected}) 과 갈렸어요"
+                        " — 릴리즈 산출물 이름이 어긋납니다",
+                    )
+        for parts, pattern in self._TEXT_SOURCES:
             rel = os.path.join(*parts)
             with self.subTest(file=rel):
-                found = re.search(pattern, _read(os.path.join(ROOT, rel)))
+                found = re.search(pattern, _read(os.path.join(ROOT, rel)), re.M | re.S)
                 if found is None:  # `assertIsNotNone` 은 타입을 안 좁힌다 — 아래 group() 이 ty 에 걸린다
                     self.fail(f"{rel} 에서 버전을 못 읽었어요 — 형식이 바뀌었으면 정규식도 바꿔요")
                 self.assertEqual(
