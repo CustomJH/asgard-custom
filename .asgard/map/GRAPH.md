@@ -4,14 +4,15 @@
 > Asgard managed relation catalog. Regenerate with `asgard map scan`; do not hand-edit.
 > `?` marks candidate evidence — verify at the cited source before asserting.
 
-- Evidence summary: commands 209 · db 3 · calls 6 · uses 2
+- Evidence summary: commands 212 · db 3 · calls 7 · uses 2
 
 ## Coverage boundaries
 
 > Named scanner gaps are evidence too. They weaken absence and blast-radius claims; details live in `map scan --json`.
 
-- Coverage status: partial · 2 named limits
-- test_sources_excluded [repository] — 245 test source files are outside the production relation graph · files 245
+- Coverage status: partial · 3 named limits
+- api_route_unresolved [api_call:/api/memory/] — a relative API call did not converge on a route · files 1
+- test_sources_excluded [repository] — 259 test source files are outside the production relation graph · files 259
 - unsupported_source_suffix [.rs] — no relation extractor is configured for Rust (.rs) · files 2
 
 ## Commands
@@ -157,6 +158,9 @@
 - `asgard skills show` — print one skill exactly as the agents read it
 - `asgard skills unassign` — take this skill back off a role, in this project
 - `asgard start` — open the Asgard terminal (Heimdall) — chat, connect a provider, run tasks
+- `asgard style check` — run the declared style tools. with --path, only violations in those files block — the rest is inherited debt
+- `asgard style init` — scan for style config files (checkstyle.xml, eslint.config.js, .clang-format …) and write what was found into .asgard/as
+- `asgard style list` — what this repository declares, and what was found in it but never declared
 - `asgard surface` — what your public API looks like next to a base ref — what broke, and who has to change
 - `asgard sync` — bring the hooks, agents and skills up to date in every project you have set up
 - `asgard thor` — how backend work is done here — the playbook for each verb, what to do next, and the gate
@@ -263,6 +267,7 @@
 - `src/asgard/cli/just.py` — commands: just check, just init, just install, just sync
 - `src/asgard/cli/review.py` — commands: review cancel, review decide, review list, review show
 - `src/asgard/cli/roots.py` — commands: root add, root list, root remove
+- `src/asgard/cli/style.py` — commands: style check, style init, style list
 - `src/asgard/commands/studio/load.py` — calls: count?, failed?, rate_per_s?
 - `src/asgard/io_sqlite.py` — db: conn.execute?×3
 - `src/asgard/openai_codex.py` — calls: httpx.get?, httpx.post? · uses: openai
@@ -271,6 +276,7 @@
 - `benchmarks/dispatch-parity/collect.py` — db: conn.execute?
 - `benchmarks/dispatch-parity/overlap_probe.py` — db: con.execute?
 - `benchmarks/shortcut-recall/harness.py` — db: conn.execute?
+- `src/asgard/assets/js/memory.js` — calls: /api/memory/?
 - `src/asgard/hooks/dispatch_context.py` — db: conn.execute?
 - `src/asgard/hooks/siege_inbox.py` — db: conn.execute?
 
@@ -278,7 +284,7 @@
 
 > Exact node ids — copy into `asgard map trace --from <id>` or `asgard map impact <id>`.
 
-- commands: `command:auth_login` · `command:auth_logout` · `command:auth_status` · `command:automations_add` · `command:automations_disable` · `command:automations_due` · `command:automations_enable` · `command:automations_history` · `command:automations_list` · `command:automations_remove` · `command:budget` · `command:completions` · `command:craft` · `command:doctor` · `command:einherjar_bind` · `command:einherjar_config` · `command:einherjar_create` · `command:einherjar_delete` · `command:einherjar_describe` · `command:einherjar_export` · `command:einherjar_identity` · `command:einherjar_import` · `command:einherjar_list` · `command:einherjar_open` · `command:einherjar_rename` · `command:einherjar_show` · `command:einherjar_unbind` · `command:einherjar_use` · `command:einherjar_where` · `command:einherjar_windows` · `command:evolve_approve` · `command:evolve_archive` · `command:evolve_bench` · `command:evolve_curate` · `command:evolve_list` · `command:evolve_nudge` · `command:evolve_polish` · `command:evolve_reject` · `command:evolve_reset` · `command:evolve_restore` (+169 more — `asgard map list --kind command`)
+- commands: `command:auth_login` · `command:auth_logout` · `command:auth_status` · `command:automations_add` · `command:automations_disable` · `command:automations_due` · `command:automations_enable` · `command:automations_history` · `command:automations_list` · `command:automations_remove` · `command:budget` · `command:completions` · `command:craft` · `command:doctor` · `command:einherjar_bind` · `command:einherjar_config` · `command:einherjar_create` · `command:einherjar_delete` · `command:einherjar_describe` · `command:einherjar_export` · `command:einherjar_identity` · `command:einherjar_import` · `command:einherjar_list` · `command:einherjar_open` · `command:einherjar_rename` · `command:einherjar_show` · `command:einherjar_unbind` · `command:einherjar_use` · `command:einherjar_where` · `command:einherjar_windows` · `command:evolve_approve` · `command:evolve_archive` · `command:evolve_bench` · `command:evolve_curate` · `command:evolve_list` · `command:evolve_nudge` · `command:evolve_polish` · `command:evolve_reject` · `command:evolve_reset` · `command:evolve_restore` (+172 more — `asgard map list --kind command`)
 
 ## Navigation contract
 

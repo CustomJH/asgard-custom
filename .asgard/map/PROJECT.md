@@ -7,8 +7,8 @@
 ## Orientation
 
 - Project root: `./`
-- Languages by observed source files: Python (750), JavaScript (6), Rust (2)
-- Evidence scan: 985 files; 51 landmarks
+- Languages by observed source files: Python (774), JavaScript (12), Rust (2)
+- Evidence scan: 1024 files; 51 landmarks
 
 ## Landmarks
 
@@ -78,6 +78,8 @@
 - `README.md` — doc: Asgard · sections: Install; Local or isolated execution; Tool Kernel; Skill and Plugin Registry; Documents (Sága); Project Map
 - `docker/README.md` — doc: 컨테이너 하나 = 에이전트 하나 · sections: 먼저 — 이 폴더에 이미지가 둘 있고, 서로 다른 것이에요; 가르는 것은 두 줄이에요; 1. 호스트의 에이전트를 그대로 컨테이너에 (_asgard start_); 2. 컨테이너 전용 에이전트 여럿 (compose); 자격증명은 기본으로 안 넘어가요; 알아둘 것
 - `docs/HANDOVER-large-files-260817.md` — doc: 인수인계 — 대형 파일 리팩토링 (2026-08-17) · sections: ① 끝난 것 — 릴리즈가 다시 실패하지 않게; ② 대형 파일 — churn×lines 상위 셋 완료 (26-08-17); 시작하는 법
+- `docs/HANDOVER-se-baseline-260819.md` — doc: 인수인계 — 엔지니어링 기본 세팅 (2026-08-19) · sections: 지금 상태; 이번 변경이 한 것; 만진 파일 열셋; 할 일 셋; 앞 세션이 남긴 함정 둘 (되풀이하지 마라)
+- `docs/engineering-baseline.md` — doc: 코드 형상 문턱 — 결정표 · sections: 조사가 확인한 것 중 가장 중요한 사실; 결정표; 신설하지 않기로 한 축 셋; Lint Leakage 감사; 저장소가 값을 정하는 문; 근거
 - `studio-shell/README.md` — doc: Asgard Studio native shell · sections: Run; Build; Icons
 - `benchmarks/bragi-humanvoice/README.md` — doc: Bragi — human-voice bench · sections: Running; Part A — upstream labeled pairs; Part B — held-out human corpus; Part C — live A/B on a real model; Honest limits
 - `benchmarks/conductor/README.md` — doc: Conductor 대조 — arXiv 2512.04388 의 평가 축을 Asgard 에 적용 · sections: 두 층; 못 재는 것
@@ -97,6 +99,7 @@
 - `benchmarks/cpu-profile/findings-memory.md` — doc: 메모리 실측 — Asgard 훅·프로세스 (u3-memory, cpu-profile-260814) · sections: 핵심 숫자 5줄; 1. 훅별 최대 RSS (RUSAGE_CHILDREN, macOS 바이트→MB); 2. 임포트 표면 RSS 계단 (RUSAGE_SELF, 단계마다 새 인터프리터); 3. tracemalloc 상위 할당 지점 (인프로세스, 훅 본문만); 4. 상주 프로세스 (_asgard-serve.mjs_, PID 44444); 5. 런타임 상태의 전체 로드 경로
 - `benchmarks/cpu-profile/findings-semantic-lane.md` — doc: 시맨틱 레인 — 1.9GB 는 무엇을 사는가 (2026-08-14) · sections: 1. 플래그가 소스에서 무엇을 가르는가; 2. 품질 대조 — 12질의, 이 저장소의 실제 개인 기억 40페이지·벡터 40행 전수; 3. 자원 — 전/후 번갈아, _/usr/bin/time -l_; 4. 1.9GB 의 내역 — 임포트 계단 (_HF_HUB_OFFLINE=1_, 3회 최솟값); 5. 훅 경로 점검; 6. 못 잰 것
 - `benchmarks/dispatch-parity/REPORT.md` — doc: 병렬 배차 실측 — worker 가 딜리버리 전문가를 부르는 길 (2026-08-12) · sections: 결과; 돌리는 법; 위임 경계 — 165조합; 실팬아웃 — 장부가 적은 것; 모드 B — 이 형상에서는 열리지 않는다; 이 벤치가 못 재는 것
+- `benchmarks/engineering-principles/README.md` — doc: 엔지니어링 원칙 배터리 — 2026-08-19 실측 · sections: 이번 실행이 바꾼 것; 새로 덮은 것 — _unit-branchy_; 안 덮은 것과 그 이유; 이 배터리가 못 재는 것
 - `benchmarks/grounding/REPORT.md` — doc: 근거 대조 벤치 — 어간 하한 __stem_floor_ · sections: 결과 (실측 26-08-01); 읽는 법; 권고; 이 벤치가 못 재는 것
 - `benchmarks/hybrid-search/REPORT.md` — doc: 하이브리드 검색 벤치 — 2경로 vs 3경로 · sections: 검색 품질 (hit@k · MRR); 지연 (query() 벽시계)
 - `benchmarks/latency/README.md` — doc: 회수 지연 — k6 부하 시험 · sections: 실행; 실측 (26-07-28 · Apple Silicon · 시맨틱 ON · 100페이지); 읽는 법; 한계
@@ -110,9 +113,6 @@
 - `docker/asgard-k6/README.md` — doc: asgard-k6 — 부하 시험 러너 이미지 · sections: 왜 우리 이름의 이미지인가; 볼륨은 프로젝트 것이다; 수동 스택
 - `docker/asgard-project-memory/README.md` — doc: asgard-project-memory — 2차 메모리(프로젝트 메모리) Hindsight 서버 · sections: 기본 구성 (2026-07-23 확정); 백엔드 제약 — 이 구성의 모든 상한이 여기서 나온다; 기동; 뱅크 단위 설정 — compose 가 못 닿는 층; 클라이언트; 설계 결정
 - `tests/load/README.md` — doc: Project memory load harness (k6, Docker) — 실측 기록 · sections: 실행; 실측 (Hindsight 0.8.3 · Docker · M-series · 2026-07-28); 정정 — 원인은 링크 밀도가 아니었다 (26-07-28 3차, 실서버 계측)
-- `src/asgard/assets/k6_kit/README.md` — doc: asgard-k6 · sections: 왜 selftest 가 먼저인가; 시나리오; 표면 뒤의 것들; 도커 쪽 집
-- `src/asgard/templates/roles/asgard-eitri.md` — doc: asgard-eitri — ⚒️ Build/CI/packaging specialist (Delivery)
-- `src/asgard/templates/roles/asgard-freyja.md` — doc: asgard-freyja — UI/UX specialist (Delivery)
 
 ## Public surfaces
 
@@ -123,6 +123,7 @@
 - `benchmarks/core-loop/harness.py` — public surface: def main()
 - `benchmarks/cpu-profile/dispatch_check.py` — public surface: def payload_for(name); def channels(text); def run(argv, payload); def peak_rss(argv, payload); def before_argvs(name)
 - `benchmarks/dispatch-parity/collect.py` — public surface: def role_of(role, agent); def collect(db_path, run); def main()
+- `benchmarks/engineering-principles/run.py` — public surface: class Case; class Result; def measure(); def controls_missed(results); def report(results)
 - `benchmarks/grounding/harness.py` — public surface: def floor_default(word); def floor_min(n); def floor_ratio(r); def floor_suffix(n); def floor_script(latin_suffix)
 - `benchmarks/hybrid-search/harness.py` — public surface: def build_wiki(d, extra_distractors); def score_mode(d, semantic_on); def latency_mode(d, semantic_on, iters); def main(); def print_summary(rec)
 - `benchmarks/latency/server.py` — public surface: def build(profile, pages); def main()
@@ -160,10 +161,9 @@
 - `tests/test_claude_native.py` — public surface: def tearDownModule(); class TestProfile; class TestNativeClient; class TestTransport; class TestStreaming; uses `src/asgard/providers.py`
 - `tests/test_cli_surface.py` — public surface: class TestMachineOutputNeedsAFlag; class TestQuietOwnsDashQ; class TestJsonCoverage; class TestShortFlagMeansOneThing; class TestOneNamePerBehaviour
 - `tests/test_code_map.py` — public surface: class CodeMapBase; class TestProjectMap; class TestMapCLI; class TestLanguageSurfaceCoverage
+- `tests/test_code_style.py` — public surface: class Detection; class Declaration; class Ownership; class Parsing; class Attribution
 - `tests/test_color_capability.py` — public surface: def test_windows_console_is_color_capable(monkeypatch, _clean_env); def test_windows_console_without_vt_stays_plain(monkeypatch, _clean_env); def test_no_color_wins_on_windows_without_touching_the_console(monkeypatch, _clean_env); def test_redirected_stdout_is_never_colored(monkeypatch, _clean_env); def test_posix_still_treats_unset_term_as_dumb(monkeypatch, _clean_env)
 - `tests/test_completions.py` — public surface: class TestSurfaceDerivation; class TestRendererCoversTheApp; class TestOneDoorForWindows; class TestRenderAnchors; class TestBashFunctional
-- `tests/test_container_agent.py` — public surface: def machine(tmp_path, monkeypatch); def test_container_gets_the_agent_home_as_a_container_path(machine, monkeypatch); def test_container_mounts_the_agent_home(machine, monkeypatch); def test_host_path_never_leaks_into_the_container_env(machine, monkeypatch); def test_profile_name_does_not_ride_along(machine, monkeypatch)
-- `tests/test_craft.py` — public surface: class UnitShapeTest; class ResourceLifetimeTest; class CostTest; class RatchetTest; class MoveTest
 
 ## Navigation contract
 
