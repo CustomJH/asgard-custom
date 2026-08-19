@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import os
 
-from ...map_graph.bridge import related_records
 from ...map_graph.graph import _STATE_RELATIVE, GraphError, graph_state
+from ...map_graph.view import graph_payload
 from .. import loopback
 from .boundary import workspace_label
 
@@ -55,29 +55,6 @@ def roots(current: str) -> list[dict]:
     return list(found.values())
 
 
-def _payload(root: str, state: dict) -> dict:
-    """화면이 읽는 자료 — `map_graph.view.build_view` 가 HTML 에 굽는 것과 같은 다섯 칸.
-
-    `build_view` 는 이 자료를 템플릿에 구워 문자열로 내고 여기서는 JSON 으로 낸다. 굽는 쪽을
-    부르는 제품 경로는 이제 없다(`asgard open map` 이 이 창구로 왔다) — `tests/map_graph/test_view.py`
-    가 아직 태우고 있어 남겨 둔 것이고, 두 자리가 갈라지지 않는지는
-    `tests/test_studio_map_roots.py` 의 형상 대조가 본다."""
-    records: dict[str, list[dict]] = {}
-    for node in state["nodes"]:
-        if node["kind"] == "file":
-            continue
-        related = related_records(root, node)
-        if related:
-            records[node["id"]] = [{"title": r.title, "file": r.file, "match": r.match} for r in related]
-    return {
-        "counts": state["counts"],
-        "revision": state.get("revision", ""),
-        "nodes": state["nodes"],
-        "edges": state["edges"],
-        "records": records,
-    }
-
-
 def _graph(params: dict[str, list[str]], root: str) -> tuple[int, str, bytes]:
     wanted = (params.get("root") or [""])[0].strip()
     target = os.path.realpath(os.path.expanduser(wanted)) if wanted else os.path.realpath(root)
@@ -105,7 +82,7 @@ def _graph(params: dict[str, list[str]], root: str) -> tuple[int, str, bytes]:
             detail={"root": target},
         )
     try:
-        return loopback.json_body(200, _payload(target, state))
+        return loopback.json_body(200, graph_payload(target, state))
     except (GraphError, OSError, ValueError, KeyError) as exc:
         return loopback.error_result(exc, surface="map", root=target)
 

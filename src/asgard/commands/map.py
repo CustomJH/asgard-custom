@@ -457,21 +457,40 @@ def run_map_impact(node_id: str, *, depth: int = 4, json_out: bool = False) -> i
 
 
 def run_map_view(*, open_browser: bool = True, json_out: bool = False) -> int:
-    """맵 화면을 연다 — 스튜디오 창의 `?view=map`.
+    """맵 화면을 연다 — 자립형 단일 HTML 을 굽고 브라우저로 연다.
 
-    여태는 `.asgard/state/map-view.html` 을 굽고 `file://` 로 열었다. 그 산출물은 이 저장소 하나만
-    담아서, 다른 프로젝트를 보려면 그 폴더로 옮겨 가 다시 열어야 했다. 이제 화면은 창구
-    (`studio.map_api`)에서 뿌리를 골라 읽으므로, 여는 쪽이 할 일은 그 창을 그 화면으로 여는 것뿐이다.
+    한동안 이 명령은 스튜디오 창을 `?view=map` 으로 띄웠다. 지도 하나를 보려는데 창 전체가 따라
+    올라오고, 서버가 서고, 작업 공간을 고르는 화면을 지나야 했다. 지도를 보는 일과 스튜디오를
+    쓰는 일은 다르므로 문을 둘로 되돌린다: 여기는 지도만 열고, 스튜디오 안의 같은 화면은
+    `asgard open studio --view map` 이 그대로 연다. 산출물은 이 저장소 하나만 담으니, 다른
+    프로젝트의 지도는 그 폴더에서 이 명령을 다시 쳐야 한다.
 
-    여기서 스캔은 하지 않는다. 창이 여러 뿌리를 보는데 그중 하나만 몰래 갱신하면 화면의 신선도가
-    줄마다 달라지고, `asgard open studio --view map` 은 어차피 스캔하지 않아 같은 화면을 여는 두
-    문이 갈린다. 스캔 여부는 창구가 뿌리마다 `scanned` 로 말하고, 안 된 자리는 `asgard map scan`
-    처방과 함께 거절한다. HTML 산출물을 굽는 `asgard.map_graph.write_view` 는 이 변경으로
-    부르는 자리도 태우는 시험도 없어졌다 — `map_graph.__all__` 에만 남아 있다."""
+    열 때마다 `scan_graph` 로 다시 훑는다 — 관측 표면이 낡은 상태를 사실처럼 보여주면 안 된다."""
+    root = _project_root(os.getcwd())
     ui.set_quiet(json_out)
-    from .studio import run_studio
+    from ..map_graph import GraphError, scan_graph, write_view
 
-    return run_studio(open_browser=open_browser, view="map", json_out=json_out)
+    try:
+        scan_graph(root)
+        path = write_view(root)
+    except (GraphError, MapError, OSError) as exc:
+        if json_out:
+            print(json.dumps({"error": str(exc)}, ensure_ascii=False))
+        else:
+            ui.fail(str(exc))
+        return 2
+    if json_out:
+        print(json.dumps({"path": path}, ensure_ascii=False))
+        return 0
+    ui.head("map · view")
+    ui.done(path)
+    if open_browser:
+        import webbrowser
+
+        uri = Path(path).as_uri()
+        if not webbrowser.open(uri):  # pragma: no cover - 데스크톱 환경 의존
+            ui.step(f"브라우저를 못 열었어요 — 직접 열어 주세요: {uri}")
+    return 0
 
 
 def run_map_context(

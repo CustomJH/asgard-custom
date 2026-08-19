@@ -249,7 +249,7 @@
     function renderLegend() {
       el.legend.innerHTML = "";
       const model = view.model;
-      for (const kind of global.AsgardMapDraw.KIND_ORDER) {
+      for (const kind of view.kindOrder) {
         if (!model.kindCount[kind]) continue;
         const chip = document.createElement("button");
         chip.type = "button";
@@ -300,9 +300,6 @@
       for (const chip of el.legend.children) {
         if (!chip.dataset.kind) continue; // 후보 토글은 자기 상태를 따로 갖는다
         chip.setAttribute("aria-pressed", String(on.has(chip.dataset.kind)));
-        chip.disabled = view.laneMode && chip.dataset.kind === "file";
-        if (chip.disabled) chip.title = "레인 모드에서는 파일 노드를 접어 둬요 — 증거는 오른쪽 패널에 남아요";
-        else chip.removeAttribute("title");
       }
     }
 
@@ -401,7 +398,7 @@
         }
         related = Object.values(acc);
       }
-      const order = global.AsgardMapDraw.KIND_ORDER;
+      const order = view.kindOrder;
       related.sort((a, b) => order.indexOf(a.o.kind) - order.indexOf(b.o.kind) || a.o.name.localeCompare(b.o.name));
       if (!related.length) return "";
       const cap = 24;

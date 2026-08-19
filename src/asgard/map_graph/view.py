@@ -13,6 +13,7 @@ from importlib.resources import files
 from pathlib import Path
 
 from .bridge import related_records
+from .evidence import node_kinds
 from .graph import GraphError, _atomic_state_write, _state_file, graph_state
 
 _VIEW_RELATIVE = Path(".asgard") / "state" / "map-view.html"
@@ -38,10 +39,13 @@ def _logo_data_uri() -> str:
     return "data:image/png;base64," + base64.b64encode(raw).decode("ascii")
 
 
-def build_view(root: str | os.PathLike[str]) -> str:
-    state = graph_state(root)
-    if state is None:
-        raise GraphError("relation graph state missing — run `asgard map scan` first")
+def graph_payload(root: str | os.PathLike[str], state: dict) -> dict:
+    """그리는 쪽이 읽는 자료 — 굽는 문(`build_view`)과 창구(`studio.map_api`)가 함께 쓴다.
+
+    문이 둘인데 자료를 두 자리에서 조립하면 한쪽에만 칸이 늘어난다. `kinds` 가 그 예다: 그리는
+    쪽이 종류 목록을 손으로 적어 두고 있었고, 그 목록에 없던 `service` 는 범례에도 레인에도
+    서지 못한 채 사라졌다. 이제 종류의 정본은 `evidence.node_kinds()` 하나다.
+    """
     records: dict[str, list[dict]] = {}
     for node in state["nodes"]:
         if node["kind"] == "file":
@@ -49,14 +53,21 @@ def build_view(root: str | os.PathLike[str]) -> str:
         found = related_records(root, node)
         if found:
             records[node["id"]] = [{"title": r.title, "file": r.file, "match": r.match} for r in found]
-    payload = {
+    return {
         "counts": state["counts"],
         "revision": state.get("revision", ""),
+        "kinds": list(node_kinds()),
         "nodes": state["nodes"],
         "edges": state["edges"],
         "records": records,
     }
-    data = json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
+
+
+def build_view(root: str | os.PathLike[str]) -> str:
+    state = graph_state(root)
+    if state is None:
+        raise GraphError("relation graph state missing — run `asgard map scan` first")
+    data = json.dumps(graph_payload(root, state), ensure_ascii=False).replace("</", "<\\/")
     return _template().replace("__DATA__", data).replace("__LOGO__", _logo_data_uri())
 
 

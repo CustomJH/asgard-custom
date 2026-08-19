@@ -13,7 +13,7 @@ confirmed로 승격 서술하지 않는다.
 from __future__ import annotations
 
 from .bridge import RelatedRecord, related_records
-from .evidence import EVIDENCE_KINDS, Evidence
+from .evidence import EVIDENCE_KINDS, Evidence, node_kinds
 from .graph import (
     EDGE_KINDS,
     GraphError,
@@ -28,7 +28,7 @@ from .graph import (
     trace,
 )
 from .impact import impact_report
-from .view import build_view, write_view
+from .view import build_view, graph_payload, write_view
 
 __all__ = [
     "EDGE_KINDS",
@@ -41,9 +41,11 @@ __all__ = [
     "build_view",
     "concept_candidates",
     "fresh_state",
+    "graph_payload",
     "graph_state",
     "impact_report",
     "node_anchor",
+    "node_kinds",
     "node_span",
     "related_records",
     "scan_graph",

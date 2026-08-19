@@ -26,6 +26,36 @@ EVIDENCE_KINDS = (
     "external_service",  # 외부 SaaS/SDK 의존
 )
 CONFIDENCE = ("confirmed", "candidate")
+# 파일은 증거가 아니라 증거가 나온 위치다 — EVIDENCE_KINDS 에 없지만 그래프에는 노드로 들어간다.
+FILE_KIND = "file"
+# 그리는 순서 — 아키텍처 흐름(화면 → 로직 → 경계 → 저장소). 이 표는 순서만 정하고 집합은
+# 정하지 않는다: 여기 이름이 없는 종류는 사라지지 않고 뒤에 이름 순으로 붙는다. 화면이 그릴
+# 종류를 손으로 적어 두면 EVIDENCE_KINDS 에 하나 늘 때마다 그 하나가 조용히 안 보인다.
+_DISPLAY_ORDER = (
+    "route",
+    "page",
+    "component",
+    "store",
+    "composable",
+    "service",
+    "command",
+    "model",
+    "db_access",
+    "api_call",
+    "event",
+    "job",
+    "external_service",
+    FILE_KIND,
+)
+
+
+def node_kinds() -> tuple[str, ...]:
+    """그래프 노드 종류 전부(증거 종류 + 파일), 화면 표시 순서대로."""
+    rank = {name: index for index, name in enumerate(_DISPLAY_ORDER)}
+    known = [*EVIDENCE_KINDS, FILE_KIND]
+    return tuple(sorted(known, key=lambda kind: (rank.get(kind, len(rank)), kind)))
+
+
 _ID_SAFE = re.compile(r"[^\w./:@-]+")
 _MAX_SUMMARY = 120
 

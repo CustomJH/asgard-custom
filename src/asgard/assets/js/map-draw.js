@@ -14,8 +14,11 @@
  * 같은 단위이므로, 마우스 좌표를 쓰는 자리는 전부 `dpr()` 을 곱한 뒤에 들어온다.
  */
 (function (global) {
+  // 종류 어휘의 정본은 파이썬(`map_graph.evidence.node_kinds`)이고 자료의 `kinds` 칸에 실려 온다.
+  // 아래는 그 칸이 없던 옛 상태 파일을 여는 경우의 폴백일 뿐이다. 그리는 쪽이 목록을 소유하면
+  // 파이썬에 종류가 하나 늘 때 그 하나가 범례에도 레인에도 서지 못한 채 사라진다.
   const KIND_ORDER = [
-    "route", "page", "component", "store", "composable", "command", "model",
+    "route", "page", "component", "store", "composable", "service", "command", "model",
     "db_access", "api_call", "event", "job", "external_service", "file",
   ];
   const EDGE_KINDS = ["declares", "calls", "touches", "uses", "emits"];
@@ -26,7 +29,7 @@
   // 상위를 독점해서, 아키텍처를 읽으러 온 사람에게 아무것도 말해 주지 않는다.
   const KIND_BOOST = {
     page: 400, route: 400, store: 300, command: 220, job: 220, event: 220, model: 220,
-    api_call: 160, db_access: 160, external_service: 160, composable: 120, component: 0,
+    api_call: 160, db_access: 160, external_service: 160, composable: 120, service: 120, component: 0,
   };
 
   // 레인(계층 컬럼) — 아키텍처 흐름 순서. 비어 있는 레인은 접힌다.
@@ -40,6 +43,7 @@
     { label: "command · job · event", kinds: ["command", "job", "event"] },
     { label: "model", kinds: ["model"] },
     { label: "db · external", kinds: ["db_access", "external_service"] },
+    { label: "file", kinds: ["file"] },
   ];
   const TIER_NAMES = ["atoms", "molecules", "organisms", "etc"];
 
@@ -82,7 +86,8 @@
     let off = { x: 0, y: 0 }, scale = 1;
     let active = new Set(), activeEdge = new Set(EDGE_KINDS), query = "", showCand = true;
     let selected = null, hover = null, neighbors = new Set(), bridges = new Set(), previewKind = null;
-    let userCam = false, hot = 0, settled = false, starSaved = false, fileWasOn = true;
+    let userCam = false, hot = 0, settled = false, starSaved = false;
+    let kindOrder = KIND_ORDER.slice();
     let laneMode = false, laneHeads = [], laneH = 0, morph = null, space = true, orbiting = false;
     let trace = null, traceT = 0, traceRaf = 0;
     let yaw = 0.42, pitch = -0.26, drift = 0;
@@ -96,7 +101,7 @@
       PAL = { canvas: tok("--canvas"), ink: tok("--ink"), muted: tok("--muted"),
         faint: tok("--faint"), goldLit: tok("--gold-lit"), line: tok("--line-strong") };
       KIND_COLOR = { unknown: tok("--map-kind-unknown") };
-      for (const kind of KIND_ORDER) KIND_COLOR[kind] = tok("--map-kind-" + kind.replace(/_/g, "-"));
+      for (const kind of kindOrder) KIND_COLOR[kind] = tok("--map-kind-" + kind.replace(/_/g, "-"));
       glowCache = {};
     }
 
@@ -127,6 +132,9 @@
         degree[e.target] = (degree[e.target] || 0) + 1;
       }
       for (const n of nodes) kindCount[n.kind] = (kindCount[n.kind] || 0) + 1;
+      kindOrder = (payload.kinds && payload.kinds.length) ? payload.kinds.slice() : KIND_ORDER.slice();
+      rebuildLanes();
+      refreshPalette();
       for (const e of edges) edgeKindCount[e.kind] = (edgeKindCount[e.kind] || 0) + 1;
       const weight = (n) => (KIND_BOOST[n.kind] || 0) + (degree[n.id] || 0);
       topLabel = new Set(
@@ -148,7 +156,7 @@
       model = { nodes: nodes, edges: edges, byId: byId, degree: degree, kindCount: kindCount,
         edgeKindCount: edgeKindCount, records: records, OUT: OUT, IN: IN };
 
-      active = new Set(KIND_ORDER.filter((k) => kindCount[k]));
+      active = new Set(kindOrder.filter((k) => kindCount[k]));
       activeEdge = new Set(EDGE_KINDS);
       query = ""; showCand = true; previewKind = null;
       selected = null; hover = null; neighbors = new Set(); bridges = new Set();
@@ -312,8 +320,19 @@
     }
 
     // ── 레인 배치 — 결정론(물리 없음): 바리센터 2스윕 정렬 후 계층 컬럼 그리드 ──────
-    const laneOf = {};
-    LANES.forEach((l, i) => l.kinds.forEach((k) => { laneOf[k] = i; }));
+    let lanes = LANES.slice(), laneOf = {};
+    function rebuildLanes() {
+      lanes = LANES.slice();
+      laneOf = {};
+      lanes.forEach((l, i) => l.kinds.forEach((k) => { laneOf[k] = i; }));
+      // 레인 표에 자리가 없는 종류는 사라지는 대신 마지막 칸에 모인다 — 그래야 레인이 성좌와
+      // 같은 노드 집합을 그린다. 라벨은 그 종류들의 이름 그대로 쓴다(없는 이름을 짓지 않는다).
+      const laneless = kindOrder.filter((k) => laneOf[k] == null && kindCount[k]);
+      if (!laneless.length) return;
+      lanes = lanes.concat([{ label: laneless.join(" · "), kinds: laneless }]);
+      laneless.forEach((k) => { laneOf[k] = lanes.length - 1; });
+    }
+    rebuildLanes();
 
     function tierOf(n) {
       const f = (n.files && n.files[0] && n.files[0].file) || "";
@@ -324,7 +343,7 @@
     }
 
     function laneLayout() {
-      const vis = nodes.filter((n) => n.kind !== "file" && laneOf[n.kind] != null);
+      const vis = nodes.filter((n) => laneOf[n.kind] != null);
       laneHeads = [];
       if (!vis.length) return;
       const H = Math.max(380, Math.min(1700, Math.ceil(Math.sqrt(vis.length)) * 38));
@@ -345,8 +364,8 @@
       }
       const colW = 34, gapG = 18, laneGap = 96;
       let x = 0;
-      for (let li = 0; li < LANES.length; li++) {
-        const lane = LANES[li];
+      for (let li = 0; li < lanes.length; li++) {
+        const lane = lanes[li];
         const members = order.filter((n) => laneOf[n.kind] === li);
         if (!members.length) continue;
         const groups = lane.tiered
@@ -410,11 +429,8 @@
       if (lane) {
         if (!starSaved) { for (const n of nodes) { n.sx = n.x; n.sy = n.y; n.sz = n.z; } starSaved = true; }
         hot = 0;
-        fileWasOn = active.has("file");
-        active.delete("file"); // 레인에서 파일 노드는 접어 둔다 — 증거·연계는 패널에 남는다
         laneLayout();
       } else {
-        if (fileWasOn) active.add("file");
         if (!starSaved) { for (const n of nodes) { n.sx = n.x; n.sy = n.y; n.sz = n.z; } starSaved = true; }
         if (!settled) { // 성좌를 아직 정착시킨 적이 없다 — 레인 좌표를 잠시 치우고 정착시킨다
           for (const n of nodes) { n.lx = n.x; n.ly = n.y; n.lz = n.z; n.x = n.sx; n.y = n.sy; n.z = n.sz; }
@@ -600,7 +616,7 @@
         const sa = state(a), sb = state(b);
         if (!sa || !sb) {
           // 파일이 필터로 꺼져도 파일 경유 연계(실제 구성)는 접점 스터브로 남긴다
-          if (!sa && !laneMode && a.kind === "file" && sb === 2) { via.push(e); viaN[a.id] = (viaN[a.id] || 0) + 1; }
+          if (!sa && a.kind === "file" && sb === 2) { via.push(e); viaN[a.id] = (viaN[a.id] || 0) + 1; }
           continue;
         }
         if (trace) { if (trace.eset.has(e)) path.push(e); else ghost.push(e); }
@@ -905,12 +921,11 @@
       setQuery(q) { query = q; }, setShowCand(v) { showCand = v; }, setPreviewKind(k) { previewKind = k; },
       ensureKind(k) { active.add(k); },
       soloKind(k) { // 단독 보기 — 이미 단독이면 전체 복귀
-        const all = KIND_ORDER.filter((x) => kindCount[x]);
+        const all = kindOrder.filter((x) => kindCount[x]);
         active = (active.size === 1 && active.has(k)) ? new Set(all) : new Set([k]);
       },
       resetFilters() {
-        active = new Set(KIND_ORDER.filter((k) => kindCount[k]));
-        if (laneMode) active.delete("file");
+        active = new Set(kindOrder.filter((k) => kindCount[k]));
         activeEdge = new Set(EDGE_KINDS);
         showCand = true; query = "";
       },
@@ -924,6 +939,7 @@
       get hover() { return hover; },
       set hover(n) { hover = n; },
       get trace() { return trace; },
+      get kindOrder() { return kindOrder; },
       get laneMode() { return laneMode; },
       get space() { return space; },
       get scale() { return scale; },
@@ -933,7 +949,6 @@
 
   global.AsgardMapDraw = {
     create: create,
-    KIND_ORDER: KIND_ORDER,
     EDGE_KINDS: EDGE_KINDS,
     EDGE_DASH: EDGE_DASH,
     reduced: reduced,

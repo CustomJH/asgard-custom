@@ -299,8 +299,13 @@ const DATA = JSON.parse(document.getElementById("data").textContent);
 // 쿨 톤은 데이터·인프라 계열에 배정. 동색권 충돌(composable↔db_access, store↔event) 분리.
 const KIND_COLORS = { file:"#6E7787", route:"#E8C87E", page:"#F0A268", store:"#D093EE", composable:"#97D695",
   component:"#C9AD8C", command:"#D98E4A", model:"#85AEE8",
-  db_access:"#4FB8AE", api_call:"#E88585", event:"#7B7BE0", job:"#B9C167", external_service:"#E08FB8" };
-const KIND_ORDER = ["route","page","component","store","composable","command","model","db_access","api_call","event","job","external_service","file"];
+  db_access:"#4FB8AE", api_call:"#E88585", event:"#7B7BE0", job:"#B9C167", external_service:"#E08FB8",
+  service:"#60BFDF" };
+// 종류 어휘의 정본은 파이썬(`map_graph.evidence.node_kinds`)이고, 자료의 `kinds` 칸에 실려 온다.
+// 아래 목록은 그 칸이 없던 옛 상태 파일을 여는 경우의 폴백이다. 그리는 쪽이 목록을 소유하면
+// 파이썬에 종류가 하나 늘 때 그 하나가 범례에도 레인에도 서지 못한 채 사라진다.
+const KIND_ORDER = (DATA.kinds && DATA.kinds.length) ? DATA.kinds.slice()
+  : ["route","page","component","store","composable","service","command","model","db_access","api_call","event","job","external_service","file"];
 // 팔레트 단일 출처 — 캔버스는 DOM과 같은 :root 토큰을 읽는다. 하드코딩 사본을 남기면
 // 토큰을 손봤을 때 그림만 옛 색으로 남아 조용히 어긋난다. 폴백은 토큰 부재 시에만 쓰인다.
 const CSSVAR = getComputedStyle(document.documentElement);
@@ -347,7 +352,7 @@ const kindCount = {}; nodes.forEach(n=>{ kindCount[n.kind]=(kindCount[n.kind]||0
 const edgeKindCount = {}; edges.forEach(e=>{ edgeKindCount[e.kind]=(edgeKindCount[e.kind]||0)+1; });
 // 상시 라벨 — 차수에 종류 가중(아키텍처 종류 우대): 순수 차수는 UI 킷 원자(Button·Card)가 독점한다
 const KIND_BOOST={page:400,route:400,store:300,command:220,job:220,event:220,model:220,
-  api_call:160,db_access:160,external_service:160,composable:120,component:0};
+  api_call:160,db_access:160,external_service:160,composable:120,service:120,component:0};
 const topLabel = new Set(nodes.filter(n=>n.kind!=="file")
   .sort((a,b)=>((KIND_BOOST[b.kind]||0)+(degree[b.id]||0))-((KIND_BOOST[a.kind]||0)+(degree[a.id]||0)))
   .slice(0,14).map(n=>n.id));
@@ -368,8 +373,14 @@ const LANES=[
   {label:"command · job · event",kinds:["command","job","event"]},
   {label:"model",kinds:["model"]},
   {label:"db · external",kinds:["db_access","external_service"]},
+  {label:"file",kinds:["file"]},
 ];
 const laneOf={}; LANES.forEach((l,i)=>l.kinds.forEach(k=>laneOf[k]=i));
+// 레인 표에 자리가 없는 종류 — 레인이 성좌와 다른 집합을 그리지 않도록 마지막 칸에 모은다.
+// 이름을 지어내지 않고 그 종류들의 이름을 그대로 라벨로 쓴다.
+const laneless=KIND_ORDER.filter(k=>laneOf[k]==null&&kindCount[k]);
+if(laneless.length){ LANES.push({label:laneless.join(" · "),kinds:laneless});
+  laneless.forEach(k=>laneOf[k]=LANES.length-1); }
 const TIER_NAMES=["atoms","molecules","organisms","etc"];
 function tier(n){ const f=(n.files&&n.files[0]&&n.files[0].file)||"";
   if(f.includes("/atoms/")) return 0;
@@ -380,7 +391,7 @@ function tier(n){ const f=(n.files&&n.files[0]&&n.files[0].file)||"";
 let off={x:0,y:0}, scale=1, active=new Set(KIND_ORDER.filter(k=>kindCount[k])), query="",
   selected=null, hover=null, neighbors=new Set(), bridges=new Set(), previewKind=null,
   userCam=false, hot = REDUCED ? 0 : 260;
-let laneMode=false, laneHeads=[], laneH=0, morph=null, starSaved=false, settled=false, fileWasOn=true;
+let laneMode=false, laneHeads=[], laneH=0, morph=null, starSaved=false, settled=false;
 let space=true, orbiting=false; // space = 성좌(3차원 시냅스 공간) · 레인은 평면으로 접힌다
 let trace=null, traceT=0, traceRaf=0, showCand=true, activeEdge=new Set(EDGE_KINDS);
 let cvx0=-1e9, cvy0=-1e9, cvx1=1e9, cvy1=1e9;
@@ -456,7 +467,7 @@ function fit(){
 
 // ── 레인 배치 — 결정론(물리 없음): 바리센터 2스윕 정렬 후 계층 컬럼 그리드 ──
 function laneLayout(){
-  const vis=nodes.filter(n=>n.kind!=="file"&&laneOf[n.kind]!=null);
+  const vis=nodes.filter(n=>laneOf[n.kind]!=null);
   laneHeads=[];
   if(!vis.length) return;
   const H=Math.max(380, Math.min(1700, Math.ceil(Math.sqrt(vis.length))*38));
@@ -524,16 +535,11 @@ function setMode(lane, opt){
   stage.classList.toggle("flat", lane);
   document.getElementById("modeStar").setAttribute("aria-pressed",String(!lane));
   document.getElementById("modeLane").setAttribute("aria-pressed",String(lane));
-  const fchip=[...legend.children].find(x=>x.dataset.kind==="file");
   if(lane){
     if(!starSaved){ for(const n of nodes){ n.sx=n.x; n.sy=n.y; n.sz=n.z; } starSaved=true; }
     hot=0;
-    fileWasOn=active.has("file"); active.delete("file");
-    if(fchip){ fchip.disabled=true; fchip.title="레인 모드 — 파일 노드는 접어둔다(증거·연계는 패널에)"; }
     laneLayout();
   } else {
-    if(fchip){ fchip.disabled=false; fchip.removeAttribute("title"); }
-    if(fileWasOn) active.add("file");
     if(!starSaved){ for(const n of nodes){ n.sx=n.x; n.sy=n.y; n.sz=n.z; } starSaved=true; }
     if(!settled){ // 성좌를 아직 정착시킨 적이 없다 — 레인 좌표를 잠시 치우고 시간 예산 정착
       for(const n of nodes){ n.lx=n.x; n.ly=n.y; n.lz=n.z; n.x=n.sx; n.y=n.sy; n.z=n.sz; }
@@ -718,7 +724,7 @@ function draw(){
     const a=byId[e.source], b=byId[e.target];
     const sa=state(a), sb=state(b);
     if(!sa||!sb){ // 파일이 필터로 꺼져도 파일 경유 연계(실제 구성)는 접점 스터브로 남긴다
-      if(!sa && !laneMode && a.kind==="file" && sb===2){ via.push(e); viaN[a.id]=(viaN[a.id]||0)+1; }
+      if(!sa && a.kind==="file" && sb===2){ via.push(e); viaN[a.id]=(viaN[a.id]||0)+1; }
       continue; }
     if(trace){ if(trace.eset.has(e)) path.push(e); else ghost.push(e); }
     else if(focus){ if(e.source===focus.id||e.target===focus.id) lit.push(e);
@@ -1175,7 +1181,6 @@ qEl.addEventListener("keydown", e=>{
 });
 document.getElementById("visreset").onclick=()=>{ // 필터 전멸 복구 — 종류·후보·엣지·검색 전부 초기값
   active=new Set(KIND_ORDER.filter(k=>kindCount[k]));
-  if(laneMode) active.delete("file");
   showCand=true; activeEdge=new Set(EDGE_KINDS);
   query=""; qEl.value=""; qHint.hidden=true; renderResults();
   const ct=document.getElementById("candTog");

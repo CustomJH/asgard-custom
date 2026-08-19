@@ -27,6 +27,7 @@
   --map-kind-job: oklch(var(--map-kind-l) var(--map-kind-c) 120);
   --map-kind-composable: oklch(var(--map-kind-l) var(--map-kind-c) 150);
   --map-kind-db-access: oklch(var(--map-kind-l) var(--map-kind-c) 190);
+  --map-kind-service: oklch(var(--map-kind-l) var(--map-kind-c) 222);
   --map-kind-model: oklch(var(--map-kind-l) var(--map-kind-c) 250);
   --map-kind-file: oklch(var(--map-kind-l) var(--map-kind-c-quiet) 265);
   --map-kind-event: oklch(var(--map-kind-l) var(--map-kind-c) 285);
