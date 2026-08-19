@@ -1,0 +1,5 @@
+interface:
+  display_name: "learned-stale-comment-contradicts-new-behavior"
+  short_description: "stale-comment-contradicts-new-behavior — agent-activate.cpython-314.pyc, charter-activate.cpython-314.pyc, lagom-activat"
+policy:
+  allow_implicit_invocation: false

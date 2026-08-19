@@ -1,0 +1,5 @@
+interface:
+  display_name: "learned-stale-post-apply-claim"
+  short_description: "stale-post-apply-claim — asgard-ullr.md, agent-activate.cpython-314.pyc, charter-activate.cpython-314.pyc, lagom-activat"
+policy:
+  allow_implicit_invocation: false

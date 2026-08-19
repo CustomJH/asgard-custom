@@ -1,0 +1,5 @@
+interface:
+  display_name: "learned-docstring-claim-outruns-its-command"
+  short_description: "docstring-claim-outruns-its-command — agent-activate.cpython-314.pyc, charter-activate.cpython-314.pyc, lagom-activate.c"
+policy:
+  allow_implicit_invocation: false

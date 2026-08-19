@@ -1,0 +1,5 @@
+interface:
+  display_name: "learned-handover-doc-contradicts-itself"
+  short_description: "handover-doc-contradicts-itself — destructive.cpython-314.pyc, transcript.cpython-314.pyc, __init__.cpython-314.pyc, con"
+policy:
+  allow_implicit_invocation: false

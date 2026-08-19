@@ -1,0 +1,5 @@
+interface:
+  display_name: "learned-missing-title-on-memory-save-lane"
+  short_description: "missing-title-on-memory-save-lane — agent-activate.cpython-314.pyc, charter-activate.cpython-314.pyc, lagom-activate.cpy"
+policy:
+  allow_implicit_invocation: false

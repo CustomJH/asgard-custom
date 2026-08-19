@@ -1,0 +1,5 @@
+interface:
+  display_name: "learned-unannounced-path-cap"
+  short_description: "unannounced-path-cap — agent-activate.cpython-314.pyc, charter-activate.cpython-314.pyc, lagom-activate.cpython-314.pyc,"
+policy:
+  allow_implicit_invocation: false
