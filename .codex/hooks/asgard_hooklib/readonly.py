@@ -32,6 +32,9 @@ READONLY_BASH_HINT = (
     "your own attempt on it (ask/escalate/heartbeat, and `done` only in its self-naming form: "
     "`asgard siege done --quest <quest> --agent <you> --outcome failed` — a positional dispatch id "
     "would let you settle somebody else's attempt). "
+    "`gh` observation only, written as <noun> view|list — release/run/workflow/pr/issue. "
+    "So `gh release view <tag> --json assets` is how you see what a tag actually shipped; "
+    "`gh api`, download, create, upload, delete and merge stay closed. "
     "sed/awk without in-place writes. Allowed commands may be chained with `|`, `&&`, `||`, `;` "
     "(each segment is judged on its own), and `2>/dev/null` / `2>&1` / `< /dev/null` are fine. "
     'Shell loops of read-only commands are fine (`for f in a b; do wc -c "$f"; done`). '
@@ -107,7 +110,38 @@ _AWK_WRITE = re.compile(r">|\bsystem\s*\(|\bclose\s*\(|\bgetline\b|\bENVIRON\b|\
 _VERIFY = {"pytest", "mypy", "pyright", "ty"}
 
 
+# `ls-remote` 는 여기 넣으면 안 된다. 이름은 읽기지만 **원격 전송로를 여는** 유일한 후보라,
+# 그 전송로가 띄울 프로그램을 인자로 받는다: `--upload-pack=<프로그램>` (그리고 `-u`·`--exec=`)
+# 은 원격이 로컬 경로일 때 그 프로그램을 여기서 실행한다 (26-08-19 실측: 배포된 훅을 통과해
+# `git ls-remote --upload-pack=id .` 이 실제로 `id` 를 돌렸다). 이 저장소는 같은 갈래를 이미
+# 금지로 적어 뒀다 — `git -c diff.external=touch` (tests/test_tool_kernel.py).
+#
+# 위험한 플래그를 세어 막지 않는 이유는 이 저장소가 그 방법으로 세 번 샜기 때문이다. 세는 쪽은
+# 매번 빠뜨린 갈래로 새고(`-u`·`--exec=`·`ext::` 전송로가 벌써 셋이다), 넷째를 더하는 대신
+# 하위명령 자체를 안 여는 쪽이 맞다. 원격 관측이 필요하면 `_GH_READ` 를 쓴다 — 그쪽은 명사와
+# 동사 쌍으로 닫혀 있어 프로그램을 지정할 자리가 없다.
 _GIT_READ = {"diff", "status", "log", "show", "grep", "ls-files", "rev-parse"}
+
+
+# `gh` 의 관측 동사 — (명사, 동사) 쌍으로만 연다. 바이너리 이름으로 열면 `gh release create` 와
+# `gh pr merge` 가 같이 열리고, 동사 이름만으로 열면 다른 명사의 같은 동사까지 딸려 온다.
+# `download` 계열은 파일을 쓰므로 뺐고 `api` 는 통째로 뺐다 — `-X POST` 하나로 쓰기가 된다.
+#
+# 이 표가 없는 동안 릴리즈 판정은 구조적으로 불가능했다 (26-08-19 실측: v0.10.19 판정이
+# `gh release view`·`git ls-remote`·urllib·작업 출력 파일 네 통로가 모두 막혀 공개된 설치본
+# 이름을 한 번도 못 보고 FAIL 로 끝났다 — 릴리즈가 틀려서가 아니라 볼 수가 없어서다).
+_GH_READ = {
+    ("release", "view"),
+    ("release", "list"),
+    ("run", "view"),
+    ("run", "list"),
+    ("workflow", "view"),
+    ("workflow", "list"),
+    ("pr", "view"),
+    ("pr", "list"),
+    ("issue", "view"),
+    ("issue", "list"),
+}
 
 
 # 색인에만 닿는 git 하위명령 — 작업 트리의 파일을 한 바이트도 안 바꾼다. 아래 통제 표면이
@@ -313,6 +347,9 @@ def _safe_segment(segment: str, roots: tuple[str, ...] = (), caller: str = "") -
         return "--noEmit" in tokens[1:]
     if program == "git":
         return git_flags_safe(tokens, roots) and git_subcommand(tokens) in _GIT_READ
+    if program == "gh":
+        operands = [t for t in tokens[1:] if not t.startswith("-")]
+        return len(operands) >= 2 and (operands[0], operands[1]) in _GH_READ
     if (inner := strip_runner(tokens)) is not None:
         return _safe_segment(shlex.join(inner), roots, caller)
     if program in {"npm", "pnpm", "yarn"}:

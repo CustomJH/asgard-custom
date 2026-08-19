@@ -27,6 +27,45 @@ class TestRegistry(unittest.TestCase):
             self.assertTrue(path_token_targets_control(roots, "control/settings.json", (".claude", ".asgard")))
             self.assertTrue(path_token_targets_control(roots, "--output=control/settings.json", (".claude", ".asgard")))
 
+    def test_a_read_only_role_can_observe_the_remote_but_not_change_it(self):
+        """판정이 릴리즈를 볼 수 있어야 한다 — 그러나 내는 것은 못 한다.
+
+        26-08-19 실측: v0.10.19 판정이 `gh release view`·`git ls-remote`·urllib·작업 출력 파일
+        네 통로가 모두 막혀 공개된 설치본 이름을 한 번도 못 보고 FAIL 로 끝났다. 릴리즈가
+        틀려서가 아니라 볼 수가 없어서다 — 하필 직전 릴리즈가 어긋난 자리가 거기였다.
+
+        여는 축과 닫는 축을 한 시험에 둔 이유는 이 표가 명사 하나로 열리기 때문이다.
+        `gh` 를 바이너리 이름으로 열면 `release create` 와 `pr merge` 가 같이 열린다.
+        """
+        for cmd in (
+            "gh release view v0.10.19 --json tagName,assets",
+            "gh release list --limit 5",
+            "gh run view 32247042492 --json status,conclusion,jobs",
+            "gh run list --workflow=release.yml --limit 3",
+        ):
+            with self.subTest(allow=cmd):
+                self.assertTrue(is_readonly_bash_safe(cmd), f"판정이 이걸 못 보면 릴리즈를 못 잰다: {cmd}")
+        for cmd in (
+            "gh release create v9.9.9",
+            "gh release upload v0.10.19 dist/x.whl",
+            "gh release delete v0.10.19",
+            "gh release download v0.10.19",  # 파일을 쓴다
+            "gh run download 1 --dir out",
+            "gh pr merge 1 --squash",
+            "gh api -X POST /repos/o/r/releases",  # 동사 이름만으로 열면 이게 새어 나간다
+            "gh",
+            # `ls-remote` 는 이름이 읽기라 한 번 열렸다가 되돌아왔다. 원격 전송로를 여는 유일한
+            # 후보라 그 전송로가 띄울 프로그램을 인자로 받는다 — 아래 셋은 원격이 로컬 경로일 때
+            # 그 프로그램을 여기서 실행한다 (26-08-19 실측: `--upload-pack=id .` 이 `id` 를 돌렸다).
+            # 플래그를 세어 막는 대신 하위명령을 안 연다: 세는 쪽은 매번 빠뜨린 갈래로 샌다.
+            "git ls-remote --upload-pack=id .",
+            "git ls-remote -u id .",
+            "git ls-remote --exec=id .",
+            "git ls-remote --tags origin v0.10.19",
+        ):
+            with self.subTest(refuse=cmd):
+                self.assertFalse(is_readonly_bash_safe(cmd), f"읽기 전용 역할이 이걸 하면 안 된다: {cmd}")
+
     def test_readonly_shell_parser_respects_quoted_pipes_and_trinity_metadata(self):
         self.assertTrue(is_readonly_bash_safe('grep -nE "add_parser|next_role" hook.py | head -20'))
         self.assertTrue(is_readonly_bash_safe("python3 .claude/hooks/quest-log.py open q --criteria x"))
