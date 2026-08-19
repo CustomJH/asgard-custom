@@ -3,7 +3,7 @@ and the foundational .claude/ folder set (each seeded with a README so git track
 
 import json
 
-from ..platform import UV_HOOK_PYTHON, hook_python, hook_python_token
+from ..platform import UV_HOOK_PYTHON, hook_python, hook_python_token, preflight_command
 
 CC_FOLDERS = [
     (
@@ -50,13 +50,11 @@ def _dispatch(py: str, *specs: str) -> str:
 
 def cc_settings() -> str:
     # Permission floor (belt) + deterministic PreToolUse guards (braces): "prose asks, hooks forbid."
-    # 훅 인터프리터는 생성 시점의 타깃 머신 기준 — uv 가 설치 보장 런타임이라 정본이고,
-    # uv 없는 기계에서만 python3/py 로 내려간다 (platform.hook_python).
-    #
-    # 두 표기가 서로 다른 일을 한다. 배선(`py`)은 이 기계의 절대 경로라 PATH 가 넉 줄뿐인
-    # 독·launchd 프로세스에서도 서고, 허용목록(`token`)은 안내문이 시키는 맨 토큰이라 모델이
-    # 친 명령과 한 글자도 안 어긋난다.
-    py = hook_python()
+    # 두 표기가 서로 다른 일을 한다. 배선(`py`)은 훅 폴더에 같이 깔리는 런처를 부른다 — 배선
+    # 파일은 팀에 커밋돼 다른 기계에서도 읽히므로 여기 이 기계의 uv 경로를 적을 수 없고, PATH 가
+    # 넉 줄뿐인 독·launchd 프로세스도 서야 해서 맨 `uv` 도 적을 수 없다 (platform.hook_python).
+    # 허용목록(`token`)은 안내문이 시키는 맨 토큰이라 모델이 친 명령과 한 글자도 안 어긋난다.
+    py = hook_python("$CLAUDE_PROJECT_DIR/.claude/hooks")
     token = hook_python_token()
     return (
         json.dumps(
@@ -122,6 +120,13 @@ def cc_settings() -> str:
                         {
                             "matcher": "startup|resume|clear|compact",
                             "hooks": [
+                                # 환경 프리플라이트 — 바로 아래 줄이 부르는 인터프리터가 이 기계에
+                                # 있는지부터 본다. 파이썬 없이 도는 sh 라서, 없을 때 말할 수 있는
+                                # 유일한 자리다 (templates/env.py).
+                                {
+                                    "type": "command",
+                                    "command": preflight_command("$CLAUDE_PROJECT_DIR/.claude/hooks", "claude-code"),
+                                },
                                 {
                                     "type": "command",
                                     "command": _dispatch(

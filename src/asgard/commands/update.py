@@ -17,12 +17,12 @@ import tempfile
 import urllib.request
 
 from .. import __version__, errors, ui
-from ..platform import on_path
+from ..platform import PYTHON_PIN, on_path
 from .completions import ensure_installed
 
 _REPO = "CustomJH/asgard-custom"
 _SPEC_OVERRIDE = os.environ.get("ASGARD_INSTALL_SPEC")  # dev/CI escape hatch (git+…, local path)
-_PYTHON = "3.14"  # pyproject의 requires-python과 같은 핀 — install.sh·install.ps1도 이것을 쓴다
+_PYTHON = PYTHON_PIN  # 핀의 정본은 platform.PYTHON_PIN 하나다
 _WIN = sys.platform == "win32"
 _HANDOFFS: list[subprocess.Popen] = []
 

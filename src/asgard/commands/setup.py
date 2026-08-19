@@ -11,6 +11,7 @@ from pathlib import Path
 from .. import io_files, ui
 from ..hooks import library_files  # asgard_hooklib/* — the shared substrate, laid next to the hooks
 from ..hooks import script as hook  # hook("git-guard") → the hook's source, scaffolded verbatim
+from ..platform import HOOK_LAUNCHER
 from ..skill_registry import client_skill_bodies, invocable_skill_bodies, skill_catalog
 from ..templates import (
     CC_FOLDERS,
@@ -26,6 +27,9 @@ from ..templates import (
     cursor_agent,
     cursor_hooks_json,
     cursor_rule,
+    env_setup_ps1,
+    env_setup_sh,
+    hook_launcher_sh,
     project_settings,
 )
 from ..templates.lagom import (
@@ -312,6 +316,11 @@ def hook_files(hooks_dir: str, client: str = "claude-code") -> list[tuple[str, s
     배선 없이 파일만)."""
     j = os.path.join
     files = [
+        # 훅이 아니라 훅의 전제. 런처는 배선이 부르는 인터프리터를 그 기계 위에서 고르고,
+        # 프리플라이트는 고를 것이 아무것도 없을 때 말한다. 둘 다 파이썬 없이 도는 POSIX sh 다.
+        (j(hooks_dir, HOOK_LAUNCHER), hook_launcher_sh()),
+        (j(hooks_dir, "env-setup.sh"), env_setup_sh()),
+        (j(hooks_dir, "env-setup.ps1"), env_setup_ps1()),
         (j(hooks_dir, "git-guard.py"), hook("git-guard")),
         (j(hooks_dir, "release-guard.py"), hook("release-guard")),  # 외부 부작용 승인 게이트
         (j(hooks_dir, "readonly-guard.py"), hook("readonly-guard")),

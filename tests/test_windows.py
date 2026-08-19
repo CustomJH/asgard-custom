@@ -31,26 +31,32 @@ class TestHookPython(unittest.TestCase):
     기계에서 존재가 보장된 런타임은 uv 뿐이다. 시스템 python3 는 없을 수도(Windows 는 없는
     쪽이 보통) 낡았을 수도 있다 — 그래서 우선순위가 뒤다.
 
-    배선(`hook_python`)은 절대 경로, 안내문·허용목록(`hook_python_token`)은 맨 토큰이다."""
+    배선(`hook_python`)에는 이 기계에서만 맞는 값이 안 들어간다. 배선 파일은 팀에 커밋돼
+    전달되므로 POSIX 에서는 훅 폴더의 런처를 부르고, 어느 uv 를 쓸지는 그 기계 위에서 런처가
+    정한다. 안내문·허용목록(`hook_python_token`)은 그대로 맨 토큰이다."""
 
-    def test_uv_wins_on_posix(self):
+    def test_posix_wiring_calls_the_launcher_not_this_machines_uv(self):
         with mock.patch.object(asg_platform.sys, "platform", "linux"):
             with mock.patch.object(asg_platform.shutil, "which", side_effect=lambda c: f"/usr/local/bin/{c}"):
-                self.assertEqual(asg_platform.hook_python(), "/usr/local/bin/uv run --no-project python")
+                wired = asg_platform.hook_python("$CLAUDE_PROJECT_DIR/.claude/hooks")
+                self.assertEqual(wired, 'sh "$CLAUDE_PROJECT_DIR/.claude/hooks/asgard-python"')
+                self.assertNotIn("/usr/local/bin", wired)
                 self.assertEqual(asg_platform.hook_python_token(), "uv run --no-project python")
 
-    def test_uv_wins_on_windows(self):
+    def test_windows_wiring_is_the_bare_token(self):
+        """Windows 는 런처를 안 쓴다 — `sh` 가 있다는 보장이 없고, PATH 도 안 잘린다."""
         with _win(asg_platform):
             with mock.patch.object(asg_platform.shutil, "which", side_effect=lambda c: rf"C:\bin\{c}.exe"):
-                # 역슬래시는 따옴표 안에서도 셸마다 다르게 읽힌다 — 정방향 슬래시로 넘긴다.
-                self.assertEqual(asg_platform.hook_python(), "C:/bin/uv.exe run --no-project python")
+                wired = asg_platform.hook_python("$CLAUDE_PROJECT_DIR/.claude/hooks")
+                self.assertEqual(wired, "uv run --no-project python")
+                self.assertNotIn("C:", wired)
                 self.assertEqual(asg_platform.hook_python_token(), "uv run --no-project python")
 
     def test_a_path_that_cannot_be_quoted_falls_back_to_the_bare_token(self):
         """작은따옴표가 든 경로는 codex 의 TOML 리터럴 문자열 안에서 탈출할 방법이 없다."""
         with mock.patch.object(asg_platform.sys, "platform", "linux"):
             with mock.patch.object(asg_platform.shutil, "which", side_effect=lambda c: f"/home/o'brien/bin/{c}"):
-                self.assertEqual(asg_platform.hook_python(), "uv run --no-project python")
+                self.assertEqual(asg_platform.hook_python_argv(), ["uv", "run", "--no-project", "python"])
 
     def test_posix_without_uv_is_python3(self):
         with mock.patch.object(asg_platform.sys, "platform", "linux"):
@@ -111,7 +117,17 @@ class TestTemplatesWindowsWiring(unittest.TestCase):
 
     @staticmethod
     def _hook_cmds(settings: dict) -> list[str]:
-        return [h["command"] for event in settings["hooks"].values() for entry in event for h in entry["hooks"]]
+        """인터프리터로 도는 훅 줄만 — 환경 프리플라이트는 빼고 센다.
+
+        그 줄은 파이썬이 없을 때 말하려고 있는 것이라 `sh` 로 돈다 (templates/env.py). 여기 섞이면
+        "모든 줄이 이 인터프리터로 시작한다"는 계약이 그 줄 하나 때문에 거짓이 된다."""
+        return [
+            h["command"]
+            for event in settings["hooks"].values()
+            for entry in event
+            for h in entry["hooks"]
+            if "env-setup." not in h["command"]
+        ]
 
     def test_cc_settings_windows_swaps_interpreter(self):
         with mock.patch("asgard.templates.claude.hook_python", return_value="py"):

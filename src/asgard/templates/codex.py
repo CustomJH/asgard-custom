@@ -2,9 +2,12 @@
 
 import json
 
-from ..platform import hook_python
+from ..platform import hook_python, preflight_command
 from .agent_models import agent_model
 from .roles import role_document
+
+# Codex 훅은 저장소 뿌리를 이 명령치환으로 찾는다 — 배선 문법이라 경로 계산이 아니다.
+_CODEX_HOOKS = "$(git rev-parse --show-toplevel)/.codex/hooks"
 
 _CODEX_CONFIG = """\
 # Codex project config — overrides ~/.codex/config.toml, loaded only in trusted projects.
@@ -26,6 +29,12 @@ max_depth = 2
 # Memory v3 — session snapshot, prompt-specific recall, Thinker-only context, verified turn sync.
 # Lagom (output restraint) and the Charter north star ride the same events — one contract per mode.
 [[hooks.SessionStart]]
+
+# 환경 프리플라이트 — 아래 줄들이 부르는 인터프리터가 이 기계에 있는지부터 본다. 파이썬 없이
+# 도는 sh 라서, 없을 때 말할 수 있는 유일한 자리가 여기다 (templates/env.py).
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = '{preflight}'
 
 [[hooks.SessionStart.hooks]]
 type = "command"
@@ -305,7 +314,10 @@ prefix_rule(pattern=["git", "rebase"], decision="prompt", justification="Asgard 
 
 def codex_config() -> str:
     # 인터프리터만 플랫폼 분기 — $(git rev-parse) 명령치환은 Codex 훅 셸 계약을 따른다.
-    return _CODEX_CONFIG.format(py=hook_python())
+    return _CODEX_CONFIG.format(
+        py=hook_python(_CODEX_HOOKS),
+        preflight=preflight_command(_CODEX_HOOKS, "codex"),
+    )
 
 
 def codex_agent(content: str, root: str) -> str:

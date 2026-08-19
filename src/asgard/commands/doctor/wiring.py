@@ -7,7 +7,7 @@ import re
 import shlex
 from typing import NamedTuple
 
-from ...platform import hook_python_argv, hook_python_token
+from ...platform import HOOK_LAUNCHER, hook_python_argv, hook_python_token
 from ...templates.roles import ROLE_AGENTS
 
 
@@ -95,8 +95,8 @@ def _hook_wired(config: dict, event: str, marker: str) -> bool:
 def _wired_hook_argv(root: str) -> list[str] | None:
     """배선 파일에 실제로 적힌 인터프리터 — 훅 스크립트 인자 앞까지. 못 읽으면 None.
 
-    지금 계산한 인터프리터가 아니라 **적혀 있는 것**을 봐야 uv 가 스캐폴드 이후에 옮겨 간
-    경우(경로가 굳어 있다)를 잡는다."""
+    지금 계산한 인터프리터가 아니라 **적혀 있는 것**을 봐야 배선이 낡은 경우를 잡는다 —
+    다른 기계에서 만들어져 절대 경로가 굳어 있는 배선도, 런처를 안 부르는 옛 배선도 여기서 걸린다."""
     try:
         entries = _client_config(root, ".claude", "settings.json")["hooks"]["SessionStart"]
         for entry in entries:
@@ -104,8 +104,19 @@ def _wired_hook_argv(root: str) -> list[str] | None:
                 command = str(hook.get("command") or "")
                 if "hooks/" not in command:
                     continue
+                # 환경 프리플라이트는 파이썬 없이 도는 sh 라서 배선 첫 줄에 선다 (templates/env.py).
+                # 그 줄을 여기서 읽으면 이 검사가 `sh -c pass` 를 돌리게 되고, uv 가 없는 기계에서도
+                # 초록이 뜬다 — 이 검사가 존재하는 이유 그 자체를 지우는 자리다.
+                if "env-setup.sh" in command or "env-setup.ps1" in command:
+                    continue
                 # posix=False — Windows 경로의 역슬래시를 탈출 문자로 먹지 않는다.
                 argv = [token.strip('"') for token in shlex.split(command, posix=False)]
+                # POSIX 배선은 인터프리터를 직접 적지 않고 훅 폴더의 런처를 부른다
+                # (platform.hook_python). 그 경로에도 `hooks/` 가 들어 있어서, 아래 자르기에
+                # 맡기면 첫 토큰 `sh` 만 남고 이 검사가 `sh -c pass` 를 돌린다 — 파이썬이 없는
+                # 기계에서도 초록이 뜬다. 런처가 인터프리터이므로 거기서 자른다.
+                if len(argv) >= 2 and os.path.basename(argv[1].replace("\\", "/")) == HOOK_LAUNCHER:
+                    return [argv[0], argv[1].replace("$CLAUDE_PROJECT_DIR", root)]
                 # 첫 훅 경로 **앞에서 자른다**. 훅 경로만 걸러내던 판은 뒤에 남는 인자를 전부
                 # 인터프리터 인자로 넘겼다 — 주입 훅을 묶어 부르는 줄(`hook-dispatch.py --
                 # <경로> -- <경로>`)에서 `python -- -c pass` 가 되어, 인터프리터는 멀쩡한데
@@ -148,9 +159,9 @@ def _hook_interpreter_check(root: str) -> dict:
         # python.org 를 가리키면 틀린 처방이에요 — 설치가 세운 파이썬은 uv 가 관리하는 것이고,
         # 이 줄이 빨간 건 거의 언제나 uv 가 없거나 배선 뒤에 자리를 옮겼다는 뜻이에요.
         "fix": (
-            "훅이 이 명령으로 돌아요 — `%s`. uv 를 깔고(https://astral.sh/uv) `asgard sync` 로 "
-            "배선을 다시 써 주세요 (훅 줄에는 이 기계의 uv 절대 경로가 박혀 있어서, uv 가 자리를 "
-            "옮기면 다시 써야 해요)" % wired
+            "훅이 이 명령으로 돌아요 — `%s`. uv 를 깔아 주세요(https://astral.sh/uv) — 배선이 부르는 "
+            "런처가 다음 세션부터 그것을 찾아 써요. 훅 파일 자체가 없으면 `asgard sync` 로 다시 "
+            "깔아 주세요" % wired
         ),
     }
 

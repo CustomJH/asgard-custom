@@ -4,7 +4,7 @@ emits config that points at them."""
 
 import json
 
-from ..platform import hook_python
+from ..platform import hook_python, preflight_command
 from .agent_models import agent_model
 from .roles import role_document
 
@@ -54,7 +54,7 @@ def cursor_agent(content: str, root: str) -> str:
 
 def cursor_hooks_json() -> str:
     # Project hooks run from repo root and load only in a trusted workspace (cursor.com/docs/hooks).
-    py = hook_python()
+    py = hook_python(".cursor/hooks")
     return (
         json.dumps(
             {
@@ -64,6 +64,9 @@ def cursor_hooks_json() -> str:
                     # beforeSubmitPrompt는 컨텍스트 주입 통로가 없다 (cursor.com/docs/hooks,
                     # 26-07-27 확인: 출력이 continue/user_message 뿐).
                     "sessionStart": [
+                        # 환경 프리플라이트 — 아래 줄들이 부르는 인터프리터가 이 기계에 있는지부터
+                        # 본다. 파이썬 없이 도는 sh 라서, 없을 때 말할 수 있는 유일한 자리다.
+                        {"command": preflight_command(".cursor/hooks", "cursor")},
                         {"command": f"{py} .cursor/hooks/lagom-activate.py cursor"},
                         {"command": f"{py} .cursor/hooks/memory-activate.py cursor"},
                         {"command": f"{py} .cursor/hooks/charter-activate.py cursor"},

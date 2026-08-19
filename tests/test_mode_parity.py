@@ -63,6 +63,33 @@ def _hook_payload(script: str, payload: dict, argv: list[str]) -> tuple[int, str
     return 0, out.getvalue()
 
 
+def instruction_surfaces() -> list[tuple[str, str]]:
+    """모델이 그대로 읽는 지침 표면 전부 — 렌더된 문장 기준."""
+    from asgard.failures import GATE_MESSAGES
+    from asgard.hooks.asgard_hooklib.transition import DISPATCH_HOW
+    from asgard.hooks.subagent_gate import EVENT_ROLE, record_hint
+    from asgard.templates import agents_md
+
+    src = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src", "asgard")
+    surfaces = [
+        ("agents_md", agents_md("demo")),
+        ("failures.py", "\n".join(GATE_MESSAGES.values())),
+        # 매 턴 모델에게 도착하는 한 줄 — 배정된 역할을 어디에 세우는지는 여기서만 말한다.
+        ("transition.DISPATCH_HOW", "\n".join(DISPATCH_HOW.values())),
+        # 렌더된 문장으로 본다 — 이 명령은 훅 디렉토리를 런타임에 채운다.
+        ("subagent_gate.record_hint", "\n".join(record_hint(".claude/hooks", e) for e in EVENT_ROLE)),
+    ]
+    for rel in ("hooks/verifier_gate.py",) + tuple(
+        f"templates/roles/asgard-{role}.md" for role in ("worker", "thinker", "verifier")
+    ):
+        with open(os.path.join(src, rel), encoding="utf-8") as handle:
+            text = handle.read()
+        # 파이썬 소스는 문자열 이어붙이기 이음매를 지운다 — 렌더된 문장 기준으로 봐야
+        # `… | ` 와 `uv run …` 이 두 줄에 걸쳐 나뉘어 파이프라인이 안 보이는 일이 없다.
+        surfaces.append((rel, re.sub(r"['\"]\s*\n\s*['\"]", "", text) if rel.endswith(".py") else text))
+    return surfaces
+
+
 class TestScaffoldParity(unittest.TestCase):
     def test_hook_table_is_one_table(self):
         """훅 표는 클라이언트별로 갈라지지 않는다 — CC 에만 깔리는 statusLine 스크립트만 예외.
@@ -262,35 +289,55 @@ class TestCanonicalHookPython(unittest.TestCase):
         self.assertIn(f"{UV_HOOK_PYTHON} <hooks>/quest-log.py open", agents_md("demo"))
         self.assertIn(f"{UV_HOOK_PYTHON} <hooks>/quest-log.py open", GATE_MESSAGES["orphan-write"])
 
-    def test_wiring_carries_an_absolute_path_and_the_allowlist_carries_the_bare_token(self):
-        """배선은 절대 경로, 허용목록·안내문은 맨 토큰 — 두 표면이 요구하는 것이 서로 다르다.
+    def test_no_host_wiring_carries_a_path_that_only_exists_on_this_machine(self):
+        """세 호스트 배선 어디에도 스캐폴드를 만든 기계의 경로가 안 들어간다.
 
-        맨 `uv` 를 배선하면 PATH 가 `/usr/bin:/bin:/usr/sbin:/sbin` 넉 줄뿐인 프로세스(독·
-        Finder·launchd)에서 훅 줄이 전부 exit 127 이 되고, fail-open 계약이라 조용하다. 반대로
-        허용목록에 기계별 절대 경로를 담으면 안내문이 시키는 명령과 어긋나 자동 거부된다."""
+        배선 파일은 팀에 커밋돼 전달된다 (`commands/setup.py` 의 gitignore 블록). 거기 이 기계의
+        uv 절대 경로가 박히면 저장소를 받은 다른 기계에서 훅 줄이 전부 exit 127 이 되고, 훅 계약이
+        fail-open 이라 그 죽음은 조용하다. 그렇다고 맨 `uv` 도 못 적는다 — PATH 가
+        `/usr/bin:/bin:/usr/sbin:/sbin` 넉 줄뿐인 프로세스(독·Finder·launchd)가 그것을 못 찾는다.
+        배선은 저장소 안 런처를 부르고, 어느 uv 를 쓸지는 런처가 그 기계 위에서 정한다.
+
+        재는 축이 양쪽이다: 기계별 경로가 **없다**와 런처를 **부른다**. 앞 축만 재면 배선이 통째로
+        비어도 통과하고, 뒤 축만 재면 런처 뒤에 절대 경로가 따라붙어도 통과한다."""
         with mock.patch("asgard.platform.shutil.which", side_effect=lambda c: f"/opt/tools/{c}"):
-            from asgard.platform import hook_python, hook_python_argv, hook_python_token
+            from asgard.platform import hook_python_argv, hook_python_token
 
-            self.assertEqual(hook_python(), "/opt/tools/uv run --no-project python")
+            # 배선이 아니라 doctor 가 지금 여기서 한 번 돌려 보는 형태다 — 여기에는 절대 경로가 맞다.
             self.assertEqual(hook_python_argv(), ["/opt/tools/uv", "run", "--no-project", "python"])
             self.assertEqual(hook_python_token(), UV_HOOK_PYTHON)
             settings = json.loads(cc_settings())
-        commands = [h["command"] for event in settings["hooks"].values() for e in event for h in e["hooks"]]
-        self.assertTrue(commands and all(c.startswith("/opt/tools/uv run --no-project python ") for c in commands))
+            codex = codex_config()
+            cursor = json.loads(cursor_hooks_json())
+        # 환경 프리플라이트는 파이썬 없이 도는 sh 라 이 계약의 대상이 아니다 (templates/env.py).
+        commands = [
+            h["command"]
+            for event in settings["hooks"].values()
+            for e in event
+            for h in e["hooks"]
+            if "env-setup." not in h["command"]
+        ]
+        commands += [
+            entry["command"]
+            for event in cursor["hooks"].values()
+            for entry in event
+            if "env-setup." not in entry["command"]
+        ]
+        commands += [line for line in codex.splitlines() if "command = " in line and "env-setup." not in line]
+        self.assertTrue(commands)
+        self.assertEqual([], [c for c in commands if "/opt/tools/" in c], "배선에 이 기계의 경로가 실렸다")
+        self.assertEqual([], [c for c in commands if "/asgard-python" not in c and not c.lstrip().startswith("# ")])
         allow = settings["permissions"]["allow"]
         self.assertIn(f"Bash({UV_HOOK_PYTHON} .claude/hooks/quest-log.py *)", allow)
         self.assertEqual([], [entry for entry in allow if "/opt/tools/" in entry])
 
-    def test_a_wiring_path_with_spaces_stays_one_shell_word(self):
-        """공백이 든 경로(Windows 의 `C:/Program Files/…`)는 따옴표 없이는 두 낱말로 쪼개진다."""
-        import shlex
-
-        from asgard.platform import hook_python
+    def test_a_resolved_interpreter_path_with_spaces_stays_one_argv_word(self):
+        """`C:/Program Files/…` 는 낱말 하나다 — doctor 는 이 argv 를 셸 없이 그대로 실행한다."""
+        from asgard.platform import hook_python_argv
 
         with mock.patch("asgard.platform.shutil.which", side_effect=lambda c: rf"C:\Program Files\{c}.exe"):
-            command = hook_python()
-        self.assertEqual(command, '"C:/Program Files/uv.exe" run --no-project python')
-        self.assertEqual(shlex.split(command), ["C:/Program Files/uv.exe", "run", "--no-project", "python"])
+            argv = hook_python_argv()
+        self.assertEqual(argv, ["C:/Program Files/uv.exe", "run", "--no-project", "python"])
 
     # 모델이 그대로 타이핑하는 명령이 실려 있는 표면 — 허용목록과 한 글자도 어긋나면 안 된다.
     # 훅 디렉토리 표기는 표면마다 다르다: 안내문은 `<hooks>`, 클라이언트별 배선은 실제 경로.
@@ -299,26 +346,7 @@ class TestCanonicalHookPython(unittest.TestCase):
     )
 
     def _instruction_surfaces(self) -> list[tuple[str, str]]:
-        from asgard.failures import GATE_MESSAGES
-        from asgard.hooks.subagent_gate import EVENT_ROLE, record_hint
-        from asgard.templates import agents_md
-
-        src = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src", "asgard")
-        surfaces = [
-            ("agents_md", agents_md("demo")),
-            ("failures.py", "\n".join(GATE_MESSAGES.values())),
-            # 렌더된 문장으로 본다 — 이 명령은 훅 디렉토리를 런타임에 채운다.
-            ("subagent_gate.record_hint", "\n".join(record_hint(".claude/hooks", e) for e in EVENT_ROLE)),
-        ]
-        for rel in ("hooks/verifier_gate.py",) + tuple(
-            f"templates/roles/asgard-{role}.md" for role in ("worker", "thinker", "verifier")
-        ):
-            with open(os.path.join(src, rel), encoding="utf-8") as handle:
-                text = handle.read()
-            # 파이썬 소스는 문자열 이어붙이기 이음매를 지운다 — 렌더된 문장 기준으로 봐야
-            # `… | ` 와 `uv run …` 이 두 줄에 걸쳐 나뉘어 파이프라인이 안 보이는 일이 없다.
-            surfaces.append((rel, re.sub(r"['\"]\s*\n\s*['\"]", "", text) if rel.endswith(".py") else text))
-        return surfaces
+        return instruction_surfaces()
 
     def test_every_instructed_quest_log_command_matches_the_allowlist(self):
         """시키는 명령이 허용목록 프리픽스에 그대로 걸려야 한다 — 안 걸리면 헤드리스 교착이다.
@@ -343,6 +371,45 @@ class TestCanonicalHookPython(unittest.TestCase):
                 elif head[: -len(matched)].rstrip().endswith(("|", "&", ";")):
                     offenders.append(f"{rel}: …{head[-80:]}quest-log.py — 복합 명령의 뒷 세그먼트다")
         self.assertEqual(offenders, [], "허용목록과 어긋나는 지시 명령:\n" + "\n".join(offenders))
+
+
+class TestVerifierDispatchEscape(unittest.TestCase):
+    """판정자 배차를 면제하는 탈출구는 도구가 없을 때만 열린다.
+
+    Opus 5 세션의 기본 시스템 프롬프트에는 `Do not call the AgentTool unless the user requested it`
+    이 들어 있다. 오딘이 건 설정이 아니라 Claude Code 실행 파일에서 오므로 이 저장소는 그것을
+    못 고친다. 확인은 저장소 밖에서 한다 — `strings ~/.local/share/claude/versions/<버전> | grep
+    "unless the user requested it"` 이 26-08-19 에 2.1.235 에서 그 문장을 냈다. 버전이 오르면
+    사라질 수도 있다. 이 시험이 걸리면 문구부터 다시 재라.
+
+    그 문장은 서브에이전트를 주면서 부르지 말라고 한다. 이 저장소의 탈출구는 전부 "호스트가
+    서브에이전트를 안 준다"를 조건으로 쓴다. 둘을 구분하는 절이 탈출구 옆에 없으면 모델이 기본
+    지시를 도구 부재로 읽는다. 26-08-19 에 두 번 샜다. 벤치 회차 하나는 그 문장을 인용하며
+    `"mode":"A-fallback"` 을 자칭했다. 그러고는 자기 diff 를 자기가 PASS 로 적었다. 다른 세션은
+    배차는 했지만 없는 충돌을 오딘에게 보고했다."""
+
+    # 탈출구를 여는 말 셋. 어느 표면에 나타나든 구분절이 같은 창 안에 있어야 한다.
+    ESCAPE = re.compile(r"no subagent tool at all|mode A fallback|verifier_independence=false")
+    DISTINCTION = re.compile(r"unless the user asked is not that")
+    WINDOW = 400  # 문장 경계를 세는 대신 근접 창으로 본다 — 표면마다 문단 모양이 다르다
+
+    def test_every_escape_clause_rules_out_a_host_default(self):
+        offenders = []
+        for rel, text in instruction_surfaces():
+            for match in self.ESCAPE.finditer(text):
+                near = text[max(0, match.start() - self.WINDOW) : match.end() + self.WINDOW]
+                if not self.DISTINCTION.search(near):
+                    quote = text[max(0, match.start() - 70) : match.end() + 70]
+                    offenders.append(f"{rel}: …{' '.join(quote.split())}…")
+        self.assertEqual(offenders, [], "탈출구 옆에 구분절이 없다:\n" + "\n".join(offenders))
+
+    def test_the_distinction_is_worded_the_same_way_everywhere(self):
+        """표지가 표면마다 다르면 위 검사가 조용히 반만 돈다."""
+        carrying = [rel for rel, text in instruction_surfaces() if self.DISTINCTION.search(text)]
+        self.assertEqual(
+            sorted(carrying),
+            ["agents_md", "failures.py", "hooks/verifier_gate.py", "transition.DISPATCH_HOW"],
+        )
 
 
 class TestNativeParity(unittest.TestCase):

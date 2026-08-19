@@ -12,6 +12,7 @@ from .codex import codex_agent, codex_config, codex_rules
 from .comments import COMMENT_AGENTS_SECTION, COMMENT_CANON
 from .cursor import CURSOR_FOLDERS, cursor_agent, cursor_hooks_json, cursor_rule
 from .eitri import EITRI_SKILLS
+from .env import env_setup_ps1, env_setup_sh, hook_launcher_sh
 from .freyja import FREYJA_SKILLS, freyja_core_skill
 from .lagom import LAGOM_CANON, render_lagom
 from .manual import MANUAL_STARTER_MD
@@ -38,6 +39,9 @@ __all__ = [
     "COMMENT_AGENTS_SECTION",
     "cursor_rule",
     "cursor_hooks_json",
+    "env_setup_ps1",
+    "env_setup_sh",
+    "hook_launcher_sh",
     "cursor_agent",
     "CURSOR_FOLDERS",
     "EITRI_SKILLS",
