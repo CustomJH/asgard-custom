@@ -366,6 +366,149 @@ class TestSubagentGate(TrinityBase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def _handover_wave(self, session="s1"):
+        """단위 둘을 겹쳐 돌린 웨이브 하나 — 로그와 영수증 양쪽이 같은 세션 이름을 든다.
+
+        기본 헬퍼(`ticket`·`work`·`finish_ticket`)는 `--session` 을 안 넘겨 로그가 `host_session_id()`
+        의 부재 표시를 적는다. 인수인계 축은 로그의 세션과 영수증의 세션이 만나는 자리라 여기서만
+        둘을 붙여 쓴다."""
+        self.qlog("open", "q1", "--criteria", "app.py prints ok", "--session", session)
+        for unit in (1, 2):
+            self.qlog(
+                "append",
+                "--session",
+                session,
+                stdin=json.dumps(
+                    {
+                        "role": "thinker",
+                        "event": "ticket",
+                        "unit": unit,
+                        "ticket_status": "todo",
+                        "subtask": f"unit {unit}",
+                        "changed_files": [f"u{unit}.txt"],
+                        "access": [],
+                    }
+                ),
+            )
+            self.sg(
+                "",
+                session=session,
+                event="PreToolUse",
+                tool_use_id=f"call-{unit}",
+                tool_input={"subagent_type": "asgard-worker", "prompt": f"[ASGARD_UNIT:{unit}] implement"},
+            )
+        self.sg("asgard-worker", session=session, event="SubagentStart", agent_id="worker-a")
+        self.sg("asgard-worker", session=session, event="SubagentStart", agent_id="worker-b")
+        for unit, agent_id in ((1, "worker-a"), (2, "worker-b")):
+            self.qlog(
+                "append",
+                "--session",
+                session,
+                stdin=json.dumps({"role": "worker", "event": "work", "unit": unit}),
+            )
+            self.sg("asgard-worker", session=session, event="SubagentStop", agent_id=agent_id)
+            claim = jout(self.qlog("ticket-claim", "--session", session, "--unit", str(unit), "--worker", f"w{unit}"))
+            self.qlog(
+                "ticket-finish",
+                "--session",
+                session,
+                "--unit",
+                str(unit),
+                "--claim-token",
+                claim["claim_token"],
+                "--status",
+                "done",
+            )
+
+    def test_a_session_that_took_the_quest_over_reads_the_previous_owner_receipts(self):
+        """인수인계 — 앞 세션이 남긴 물리 영수증으로 이어받은 세션이 판정자를 세울 수 있어야 한다.
+
+        영수증은 세션에 묶이는데 `quest-log attach` 는 퀘스트를 다른 세션에 넘긴다. 결속의 열쇠가
+        터미널 세션이면 넘겨받은 쪽은 앞 세션의 영수증을 못 읽어, 워커가 물리적으로 다 돌았는데도
+        그 퀘스트는 어느 세션에서도 판정을 못 받는다."""
+        self._handover_wave(session="s1")
+        self.qlog("attach", "q1", "--session", "s2")
+        result = self.sg(
+            "",
+            session="s2",
+            event="PreToolUse",
+            tool_input={"subagent_type": "asgard-verifier", "prompt": "verify"},
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_receipts_from_a_session_outside_the_quest_lineage_do_not_count(self):
+        """반대 방향 — 로그가 이름을 안 적은 세션의 영수증은 그대로 안 센다.
+
+        이 짝이 없으면 위 시험은 세션 결속을 통째로 지워도 초록이라, 아무 세션의 영수증이나
+        빌려 쓸 수 있게 된다."""
+        self.qlog("open", "q1", "--criteria", "app.py prints ok", "--session", "s1")
+        for unit in (1, 2):
+            self.qlog(
+                "append",
+                "--session",
+                "s1",
+                stdin=json.dumps(
+                    {
+                        "role": "thinker",
+                        "event": "ticket",
+                        "unit": unit,
+                        "ticket_status": "todo",
+                        "subtask": f"unit {unit}",
+                        "changed_files": [f"u{unit}.txt"],
+                        "access": [],
+                    }
+                ),
+            )
+        directory = os.path.join(self.root, ".asgard", "quest", "receipts", "q1")
+        os.makedirs(directory, exist_ok=True)
+        for unit, agent_id in ((1, "stranger-a"), (2, "stranger-b")):
+            with open(os.path.join(directory, "agent-%s.json" % agent_id), "w") as handle:
+                json.dump(
+                    {
+                        "schema": 1,
+                        "quest_id": "q1",
+                        "session_id": "s9",
+                        "agent_type": "asgard-worker",
+                        "agent_id": agent_id,
+                        "started_at": 1,
+                        "stopped_at": 2,
+                    },
+                    handle,
+                )
+            with open(os.path.join(directory, "dispatch-call-%s.json" % unit), "w") as handle:
+                json.dump(
+                    {
+                        "schema": 1,
+                        "quest_id": "q1",
+                        "session_id": "s9",
+                        "agent_type": "asgard-worker",
+                        "unit": str(unit),
+                        "quest_turn": 1,
+                    },
+                    handle,
+                )
+        for unit in (1, 2):
+            claim = jout(self.qlog("ticket-claim", "--session", "s1", "--unit", str(unit), "--worker", f"w{unit}"))
+            self.qlog(
+                "ticket-finish",
+                "--session",
+                "s1",
+                "--unit",
+                str(unit),
+                "--claim-token",
+                claim["claim_token"],
+                "--status",
+                "done",
+            )
+        result = self.sg(
+            "",
+            session="s1",
+            event="PreToolUse",
+            tool_input={"subagent_type": "asgard-verifier", "prompt": "verify"},
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("physical worker", result.stderr.lower())
+
     def test_verifier_pretool_rejects_sequential_workers_for_parallel_wave(self):
         self.open_quest()
         self.ticket(1)

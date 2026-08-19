@@ -544,6 +544,32 @@ def pipeline_denial_reason(tickets: dict[str, dict], unit: str) -> str:
     return "unit %s is not yet early-verifiable" % unit
 
 
+def _sanitize_sid(raw: object) -> str:
+    """영수증에 적히는 철자로 세션 id 를 맞춘다 — main() 이 라이브 세션에 거는 것과 같은 규칙."""
+    return re.sub(r"[^A-Za-z0-9_.-]", "_", str(raw))[:64]
+
+
+def quest_sessions(root: str, qid: str, sid: str) -> set[str]:
+    """이 퀘스트를 쥐었던 세션 전부 — 지금 세션과 로그가 이름을 적은 세션들.
+
+    영수증은 세션에 묶인다(424b5619: agent_id 를 세션에 결속해 동시 세션 경합을 막는다). 그런데
+    `quest-log attach` 는 퀘스트를 다른 세션이 이어받게 하므로, 지금 세션 하나로만 거르면
+    인수인계된 퀘스트는 앞 세션이 남긴 영수증을 영영 못 읽는다 — 워커가 물리적으로 다 돌았는데도
+    판정자 배차가 막히고, 그 퀘스트는 어느 세션에서도 판정을 못 받는다 (실측
+    se-baseline-research-260819: 완료 영수증 4건·단위 배차 3건이 디스크에 있는데 got 0).
+
+    로그에 이벤트를 적으려면 그 퀘스트에 attach 되어 있어야 하므로, 로그가 이름을 적은 세션은
+    이 퀘스트를 실제로 쥐었던 세션이다. 결속을 푸는 것이 아니라 결속의 열쇠를 터미널 세션에서
+    퀘스트 계보로 옮기는 것이라, 이 퀘스트를 한 번도 안 쥔 세션의 영수증은 그대로 걸린다.
+    """
+    owners = {sid}
+    for event in load_quest_events(root, qid):
+        owner = event.get("session_id")
+        if owner:
+            owners.add(_sanitize_sid(owner))
+    return owners
+
+
 def mode_b_receipts(root: str, qid: str, sid: str) -> tuple[list[dict], list[dict]]:
     directory = os.path.join(root, ".asgard", "quest", "receipts", qid)
     agents, dispatches = [], []
@@ -551,6 +577,7 @@ def mode_b_receipts(root: str, qid: str, sid: str) -> tuple[list[dict], list[dic
         names = os.listdir(directory)
     except Exception:
         return agents, dispatches
+    owners = quest_sessions(root, qid, sid)
     for name in names:
         if not name.endswith(".json"):
             continue
@@ -558,7 +585,7 @@ def mode_b_receipts(root: str, qid: str, sid: str) -> tuple[list[dict], list[dic
             record = _load_json(os.path.join(directory, name))
         except Exception:
             continue
-        if record.get("quest_id") != qid or record.get("session_id") != sid:
+        if record.get("quest_id") != qid or str(record.get("session_id") or "") not in owners:
             continue
         if name.startswith("agent-"):
             agents.append(record)
@@ -725,7 +752,7 @@ def main():
         agent = str(data.get("agent_type") or data.get("subagent_type") or "")
         root = os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd") or os.getcwd()
         raw_sid = "cursor" if protocol == "cursor" else data.get("session_id") or "default"
-        sid = re.sub(r"[^A-Za-z0-9_.-]", "_", str(raw_sid))[:64]
+        sid = _sanitize_sid(raw_sid)
         qid = quest_pointer(root, sid)
         if event in {"PreToolUse", "preToolUse", "pre"} and data.get("tool_name") in {"Agent", "Task"}:
             tool_input = data.get("tool_input") if isinstance(data.get("tool_input"), dict) else {}
