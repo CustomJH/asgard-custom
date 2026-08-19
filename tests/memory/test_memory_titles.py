@@ -12,19 +12,26 @@ from asgard.memory.recall.rows import _fuse, _hit_row
 class TestDeriveTitle(MemoryBase):
     def test_a_decimal_is_not_a_sentence_end(self):
         # 실측 26-08-19: `1.0.0` 의 첫 점에서 끊겨 제목이 `오딘은 아직 개발 중이라 1` 로 남았다.
-        text = "오딘은 아직 개발 중이라 1.0.0 릴리즈까지 한참 남았다고 본다."
+        text = "아직 개발 중이라 1.0.0 릴리즈까지 한참 남았다고 본다."
         self.assertEqual(memory.derive_title(text), text)
+
+    def test_odins_reported_case_end_to_end(self):
+        """오딘이 실제로 지목한 페이지 — 소수점 절단과 화자 접두사가 한 문장에 겹쳐 있다."""
+        self.assertEqual(
+            memory.derive_title("오딘은 아직 개발 중이라 1.0.0 릴리즈까지 한참 남았다고 본다."),
+            "아직 개발 중이라 1.0.0 릴리즈까지 한참 남았다고 본다.",
+        )
 
     def test_a_version_in_a_path_does_not_end_the_title(self):
         text = "배포된 asgard 0.10.9 의 memory_context.py 가 주입 상한을 쥔다."
         self.assertEqual(memory.derive_title(text), text)
 
     def test_a_line_within_the_limit_is_kept_whole(self):
-        text = "오딘은 커밋에 서명 꼬리를 안 붙인다. 그 이유는 별도로 적혀 있다."
+        text = "커밋에 서명 꼬리를 안 붙인다. 그 이유는 별도로 적혀 있다."
         self.assertEqual(memory.derive_title(text), text)
 
     def test_an_overlong_line_is_cut_at_the_first_sentence(self):
-        first = "오딘은 커밋에 서명 꼬리를 안 붙인다."
+        first = "커밋에 서명 꼬리를 안 붙인다."
         text = first + " " + "그 이유는 MANUAL.md 에 적혀 있고 여러 저장소에서 같은 규칙을 지켜 왔다. " * 2
         self.assertGreater(len(text), memory.TITLE_MAX)
         self.assertEqual(memory.derive_title(text), first)
@@ -51,7 +58,7 @@ class TestDeriveTitle(MemoryBase):
         for text in (
             "e.g. 오딘은 커밋에 서명 꼬리를 안 붙인다.",
             "Mr. Odin keeps the release notes in Linear.",
-            "오딘은 3. 항목을 먼저 읽는다.",
+            "규칙은 3. 항목을 먼저 읽는다.",
         ):
             self.assertEqual(memory.derive_title(text), text, text)
 
@@ -60,6 +67,38 @@ class TestDeriveTitle(MemoryBase):
         title = memory.derive_title(text)
         self.assertGreater(len(title), 10, title)
         self.assertNotEqual(title, "e.g.")
+
+
+class TestSpeakerPrefix(MemoryBase):
+    """실측 26-08-19 (`benchmarks/memory-title`): 화자를 떼면 앞 10자가 서로 갈리는 제목이
+    48장 중 32장에서 41장으로 는다 (distinct10 0.667 → 0.854)."""
+
+    def test_the_speaker_and_its_particle_are_dropped(self):
+        for text, want in (
+            ("오딘은 커밋에 서명 꼬리를 안 붙인다.", "커밋에 서명 꼬리를 안 붙인다."),
+            ("사용자가 justfile을 원할 때만 설치한다.", "justfile을 원할 때만 설치한다."),
+            ("오딘의 기본 모델은 sonnet 으로 내려 둔다.", "기본 모델은 sonnet 으로 내려 둔다."),
+        ):
+            self.assertEqual(memory.derive_title(text), want)
+
+    def test_an_identifier_keeps_its_case(self):
+        # 대문자로 올리면 `asgard-seal` 이 더는 그 명령이 아니다.
+        self.assertEqual(
+            memory.derive_title("오딘은 asgard-seal 의 기본 모델을 sonnet 으로 내리기를 원한다."),
+            "asgard-seal 의 기본 모델을 sonnet 으로 내리기를 원한다.",
+        )
+
+    def test_a_compound_noun_is_not_a_speaker(self):
+        # 조사가 없으면 화자가 아니라 복합명사의 앞머리다 — 자르면 남는 것이 다른 말이 된다.
+        for text in ("사용자 정의 필드는 스키마에 없다.", "사용자 인터페이스를 다시 그린다."):
+            self.assertEqual(memory.derive_title(text), text, text)
+
+    def test_a_title_that_would_be_left_too_short_keeps_the_speaker(self):
+        self.assertEqual(memory.derive_title("오딘은 쉰다."), "오딘은 쉰다.")
+
+    def test_a_title_without_a_speaker_is_untouched(self):
+        text = "asgard-seal 은 변경을 사건별 커밋으로 나눈다."
+        self.assertEqual(memory.derive_title(text), text)
 
 
 class TestFuse(MemoryBase):
@@ -154,8 +193,8 @@ class TestTitleFromTheCaller(MemoryBase):
 
 class TestRetitle(MemoryBase):
     def _truncated_page(self) -> tuple[str, str]:
-        body = "오딘은 아직 개발 중이라 1.0.0 릴리즈까지 한참 남았다고 본다."
-        slug, _ = memory.add(body, title="오딘은 아직 개발 중이라 1", kind="user")
+        body = "아직 개발 중이라 1.0.0 릴리즈까지 한참 남았다고 본다."
+        slug, _ = memory.add(body, title="아직 개발 중이라 1", kind="user")
         return slug, body
 
     def test_lint_reports_a_title_copied_from_the_body_and_cut(self):
@@ -166,11 +205,20 @@ class TestRetitle(MemoryBase):
     def test_retitle_rewrites_the_title_and_leaves_body_and_slug_alone(self):
         slug, body = self._truncated_page()
         changed = memory.retitle(self.d)
-        self.assertEqual([(s, o) for s, o, _n in changed], [(slug, "오딘은 아직 개발 중이라 1")])
+        self.assertEqual([(s, o) for s, o, _n in changed], [(slug, "아직 개발 중이라 1")])
         meta, kept = self._page(slug)
         self.assertEqual(meta["title"], body)
         self.assertEqual(kept.strip(), body)
         self.assertEqual([f for f in memory.lint(self.d) if f["code"] == "title-truncated"], [])
+
+    def test_a_truncated_title_is_still_a_retitle_target(self):
+        """말줄임표가 붙으면 본문의 접두사가 아니게 된다 — 그 판정이 가장 나아질 제목을 놓쳤다."""
+        # 실제로 남아 있던 다섯 장의 모양 — 화자로 시작하고 말줄임표로 끝난다.
+        body = "오딘은 " + "여러 저장소에 걸쳐 같은 규칙을 지켜 왔고 그 근거는 MANUAL.md 에 적혀 있다. " * 2
+        slug, _ = memory.add(body, title=body[:40].rstrip() + "…", kind="user")
+        changed = memory.retitle(self.d)
+        self.assertEqual([s for s, _o, _n in changed], [slug])
+        self.assertFalse(self._page(slug)[0]["title"].startswith("오딘"))
 
     def test_a_title_the_caller_wrote_is_left_alone(self):
         memory.add("오딘은 아직 개발 중이라 1.0.0 릴리즈까지 한참 남았다고 본다.", title="릴리즈 시점", kind="user")

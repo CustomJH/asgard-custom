@@ -501,12 +501,16 @@ def _stale_title(meta: dict, body: str) -> str:
     """다시 뽑으면 나아지는 제목이면 그 새 제목, 아니면 빈 문자열.
 
     본문 앞부분을 그대로 베낀 제목만 대상이다 — 부르는 쪽이 지어 준 제목은 본문 첫 줄의
-    접두사가 아니라서 걸리지 않는다. 글자 수로만 자르던 시절의 제목이 여기 걸린다."""
+    접두사가 아니라서 걸리지 않는다. 글자 수로만 자르던 시절의 제목이 여기 걸린다.
+
+    비교 전에 잘림 표시를 뗀다. 안 떼면 **가장 나아질 여지가 큰 제목이 통째로 빠진다** —
+    말줄임표가 붙은 제목은 본문의 접두사가 아니게 되어 이 판정을 못 지나고, 오딘의 기억에서
+    다섯 장이 `오딘은…` 으로 시작한 채 남아 있었다 (실측 26-08-19)."""
     title = str(meta.get("title") or "")
     if not title:
         return ""
     first = next((ln.strip().lstrip("# ") for ln in body.splitlines() if ln.strip()), "")
-    if not first.startswith(title):
+    if not first.startswith(title.rstrip("…")):
         return ""
     fresh = derive_title(body)
     return fresh if fresh != title else ""

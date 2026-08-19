@@ -165,6 +165,29 @@ _SENTENCE_END = re.compile(r"[.!?](?=\s|$)")
 _SENTENCE_MIN = 10
 
 
+# 화자 + 뒤따르는 조사까지 한 조각으로. 개인 기억의 페이지는 거의 다 이 낱말로 시작하므로
+# 제목이 그것까지 물려받으면 목록에서 앞 세 글자가 늘 같다 (실측 26-08-19: 48장 중 31장).
+# 조사를 **요구한다**. 없으면 화자가 아니라 복합명사의 앞머리다 — `사용자 정의 필드`,
+# `사용자 인터페이스` 를 자르면 남는 것이 다른 말이 된다.
+_SPEAKER_HEAD = re.compile(r"^\s*(?:오딘|사용자|유저)(?:은|는|이|가|의|도|만|께서)\s+|^\s*[Tt]he\s+user\s+")
+# 화자를 뗀 나머지가 이보다 짧으면 떼지 않는다 — 남는 것이 제목 구실을 못 한다.
+_SPEAKERLESS_MIN = 12
+
+
+def strip_speaker(title: str) -> str:
+    """제목 앞의 화자 조각을 뗀다. 뗄 것이 없거나 남는 조각이 너무 짧으면 원래 값 그대로.
+
+    첫 글자를 대문자로 올리지 않는다. 이 위키의 제목은 `asgard-seal`·`justfile`·
+    `helios-application` 처럼 실제 명령과 저장소 이름으로 시작하는 일이 잦고, 올리면 그 이름이
+    더는 그 이름이 아니다 (`benchmarks/memory-title` 실측: 바뀐 31장 중 8장이 식별자로 시작).
+    본문은 안 건드리므로 화자가 누구였는지는 페이지를 열면 그대로 있다."""
+    m = _SPEAKER_HEAD.match(title)
+    if not m:
+        return title
+    rest = title[m.end() :].lstrip()
+    return rest if len(rest) >= _SPEAKERLESS_MIN else title
+
+
 def derive_title(text: str) -> str:
     """본문에서 제목 한 줄 — 첫 문장까지, 상한을 넘으면 어절 경계에서 끊고 말줄임표를 붙인다.
 
@@ -173,6 +196,8 @@ def derive_title(text: str) -> str:
     `...진짜-사슬은-26-08-04-실측-trinit` 같은 경로가 남았다. 어절 경계에서 끊고 말줄임표를
     붙이면 읽는 사람이 뒤에 무슨 말이 더 있었는지 안다."""
     line = _fm_value(next((ln.strip().lstrip("# ") for ln in text.splitlines() if ln.strip()), "untitled"))
+    # 화자를 먼저 뗀다 — 떼고 나서 길이를 재야 상한이 실제 내용에 쓰인다.
+    line = strip_speaker(line)
     # 상한 안에 들어가는 줄은 문장을 가르지 않는다 — 자를 이유가 없는데 가르면 `e.g.` 나 `3.`
     # 하나가 제목 전체가 된다.
     if len(line) <= TITLE_MAX:

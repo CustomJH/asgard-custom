@@ -160,6 +160,7 @@ from .store import (
     render_page,
     seed_defaults,
     slugify,
+    strip_speaker,
     valid_slug,
 )
 from .temporal import event_date, ground_event_date
@@ -248,6 +249,7 @@ __all__ = [
     "inject_enabled",
     "TITLE_MAX",
     "derive_title",
+    "strip_speaker",
     "lint",
     "retitle",
     "log_op",
