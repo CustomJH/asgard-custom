@@ -7,8 +7,8 @@
 ## Orientation
 
 - Project root: `./`
-- Languages by observed source files: Python (774), JavaScript (12), Rust (2)
-- Evidence scan: 1024 files; 51 landmarks
+- Languages by observed source files: Python (781), JavaScript (12), Rust (2)
+- Evidence scan: 1033 files; 51 landmarks
 
 ## Landmarks
 
@@ -106,13 +106,13 @@
 - `benchmarks/longmemeval/REPORT.md` — doc: LongMemEval — asgard 회수 벤치 · sections: 결과; 유형별 (R@5); 외부 대조 (각 저장소 공개값); 읽는 법; 후속: temporal-reasoning 4-암 실험 (n=133); 구절 리랭크 도입 후 (최종)
 - `benchmarks/map-shortcut/REPORT.md` — doc: map 숏컷 벤치 — 주입면이 명령으로 라우팅하는가 (26-08-01 측정 · 26-08-13 회귀 수리) · sections: 질문; 방법 (harness.py); 고치기 전 (같은 저장소, 26-08-01 실측); 고친 뒤 (results.jsonl); 게이트가 한 번 빨간불이 됐다 — 번역 표에 맡긴 도움말 (26-08-12 발견, 26-08-13 수리); 남은 미스 — 닫힌 사전의 한계가 그 자리다
 - `benchmarks/memory-graph/REPORT.md` — doc: 기억 그래프 벤치 — 명시 링크만 vs 파생 간선까지 (26-08-06) · sections: 질문; 방법; 결과; 읽는 법; 이 벤치가 못 재는 것; 대조 — 무엇을 가져왔고 무엇을 안 가져왔나
+- `benchmarks/memory-title/REPORT.md` — doc: 제목 벤치 — 기억 한 장의 제목을 무엇으로 삼을 것인가 (26-08-19) · sections: 질문; 방법; 결과 (계기 5판, 모델 팔은 3회 실행); 판정; 실제 기억에 적용한 결과; 계기가 세 번 거짓말했고, 그 검사가 네 번째를 찾았다
 - `benchmarks/project-memory/REPORT.md` — doc: 2차(프로젝트) 메모리 회수 벤치 · sections: 레인 1 · 로컬 문서 레인 hit@k (실측 26-08-01); 레인 2 · 관계 1홉 확장은 회수를 **올린다** (깎지 않는다); 레인 3 · 동언어 렉시컬 기권 정밀도; 제품 코드를 고쳐야만 잴 수 있는 것 (안 고쳤다)
 - `benchmarks/roundtable/REPORT.md` — doc: 원탁 대조 벤치 — 좌석 여럿이 모델 하나보다 결함을 더 짚는가 (2026-08-14) · sections: 결과 — 중립 좌석으로 돌린 24짝; 첫 회차는 무효다 — 좌석이 답을 알고 있었다; 이 벤치가 찾아낸 제품 결함 둘; 기능 점검 — 실물로 확인한 것; 어떻게 쟀나; 이 벤치를 만들며 잡힌 것
 - `benchmarks/shortcut-recall/REPORT.md` — doc: 숏컷 벤치 — recall 주입 on/off A/B (26-07-16, 36런) · sections: 질문; 방법 (harness.py); 결과 (results-36runs.jsonl — 런당 1행 append, 원본 그대로); 판정기 주의 (jsonl 의 _success_ 필드를 그대로 믿지 말 것); 한계
 - `benchmarks/skill-uptake/REPORT.md` — doc: 스킬 도달 실측 — 배차가 새 스킬에 닿는가 (2026-08-13) · sections: 결과; 돌리는 법; 이 실측이 찾아낸 것; 이 벤치가 못 재는 것
 - `docker/asgard-k6/README.md` — doc: asgard-k6 — 부하 시험 러너 이미지 · sections: 왜 우리 이름의 이미지인가; 볼륨은 프로젝트 것이다; 수동 스택
 - `docker/asgard-project-memory/README.md` — doc: asgard-project-memory — 2차 메모리(프로젝트 메모리) Hindsight 서버 · sections: 기본 구성 (2026-07-23 확정); 백엔드 제약 — 이 구성의 모든 상한이 여기서 나온다; 기동; 뱅크 단위 설정 — compose 가 못 닿는 층; 클라이언트; 설계 결정
-- `tests/load/README.md` — doc: Project memory load harness (k6, Docker) — 실측 기록 · sections: 실행; 실측 (Hindsight 0.8.3 · Docker · M-series · 2026-07-28); 정정 — 원인은 링크 밀도가 아니었다 (26-07-28 3차, 실서버 계측)
 
 ## Public surfaces
 
@@ -130,6 +130,7 @@
 - `benchmarks/longmemeval/calibrate_dispersion.py` — public surface: def calibrate(rows); def main()
 - `benchmarks/map-shortcut/ab_harness.py` — public surface: def build_sandbox(); def build_map(); def precheck(); def run_one(fid, task, judge, arm, rep); def report(rows)
 - `benchmarks/memory-graph/harness.py` — public surface: def build_wiki(d, extra); def score_arm(d, mode); def graph_shape(d); def main()
+- `benchmarks/memory-title/harness.py` — public surface: def starts_with_speaker(title); def corpus(limit); def legacy_derive_title(body); def title_for(arm, body); def title_terms(title); uses `src/asgard/memory/manager.py`
 - `benchmarks/norn-evolution/harness.py` — public surface: def build_wiki(d); def run_norn(d, truth); def evaluate(d, truth, insight_slugs); def run_replicate(rep); def main()
 - `benchmarks/project-memory/corpus.py` — public surface: def build(root)
 - `benchmarks/project_memory_projection.py` — public surface: def local_benchmark(files); def live_benchmark(); def main(); uses `src/asgard/memory_context.py`
@@ -152,7 +153,7 @@
 - `tests/test_agent_open_cli.py` — public surface: class AgentOpenCliTest
 - `tests/test_agent_picker_cli.py` — public surface: class AgentPickerCliTest
 - `tests/test_automations.py` — public surface: class TestDueComputation; class TestStoreAndOutcome; class TestAutomationCLI
-- `tests/test_bragi.py` — public surface: class TestLanguageDetection; class TestDetection; class TestFalsePositiveGuards; class TestStatisticalFeatures; class TestGrading
+- `tests/test_bragi.py` — public surface: class TestLanguageDetection; class TestDetection; class TestFalsePositiveGuards; class TestStatisticalFeatures; class TestKoreanSentenceCompletion
 - `tests/test_bridge.py` — public surface: class TestScaffold; class TestSkillBody
 - `tests/test_budget_guard.py` — public surface: class TestLedger; class TestIncrementalScan; class TestCostUnits; class TestVerdict; class TestWarnThresholdIsAShareOfTheCeiling; uses `src/asgard/commands/budget.py`
 - `tests/test_cancellation.py` — public surface: class TestBashCancel; class TestSessionCancel
@@ -163,7 +164,6 @@
 - `tests/test_code_map.py` — public surface: class CodeMapBase; class TestProjectMap; class TestMapCLI; class TestLanguageSurfaceCoverage
 - `tests/test_code_style.py` — public surface: class Detection; class Declaration; class Ownership; class Parsing; class Attribution
 - `tests/test_color_capability.py` — public surface: def test_windows_console_is_color_capable(monkeypatch, _clean_env); def test_windows_console_without_vt_stays_plain(monkeypatch, _clean_env); def test_no_color_wins_on_windows_without_touching_the_console(monkeypatch, _clean_env); def test_redirected_stdout_is_never_colored(monkeypatch, _clean_env); def test_posix_still_treats_unset_term_as_dumb(monkeypatch, _clean_env)
-- `tests/test_completions.py` — public surface: class TestSurfaceDerivation; class TestRendererCoversTheApp; class TestOneDoorForWindows; class TestRenderAnchors; class TestBashFunctional
 
 ## Navigation contract
 

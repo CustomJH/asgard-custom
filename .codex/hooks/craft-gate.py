@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 # Asgard craft-gate — 미시 형상 + 백엔드 정확성 규율의 구조적 강제 (SubagentStop).
 #
-# 왜 프롬프트가 아니라 훅인가: 구조 제약은 많이 얹을수록 모델이 그만큼 흘린다 — 백엔드 생성
-# 과업에서 제약을 다 걸면 상위 모델도 통과율이 약 30포인트 떨어진다(2605.06445). 그래서 "긴 함수를
-# 만들지 마라"를 캐논에 한 줄 더 쓰는 것은 이미 실패한 방법이다. 세는 일은 기계가 하고, 모델의
-# 주의력은 판단에 남긴다.
+# 왜 프롬프트가 아니라 훅인가: 규율을 문장으로 적어 두는 것만으로는 정확도가 오르지 않는다 —
+# 컨텍스트 파일(AGENTS.md 류)의 정확도 효과는 +2.4%, p=0.21 로 유의하지 않았다(2602.11988,
+# 에이전트 4종·438 과업). 지시를 안 따라서가 아니다: 같은 실험에서 권장 도구 사용은 1.6~2.5배로
+# 늘었다. 반대로 정적 분석 되먹임 루프는 위반율을 40~80%대에서 11~13%로 낮췄다(2508.14419).
+# 백엔드 생성 과업에서 통과율이 30포인트 떨어지는 것도 제약 개수 때문이 아니다 — 한계효과는
+# PostgreSQL 지정 −19.3±2.5pp, Clean Architecture −9.1±1.6pp, SQLAlchemy −1.5pp 로, 상태를 가진
+# 외부 의존 하나가 대부분을 차지한다(2605.06445). 그래서 "긴 함수를 만들지 마라"를 캐논에 한 줄
+# 더 쓰는 것은 이미 실패한 방법이다. 세는 일은 기계가 하고, 모델의 주의력은 판단에 남긴다.
 #
 # 게이트를 나눈 이유: `craft`는 이 저장소가 정한 **예산**(길이·중첩·수명)을 재고, `thor gate`는
 # 예산과 무관하게 **틀린 것**(값 자리 질의 보간·삼킨 예외·타임아웃 없는 외부 호출·박힌 시크릿)을
@@ -96,6 +100,21 @@ def _writes(root: str, sid: str) -> list[str]:
     if not isinstance(rows, list):
         return []
     return [str(r) for r in rows if str(r).endswith(JUDGED_SUFFIXES)]
+
+
+def _caught(root: str, sid: str, agent: str, findings: list[dict], over_cap: bool) -> None:
+    """이 게이트가 **무엇을 잡았는지** 남긴다 — 종전에는 못 잡은 사실만 남았다.
+
+    한쪽만 적히면 장부로는 게이트가 꺼진 것과 통과한 것은 갈라도, 일한 것과 할 일이 없던 것은
+    영영 못 가른다 (26-08-19 실측: 이 저장소 장부의 craft 항목 357건이 전부 skip 이고 block 은
+    0건이었다 — 차단 경로에 기록이 아예 없었기 때문이지 안 잡아서가 아니다). 그 값은 규율을
+    지울지 말지 정할 때 필요하다: AGENTS.md 의 "scaffolding has a half-life" 는 히트 수 없이는
+    적용할 수 없는 규칙이다.
+
+    사유 칸에는 발화한 규칙 이름을 넣는다 — 어느 규칙이 실제로 일하는지가 곧 다음 질문이다.
+    """
+    rules = sorted({str(f.get("rule")) for f in findings if f.get("rule")})
+    event(root, "craft", "gate_escalate" if over_cap else "gate_block", ",".join(rules) or "unknown", [agent], sid=sid)
 
 
 def _skipped(root: str, sid: str, code: str) -> None:
@@ -324,7 +343,9 @@ def main() -> None:
         if not blocking:
             _receipt(fix)
             sys.exit(0)  # 수리만 하고 남은 것이 없는 실행은 차단이 아니다 — 래칫 카운터를 쓰지 않는다
-        if _bump(root, sid, agent) > MAX_BLOCKS:
+        over_cap = _bump(root, sid, agent) > MAX_BLOCKS
+        _caught(root, sid, agent, blocking, over_cap)
+        if over_cap:
             sys.stderr.write(
                 "asgard craft-gate: %s exceeded %d block(s) — allowing (findings stand, unfixed)\n"
                 % (agent, MAX_BLOCKS)

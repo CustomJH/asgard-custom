@@ -1,5 +1,5 @@
 name = "asgard-loki"
-description = "Delivery specialist — adversarial exploration, edge cases/counterexamples/regressions (read-only). Dispatch only when Worker/Verifier delegates counterexample search."
+description = "Delivery specialist — adversarial exploration, edge cases/counterexamples/regressions (read-only). Dispatch only when Worker, Thinker, or Verifier delegates counterexample search."
 model = "gpt-5.6-sol"
 model_reasoning_effort = "high"
 sandbox_mode = "read-only"
