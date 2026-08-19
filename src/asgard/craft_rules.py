@@ -4,7 +4,7 @@
 늘어나지 않는다. 둘을 한 파일에 두면 규칙을 하나 더할 때마다 판정 계층을 다시 읽어야 한다.
 여기 있는 함수는 전부 순수하다 — 같은 트리를 주면 같은 판정이 나오고, 파일 시스템을 안 만진다.
 
-규칙은 셋이다. ① 단위 형상(길이·중첩) ② 자원 수명(캐시·획득·누적) ③ 시간복잡도(제곱 형상).
+규칙은 셋이다. ① 단위 형상(길이·중첩·분기) ② 자원 수명(캐시·획득·누적) ③ 시간복잡도(제곱 형상).
 전부 보수적이다 — 못 보는 것을 못 본다고 말하는 쪽이, 애매한 것을 걸어 신뢰를 잃는 쪽보다 낫다.
 판정기가 오탐을 내기 시작하면 그 다음에 일어나는 일은 판정기를 끄는 것이다.
 """
@@ -14,14 +14,33 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass
 
-from .health import DEPTH_WARN, UNIT_LINES_WARN, _depth
+from .health import BRANCH_WARN, DEPTH_WARN, UNIT_LINES_WARN, Budgets, _depth
 
-UNIT_LINES_BUDGET = UNIT_LINES_WARN  # health와 같은 기준 — 게이트와 계측이 어긋나면 둘 다 못 믿는다
+# health와 같은 기준 — 게이트와 계측이 어긋나면 둘 다 못 믿는다. 저장소가 `[tool.asgard.craft-budget]`
+# 으로 문턱을 덮을 수 있게 된 뒤로 그 계약을 지키는 것은 둘이다: 표를 푸는 리졸버가 `health.budgets`
+# 하나뿐이라는 것, 그리고 같은 예산으로 `health.scan` 과 `craft.judge` 가 함께 켜지는지 보는
+# 불변식 시험(tests/test_craft.py 의 BudgetTableTest)이다. 아래 셋은 그 표가 없을 때의 기본값이다.
+UNIT_LINES_BUDGET = UNIT_LINES_WARN
 DEPTH_BUDGET = DEPTH_WARN
 # 길이 예산은 "한 자리에서 너무 많은 일이 벌어진다"의 대리 지표다. 설정 리터럴 하나를 돌려주는
-# 함수는 250행이어도 벌어지는 일이 하나뿐이라 그 대리가 틀린다(실측: cc_settings 257행·문장 3·
-# 분기 0). 문장이 이보다 적으면 길이는 로직이 아니라 데이터로 읽는다.
+# 함수는 300행이 넘어도 벌어지는 일이 하나뿐이라 그 대리가 틀린다(실측 26-08-19: templates/claude.py
+# 의 cc_settings 373행·문장 4·분기 0). 문장이 이보다 적으면 길이는 로직이 아니라 데이터로 읽는다.
 DATA_STMT_MAX = 10
+# 분기 예산. 길이와 중첩이 못 보는 축이다 — 한 단 깊이에 짧은 `if` 를 스무 개 늘어놓은 함수는
+# 두 예산을 다 지키면서 경로 수가 백만을 넘는다. 여기서 세는 것은 결정점(순환복잡도 - 1)이다.
+#
+# 근거는 둘이고, McCabe 의 권고는 그중에 없다 — 원문에서 저자 본인이 10 을 "a reasonable, but not
+# magical, upper limit" 이라 적었고, 그 값을 받치는 실증은 Fortran 서브루틴 24개를 프로젝트
+# 구성원이 주관적으로 순위 매긴 것 하나뿐이다
+# (https://masters.donntu.ru/2020/fknt/mazalov/library/article_08_min.pdf).
+#   ① 이 저장소 함수 4,883개 중 95.4% 가 15 이하다 (26-08-19 실측, 재는 법은 docs/engineering-baseline.md).
+#   ② "순환복잡도는 SLOC 의 대리 지표일 뿐"이라는 비판(Jay 외 2009 의 R²≈0.90)은 **파일 단위
+#      합산**에서 나온 값이라 함수 단위 예산에는 안 걸린다. Landman 외 2016 이 Java 메서드
+#      1,760만·C 함수 626만을 함수 단위로 재면 R²=0.40 이고, 문턱이 실제로 무는 상위 1% 구간에서
+#      0.21–0.28 로 더 갈라진다 (https://aserebre.win.tue.nl/Landman2015-ccsloc-jsep2015-preprint.pdf).
+BRANCH_BUDGET = BRANCH_WARN
+# 표를 못 받은 호출자가 서는 자리 — `shape_findings(budget=None)`.
+_DEFAULT_BUDGET = Budgets(UNIT_LINES_BUDGET, DEPTH_BUDGET, BRANCH_BUDGET)
 
 # 획득 즉시 수명이 생기는 호출. 이름이 곧 의미인 것만 넣는다 — `connect`/`socket`은 Qt 시그널·
 # 기존 소켓의 메서드와 이름이 겹쳐 오탐을 만든다(미검출로 남기는 편이 낫다).
@@ -60,6 +79,7 @@ class Unit:
     lines: int
     depth: int
     stmts: int  # 실행 문장 수 — 행 수만으로는 데이터와 로직을 구분할 수 없다
+    branches: int = 0  # 결정점 수 — 이 함수를 지나는 경로가 몇 갈래로 갈리는가
 
 
 # ── 단위 추출 ──────────────────────────────────────────────────────
@@ -83,7 +103,9 @@ def _collect_units(node: ast.AST, prefix: tuple[str, ...], out: dict[str, Unit])
         elif isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
             name = ".".join(prefix + (child.name,))
             end = getattr(child, "end_lineno", child.lineno) or child.lineno
-            out[name] = Unit(name, child.lineno, end, end - child.lineno + 1, _depth(child), _stmts(child))
+            out[name] = Unit(
+                name, child.lineno, end, end - child.lineno + 1, _depth(child), _stmts(child), _branches(child)
+            )
             _collect_units(child, prefix + (child.name,), out)
         else:
             _collect_units(child, prefix, out)
@@ -92,6 +114,32 @@ def _collect_units(node: ast.AST, prefix: tuple[str, ...], out: dict[str, Unit])
 def _stmts(fn: ast.AST) -> int:
     """본문의 실행 문장 수. 리터럴 표 하나를 돌려주는 함수는 길어도 문장이 몇 개 없다."""
     return sum(1 for node in ast.walk(fn) if isinstance(node, ast.stmt))
+
+
+# 경로를 가르는 노드. `BoolOp` 는 항이 하나 늘 때마다 갈래가 하나 늘고, 컴프리헨션의 `if` 도
+# 갈래다. 중첩 함수와 클래스는 자기 단위로 따로 세므로 여기서 뺀다 — 안 그러면 바깥 함수가
+# 자기가 품은 헬퍼의 분기까지 뒤집어쓴다.
+_BRANCHING = (ast.If, ast.For, ast.AsyncFor, ast.While, ast.ExceptHandler, ast.IfExp, ast.Assert)
+
+
+def _branches(fn: ast.AST) -> int:
+    """이 함수 자신의 결정점 수 — 순환복잡도에서 1을 뺀 값과 같다.
+
+    `_walk_local` 로 도는 것이 요점이다. `ast.walk` 는 중첩 함수 노드를 건너뛰어도 그 **본문**은
+    계속 훑어서, 헬퍼로 쪼갠 사람이 안팎의 갈래를 합쳐 뒤집어쓴다 (코퍼스의 음성 대조군이 이
+    구현을 처음 판에서 잡았다).
+    """
+    total = 0
+    for node in _walk_local(fn):
+        if isinstance(node, _BRANCHING):
+            total += 1
+        elif isinstance(node, ast.BoolOp):
+            total += len(node.values) - 1
+        elif isinstance(node, ast.comprehension):
+            total += len(node.ifs)
+        elif isinstance(node, ast.Match):
+            total += len(node.cases)
+    return total
 
 
 def _owner(spans: list[Unit], line: int) -> str:
@@ -115,12 +163,26 @@ def _parents(tree: ast.AST) -> dict[int, ast.AST]:
 # ── 규칙 ① 단위 형상 (래칫) ────────────────────────────────────────
 
 
-def shape_findings(rel: str, current: dict[str, Unit], base: dict[str, Unit] | None) -> list[Finding]:
-    """예산을 넘는 단위 중 **이번에 새로 생겼거나 더 나빠진 것**만. 줄어든 것은 개선이므로 침묵한다."""
+def _limits(budget: Budgets | None) -> Budgets:
+    """표를 못 받은 호출자가 설 기본 예산. 갈래 하나짜리 함수를 따로 둔 이유는 `shape_findings`
+    가 이미 자기 결정점 예산(15)을 꽉 채우고 있어서다 — 이 한 줄을 그 안에 두면 자기 규칙을
+    자기가 어긴다."""
+    return _DEFAULT_BUDGET if budget is None else budget
+
+
+def shape_findings(
+    rel: str, current: dict[str, Unit], base: dict[str, Unit] | None, *, budget: Budgets | None = None
+) -> list[Finding]:
+    """예산을 넘는 단위 중 **이번에 새로 생겼거나 더 나빠진 것**만. 줄어든 것은 개선이므로 침묵한다.
+
+    `budget` 은 저장소가 정한 문턱(`health.budgets`)이다. 안 주면 모듈 기본값으로 잰다 — 표를
+    읽는 일은 이 계층의 몫이 아니다(여기 있는 함수는 파일 시스템을 안 만진다).
+    """
+    limit = _limits(budget)
     out: list[Finding] = []
     for name, unit in sorted(current.items(), key=lambda kv: kv[1].line):
         prior = base.get(name) if base is not None else None
-        oversize = unit.lines > UNIT_LINES_BUDGET and unit.stmts > DATA_STMT_MAX
+        oversize = unit.lines > limit.unit_lines and unit.stmts > DATA_STMT_MAX
         if oversize and (prior is None or unit.lines > prior.lines):
             out.append(
                 Finding(
@@ -128,23 +190,36 @@ def shape_findings(rel: str, current: dict[str, Unit], base: dict[str, Unit] | N
                     rel,
                     unit.line,
                     name,
-                    f"{unit.lines}행 (예산 {UNIT_LINES_BUDGET}행"
+                    f"{unit.lines}행 (예산 {limit.unit_lines}행"
                     + (f", 이전 {prior.lines}행" if prior else ", 이번에 신설")
                     + ")",
                     "한 함수는 한 추상 수준만 말해요 — 다른 수준의 덩어리는 이름 있는 함수로 빼면 돼요",
                 )
             )
-        if unit.depth > DEPTH_BUDGET and (prior is None or unit.depth > prior.depth):
+        if unit.depth > limit.depth and (prior is None or unit.depth > prior.depth):
             out.append(
                 Finding(
                     "unit-deep",
                     rel,
                     unit.line,
                     name,
-                    f"중첩 {unit.depth} (예산 {DEPTH_BUDGET}"
+                    f"중첩 {unit.depth} (예산 {limit.depth}"
                     + (f", 이전 {prior.depth}" if prior else ", 이번에 신설")
                     + ")",
                     "가드 절로 먼저 빠져나가면 돼요 — 실패 조건을 앞에서 return 하면 본문이 한 단 내려와요",
+                )
+            )
+        if unit.branches > limit.branches and (prior is None or unit.branches > prior.branches):
+            out.append(
+                Finding(
+                    "unit-branchy",
+                    rel,
+                    unit.line,
+                    name,
+                    f"결정점 {unit.branches}개 (예산 {limit.branches}"
+                    + (f", 이전 {prior.branches}개" if prior else ", 이번에 신설")
+                    + ")",
+                    "갈래를 표로 옮기면 돼요 — 조건마다 값이 정해지는 자리는 dict 하나가 분기 전부를 대신해요",
                 )
             )
     return out

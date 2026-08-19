@@ -28,16 +28,19 @@ def _project_root(start: str) -> str:
         cur = parent
 
 
-_LABEL = {
-    "big_files": f"큰 파일 (>{health.FILE_LINES_WARN}행)",
-    "severe_files": f"심각 (>{health.FILE_LINES_SEVERE}행)",
-    "big_units": f"큰 함수 (>{health.UNIT_LINES_WARN}행)",
-    "deep_units": f"깊은 함수 (>{health.DEPTH_WARN}중첩)",
-    "dup_share": "중복 비율",
-    "cycles": "import 순환",
-    "max_fan_in": "최대 fan-in",
-    "max_fan_out": "최대 fan-out",
-}
+def _labels(budget: health.Budgets) -> dict[str, str]:
+    """지표 이름표. 함수 축의 문턱은 저장소가 정하므로(`health.budgets`) 임포트 시점이 아니라
+    판정할 때 짓는다 — 상수로 구워 두면 화면은 기본값을, 판정은 설정값을 말한다."""
+    return {
+        "big_files": f"큰 파일 (>{health.FILE_LINES_WARN}행)",
+        "severe_files": f"심각 (>{health.FILE_LINES_SEVERE}행)",
+        "big_units": f"큰 함수 (>{budget.unit_lines}행)",
+        "deep_units": f"깊은 함수 (>{budget.depth}중첩)",
+        "dup_share": "중복 비율",
+        "cycles": "import 순환",
+        "max_fan_in": "최대 fan-in",
+        "max_fan_out": "최대 fan-out",
+    }
 
 
 def _num(value: float) -> str:
@@ -56,6 +59,7 @@ def run_next(*, steps: int = 1, json_out: bool = False, quiet: bool = False) -> 
     root = _project_root(os.getcwd())
     ui.set_quiet(json_out or quiet)
     signal = loop.next_signal(root, limit=max(1, steps))
+    labels = _labels(health.budgets(root))
     path = loop.record(root, signal)
 
     if json_out:
@@ -72,7 +76,7 @@ def run_next(*, steps: int = 1, json_out: bool = False, quiet: bool = False) -> 
 
     ui.phase("set point — 목표 대비 오차")
     for t in signal.targets:
-        label = _LABEL.get(t.metric, t.metric)
+        label = labels.get(t.metric, t.metric)
         ui.warn(
             f"{label}  {_num(t.current)} → 목표 {_num(t.target)}  (오차 +{_num(t.error)} · 상대 {t.rel_error:.2f}) · {t.source}"
         )
@@ -81,7 +85,7 @@ def run_next(*, steps: int = 1, json_out: bool = False, quiet: bool = False) -> 
         ui.phase("고른 걸음")
         for c in signal.picked:
             ui.step(f"{c.step}  {c.where}")
-            ui.step(ui.dim(f"  {_LABEL.get(c.metric, c.metric)} · 읽을 줄 {c.read} · 값 {c.value} · 점수 {c.score}"))
+            ui.step(ui.dim(f"  {labels.get(c.metric, c.metric)} · 읽을 줄 {c.read} · 값 {c.value} · 점수 {c.score}"))
             ui.step(ui.dim(f"  {c.why}"))
     else:
         ui.phase("고른 걸음")
@@ -118,7 +122,7 @@ def run_health(*, snapshot: bool = False, json_out: bool = False, quiet: bool = 
 
     root = _project_root(os.getcwd())
     ui.set_quiet(json_out or quiet)
-    snap = health.scan(root)
+    snap, labels = health.scan(root), _labels(health.budgets(root))
     # 추세는 기록 **전에** 계산한다 — 방금 찍은 점과 자기를 비교하면 항상 flat이 된다
     tr = health.trend(root, snap)
     if snapshot:
@@ -148,8 +152,8 @@ def run_health(*, snapshot: bool = False, json_out: bool = False, quiet: bool = 
 
     ui.phase("지표")
     ui.step(
-        f"크기   {_LABEL['big_files']} {snap.big_files} · {_LABEL['severe_files']} {snap.severe_files}"
-        f" · {_LABEL['big_units']} {snap.big_units} · {_LABEL['deep_units']} {snap.deep_units}"
+        f"크기   {labels['big_files']} {snap.big_files} · {labels['severe_files']} {snap.severe_files}"
+        f" · {labels['big_units']} {snap.big_units} · {labels['deep_units']} {snap.deep_units}"
     )
     ui.step(f"중복   소스 {snap.dup_lines:,}행 {snap.dup_share:.2%} (테스트 {snap.test_dup_lines:,}행 — 참고)")
     ui.step(f"결합   순환 {snap.cycles} · 최대 fan-in {snap.max_fan_in} · 최대 fan-out {snap.max_fan_out}")
@@ -161,9 +165,9 @@ def run_health(*, snapshot: bool = False, json_out: bool = False, quiet: bool = 
         if not worse and not better:
             ui.step("달라진 게 없어요")
         for d in worse:
-            ui.warn(f"{_LABEL.get(d.metric, d.metric)} {_num(d.before)} → {_num(d.after)}")
+            ui.warn(f"{labels.get(d.metric, d.metric)} {_num(d.before)} → {_num(d.after)}")
         for d in better:
-            ui.step(ui.dim(f"{_LABEL.get(d.metric, d.metric)} {_num(d.before)} → {_num(d.after)}"))
+            ui.step(ui.dim(f"{labels.get(d.metric, d.metric)} {_num(d.before)} → {_num(d.after)}"))
     else:
         ui.phase("추세")
         ui.step(
@@ -203,6 +207,7 @@ def run_gate(*, json_out: bool = False, quiet: bool = False) -> int:
     root = _project_root(os.getcwd())
     ui.set_quiet(json_out or quiet)
     snap = health.scan(root)
+    labels = _labels(health.budgets(root))
     report = health.gate(root, snap)
 
     if json_out:
@@ -224,13 +229,13 @@ def run_gate(*, json_out: bool = False, quiet: bool = False) -> int:
     ui.head("health --gate · 되돌리기 비싼 두 축")
     ui.step(f"기준 {report.commit}")
     for metric in health.GATE_METRICS:
-        label = _LABEL.get(metric, metric)
+        label = labels.get(metric, metric)
         if metric in report.baseline:
             ui.step(ui.dim(f"{label}  현재 {getattr(snap, metric):,} · 기준선 {report.baseline[metric]:,}"))
     if report.undetermined:
         ui.phase("못 본 것")
         for metric in report.undetermined:
-            ui.warn(f"{_LABEL.get(metric, metric)} — pyproject.toml [tool.asgard.health-gate]에 기준선이 없어요")
+            ui.warn(f"{labels.get(metric, metric)} — pyproject.toml [tool.asgard.health-gate]에 기준선이 없어요")
 
     if not report.blocked:
         ui.ok("기준선을 넘긴 축이 없어요")
@@ -239,7 +244,7 @@ def run_gate(*, json_out: bool = False, quiet: bool = False) -> int:
 
     ui.phase("막힌 축")
     for v in report.violations:
-        ui.warn(f"{_LABEL.get(v.metric, v.metric)} {v.baseline:,} → {v.current:,}")
+        ui.warn(f"{labels.get(v.metric, v.metric)} {v.baseline:,} → {v.current:,}")
     ui.step(
         "이 둘은 되돌리는 비용이 지수로 커져요 — 늘린 파일을 쪼개거나 순환을 끊어 주세요. "
         "구조를 바꿀 수 없다면 pyproject.toml의 기준선을 올리되, 그 커밋이 근거를 들고 있어야 해요."

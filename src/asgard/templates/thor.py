@@ -284,10 +284,15 @@ Magni lifted the giant's leg off Thor when the grown gods could not — not with
 the right shape of effort at one point beat piling on. He is also who carries the hammer after the
 world ends. That is the standard here: **code that is still liftable by whoever comes next.**
 
-This skill is short on purpose. Structural requirements degrade an agent the more of them you hold at
-once — measured: assertion pass rates drop ~30 points from unconstrained to fully constrained backend
-tasks (Constraint decay, 2605.06445). So the enumerable rules are **not** carried in your attention:
-`asgard craft` carries them. What is written here is the ranked judgment the machine cannot make.
+This skill is short on purpose. Rules written into a context file do not measurably improve accuracy:
++2.4%, p=0.21 across four agents and 438 tasks, and the agents did follow the instructions
+(recommended-tool use rose 1.6-2.5x) (2602.11988). A deterministic feedback loop does: static-analysis
+violation rates fell from 40-80% to 11-13% over ten iterations (2508.14419). The ~30-point assertion
+pass-rate drop on fully specified backend tasks is not a count effect either — the matched-pair
+marginal analysis puts most of it on one stateful dependency (PostgreSQL -19.3±2.5pp, Clean
+Architecture -9.1±1.6pp, SQLAlchemy -1.5pp) (2605.06445). So the enumerable rules are **not** carried
+in your attention: `asgard craft` carries them. What is written here is the ranked judgment the
+machine cannot make.
 
 ## The ordering (when these conflict, higher wins)
 
@@ -349,8 +354,9 @@ the cache and acquire rules, the cost rules — are never auto-repaired, so do n
 that will not come. That is deliberate: where a function changes subject is the judgment this skill is about, and a
 linter that reshapes functions on its own produces worse code than one that reports.
 
-> Sources: constraint decay in backend agents (2605.06445), long-horizon structural degradation
-> (2603.24755); the rest is standard practice restated in our own words.
+> Sources: context files and accuracy (2602.11988), static-analysis feedback loops (2508.14419),
+> constraint decay in backend agents (2605.06445), long-horizon structural degradation (2603.24755);
+> the rest is standard practice restated in our own words.
 """
 
 _THJALFI = """\

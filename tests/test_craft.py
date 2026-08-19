@@ -19,7 +19,7 @@ import subprocess
 import tempfile
 import unittest
 
-from asgard import craft, craft_rules
+from asgard import craft, craft_rules, health
 
 
 def _patterns(source: str) -> set[str]:
@@ -346,7 +346,7 @@ class MoveTest(_GitTree, unittest.TestCase):
             root = self._base(stack)
             self._plain_mv(root, "pkg/rules.py", "pkg/craft/rules.py", LEAK + _oversize(50))
             report = craft.judge(root, ["pkg/craft/rules.py"])
-            self.assertEqual([f.rule for f in report.blocking], ["unit-oversize"])
+            self.assertEqual(sorted(f.rule for f in report.blocking), ["unit-branchy", "unit-oversize"])
 
     def test_a_move_that_also_added_a_leak_still_blocks(self):
         with contextlib.ExitStack() as stack:
@@ -426,7 +426,11 @@ class MoveTest(_GitTree, unittest.TestCase):
             report = self._moved_method(stack, "_Other", twin)
             self.assertEqual(
                 sorted(f"{f.rule} {f.unit}" for f in report.blocking),
-                ["unit-deep _ChatMixin.wide", "unit-oversize _ChatMixin.wide"],
+                [
+                    "unit-branchy _ChatMixin.wide",
+                    "unit-deep _ChatMixin.wide",
+                    "unit-oversize _ChatMixin.wide",
+                ],
             )
 
     def test_a_copy_beside_the_original_inherits_nothing(self):
@@ -435,7 +439,9 @@ class MoveTest(_GitTree, unittest.TestCase):
             root = self._base(stack)
             self._write(root, "pkg/other.py", INHERITED)
             report = craft.judge(root, ["pkg/other.py"])
-            self.assertEqual(sorted(f.rule for f in report.blocking), ["unclosed-acquire", "unit-oversize"])
+            self.assertEqual(
+                sorted(f.rule for f in report.blocking), ["unclosed-acquire", "unit-branchy", "unit-oversize"]
+            )
             self.assertEqual(report.moved, ())
 
     def test_an_unrelated_new_file_does_not_adopt_a_deleted_baseline(self):
@@ -445,8 +451,50 @@ class MoveTest(_GitTree, unittest.TestCase):
             os.unlink(os.path.join(root, "pkg/rules.py"))
             self._write(root, "pkg/other.py", UNRELATED)
             report = craft.judge(root, ["pkg/other.py"])
-            self.assertEqual([f.rule for f in report.blocking], ["unit-oversize"])
+            self.assertEqual(sorted(f.rule for f in report.blocking), ["unit-branchy", "unit-oversize"])
             self.assertEqual(report.moved, ())
+
+
+class BudgetTableTest(_GitTree, unittest.TestCase):
+    """문턱은 저장소가 정하고(`[tool.asgard.craft-budget]`), 게이트와 계측은 **같은 표**를 읽는다.
+
+    두 번째 시험이 사례가 아니라 불변식인 이유: 한쪽만 켜지면 `asgard health` 가 세는 수와
+    `asgard craft` 가 막는 자리가 서로를 설명하지 못한다. 그 어긋남은 화면에 안 보이고, 보이는
+    것은 "게이트가 이상하다"뿐이라 다음에 일어나는 일은 게이트를 끄는 것이다.
+    """
+
+    _MODULE = "def wide():\n" + "".join(f"    x{i} = {i}\n" for i in range(45))
+
+    def _tree(self, stack, table: str) -> str:
+        root = self._repo(stack)
+        self._write(root, "pyproject.toml", table)
+        self._commit(root)
+        return root
+
+    def test_a_repo_without_the_table_keeps_the_defaults(self):
+        with contextlib.ExitStack() as stack:
+            root = self._tree(stack, '[project]\nname = "probe"\n')
+            self.assertEqual(health.budgets(root), health.Budgets(70, 4, 15))
+
+    def test_a_declared_budget_moves_the_gate_and_the_meter_together(self):
+        with contextlib.ExitStack() as stack:
+            loose = self._tree(stack, '[project]\nname = "probe"\n')
+            self._write(loose, "m.py", self._MODULE)
+            self.assertEqual(health.scan(loose).big_units, 0, "45행은 기본 예산 70 아래다")
+            self.assertEqual([f.rule for f in craft.judge(loose, ["m.py"]).blocking], [])
+
+            tight = self._tree(stack, '[project]\nname = "probe"\n\n[tool.asgard.craft-budget]\nunit_lines = 40\n')
+            self._write(tight, "m.py", self._MODULE)
+            self.assertEqual(health.scan(tight).big_units, 1, "표를 좁혔는데 계측이 안 따라오면 추세가 거짓말을 한다")
+            self.assertIn("unit-oversize", [f.rule for f in craft.judge(tight, ["m.py"]).blocking])
+
+    def test_a_value_that_is_not_a_budget_falls_back(self):
+        """bool·음수·문자열은 조용히 무시한다 — 잘못 적은 한 줄이 예산을 0 으로 만들면 이
+        저장소의 모든 함수가 한꺼번에 위반이 된다 (`gate_baseline` 과 같은 계약)."""
+        table = '[tool.asgard.craft-budget]\nunit_lines = true\ndepth = -1\nbranches = "15"\n'
+        with contextlib.ExitStack() as stack:
+            root = self._tree(stack, table)
+            self.assertEqual(health.budgets(root), health.Budgets(70, 4, 15))
 
 
 class SelfApplicationTest(unittest.TestCase):

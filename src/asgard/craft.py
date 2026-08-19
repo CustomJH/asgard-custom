@@ -26,7 +26,7 @@ from dataclasses import dataclass, replace
 
 from . import craft_c, craft_lex, craft_note, craft_rules
 from .craft_rules import Finding, Unit, shape_findings
-from .health import FILE_LINES_WARN, _code_lines, _read, borrowed
+from .health import FILE_LINES_WARN, Budgets, _code_lines, _read, borrowed, budgets
 
 # 언어 → health의 주석 규약 이름 (코드 행 수를 언어에 맞게 센다)
 _COMMENT_LANG = {
@@ -284,7 +284,7 @@ def _ratcheted(text: str, rel: str, spans: list[Unit], lang: str) -> list[Findin
     return [*_patterns(text, rel, spans, lang), *craft_note.note_findings(text, rel, spans, lang)]
 
 
-def _judge_file(root: str, rel: str, origin: _Origin) -> tuple[list[Finding], int, str | None]:
+def _judge_file(root: str, rel: str, origin: _Origin, budget: Budgets) -> tuple[list[Finding], int, str | None]:
     """(판정, 물려받아 넘긴 건수, 미판정 사유)."""
     if why := borrowed(rel):
         return ([], 0, why)
@@ -303,7 +303,7 @@ def _judge_file(root: str, rel: str, origin: _Origin) -> tuple[list[Finding], in
     # 한 일이므로 기준선을 물려줄 근거가 없다.
     renames = _requalified(prior_units, current) if rel in origin.moved and prior_units else {}
     spans = list(current.values())
-    found = shape_findings(rel, current, _rekeyed(prior_units, renames))
+    found = shape_findings(rel, current, _rekeyed(prior_units, renames), budget=budget)
     leaks = _ratcheted(text, rel, spans, lang)
     inherited_keys = _inherited(before, lang, renames)
     fresh = [f for f in leaks if (f.rule, f.unit, f.detail) not in inherited_keys]
@@ -331,15 +331,20 @@ def _inherited(before: str | None, lang: str, renames: dict[str, str]) -> set[tu
 
 
 def judge(root: str, paths: object, base: str = "HEAD") -> Report:
-    """지목된 경로만 판정한다 — 나무 전수 스캔은 health의 일이다."""
+    """지목된 경로만 판정한다 — 나무 전수 스캔은 health의 일이다.
+
+    형상 예산은 여기서 **한 번** 푼다. 파일마다 다시 읽으면 판정 도중에 `pyproject.toml` 이 바뀔 때
+    같은 실행 안에서 파일마다 다른 문턱으로 재게 된다.
+    """
     rels = _normalise(paths)
     origin = _Origin(root, base)
+    budget = budgets(root)
     findings: list[Finding] = []
     judged: list[str] = []
     unknown: list[tuple[str, str]] = []
     inherited = 0
     for rel in rels:
-        found, passed, why = _judge_file(root, rel, origin)
+        found, passed, why = _judge_file(root, rel, origin, budget)
         if why:
             unknown.append((rel, why))
             continue

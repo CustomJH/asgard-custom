@@ -221,7 +221,9 @@ def _score(value: float, read: int) -> float:
     return round(value / max(read, 1), 8)
 
 
-def _unit_candidates(target: Target, facts: list[_FileFact], units: dict, max_churn: int) -> list[Candidate]:
+def _unit_candidates(
+    target: Target, facts: list[_FileFact], units: dict, max_churn: int, budget: health.Budgets
+) -> list[Candidate]:
     """함수 추출 후보 — 파일 안에서 끝나므로 읽을 줄 수는 그 함수의 행 수다.
 
     두 지표의 **셈 단위가 다르다**는 것이 이 함수의 요지다. `big_units`는 단위를 세므로
@@ -241,7 +243,7 @@ def _unit_candidates(target: Target, facts: list[_FileFact], units: dict, max_ch
         value = _value(target, fact.churn, max_churn)
         if target.metric == "deep_units":
             deep = sorted(
-                (u for u in found.values() if u.depth > health.DEPTH_WARN), key=lambda u: (-u.depth, -u.lines, u.line)
+                (u for u in found.values() if u.depth > budget.depth), key=lambda u: (-u.depth, -u.lines, u.line)
             )
             if not deep:
                 continue
@@ -260,13 +262,13 @@ def _unit_candidates(target: Target, facts: list[_FileFact], units: dict, max_ch
                     churn=fact.churn,
                     value=value,
                     score=_score(value, read),
-                    why=f"중첩 {anchor.depth} (예산 {health.DEPTH_WARN}) · 합계 {read}행{tail}"
+                    why=f"중첩 {anchor.depth} (예산 {budget.depth}) · 합계 {read}행{tail}"
                     f" · 최근 {fact.churn}회 변경 · 파일 안에서 끝난다",
                 )
             )
             continue
         for qualname, unit in found.items():
-            if unit.lines <= health.UNIT_LINES_WARN:
+            if unit.lines <= budget.unit_lines:
                 continue
             out.append(
                 Candidate(
@@ -280,7 +282,7 @@ def _unit_candidates(target: Target, facts: list[_FileFact], units: dict, max_ch
                     churn=fact.churn,
                     value=value,
                     score=_score(value, unit.lines),
-                    why=f"{unit.lines}행 (예산 {health.UNIT_LINES_WARN}) · 중첩 {unit.depth}"
+                    why=f"{unit.lines}행 (예산 {budget.unit_lines}) · 중첩 {unit.depth}"
                     f" · 최근 {fact.churn}회 변경 · 파일 안에서 끝난다",
                 )
             )
@@ -380,6 +382,7 @@ def next_signal(root: str, snap: health.Snapshot | None = None, limit: int = 1) 
     if truncated:
         undetermined.append(("survey", f"파일 {truncated}개를 못 봤다 — 조사 상한 {MAX_SURVEY_FILES}"))
     max_churn = max((f.churn for f in facts), default=0)
+    budget = health.budgets(root)  # 지표마다 다시 읽지 않는다 — 한 신호는 한 예산으로 잰다
 
     pool: list[Candidate] = []
     for goal in goals:
@@ -388,7 +391,7 @@ def next_signal(root: str, snap: health.Snapshot | None = None, limit: int = 1) 
             continue
         step = METRIC_STEP.get(goal.metric)
         if step == EXTRACT:
-            found = _unit_candidates(goal, facts, units, max_churn)
+            found = _unit_candidates(goal, facts, units, max_churn, budget)
         elif step == DEDUPE:
             found = _dup_candidates(goal, facts, snapshot, max_churn)
         elif step in (SPLIT, DECOUPLE):

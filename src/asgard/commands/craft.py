@@ -26,6 +26,7 @@ from .health import _project_root
 _RULE_LABEL = {
     "unit-oversize": "함수가 예산을 넘었어요",
     "unit-deep": "중첩이 예산을 넘었어요",
+    "unit-branchy": "갈래가 예산을 넘었어요",
     "cache-on-method": "메서드 캐시가 인스턴스를 붙잡고 있어요",
     "cache-unbounded": "캐시에 경계가 없어요",
     "unclosed-acquire": "획득한 자원을 아무도 안 닫아요",

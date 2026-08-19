@@ -9,9 +9,10 @@ Thor's canon skills say **what is true**. This one says **what to do next, and i
 
 That split matters because the canons are selected by judgment, and judgment is the thing that
 degrades: instruction-following drops monotonically across turns (Multi-IF 2410.15553, 0.877 → 0.707
-by turn 3), and structural requirements decay the more of them you hold at once (2605.06445). A
-procedure survives that decay because each step names the next one — you do not have to remember the
-arc, only where you are on it.
+by turn 3), and compliance odds fall about 5.6% per generated function as a session lengthens
+(2605.10039, 1,650 Claude Code CLI sessions, OR=0.944). Writing the rules into a context file does not
+close that gap: accuracy moved +2.4%, p=0.21 (2602.11988). A procedure survives the decay because each
+step names the next one — you do not have to remember the arc, only where you are on it.
 
 ## Rule zero — the machine carries the rules
 

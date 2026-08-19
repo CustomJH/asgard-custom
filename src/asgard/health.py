@@ -9,7 +9,11 @@
 측정 대상은 실증 문헌에서 유지보수 비용·결함률과의 상관이 확인된 지표군으로 제한한다:
 
 - **크기** — god module/god method. Tornhill & Borg, *Code Red* (TechDebt 2022, arXiv
-  2203.04374)의 code health 구성 요소이자 ISO/IEC 5055 유지보수성 항목. 함수 70행은 CodeScene 관례 문턱.
+  2203.04374)의 code health 구성 요소이자 ISO/IEC 5055 유지보수성 항목. 다만 크기는 결함 밀도를
+  예측하지 않는다 — Syer 외의 복제 연구(TSE 2015, https://doi.org/10.1109/TSE.2014.2361131)는 밀도
+  봉우리를 35–116행에 두어 Hatton 의 U자와 Koru 의 단조감소를 둘 다 부정했고, Fenton & Ohlsson
+  (2000, https://dl.acm.org/doi/10.1109/32.879815)은 크기와 결함의 관계를 찾지 못했다. 우리가 크기를
+  재는 이유는 결함 예측이 아니라 **되돌리는 비용**이다. 함수 문턱의 근거는 `UNIT_LINES_WARN` 주석에 있다.
 - **중복** — 토큰 정규화 클론 블록. GitClear의 AI 코드 품질 추적에서 생성형 도입 이후 가장
   뚜렷하게 움직인 신호다(복사·붙여넣기 상승, 리팩터 하락). 에이전트 특유의 침식 형태라
   우리에게 가장 값이 크다.
@@ -44,21 +48,88 @@ import json
 import os
 import subprocess
 import tomllib
+from collections import Counter
 from dataclasses import asdict, dataclass, field
 
 from . import settings
 
 # ── 관례 문턱. 판정선이 아니라 "세어서 추세로 볼 대상"의 경계다 ──
-UNIT_LINES_WARN = 70  # CodeScene 계열 god method 관례
+#
+# 함수 셋(`UNIT_LINES_WARN`·`DEPTH_WARN`·`BRANCH_WARN`)은 기본값이고, 저장소가
+# `[tool.asgard.craft-budget]` 로 덮으면 `budgets()` 가 그 값을 푼다. 파일 셋(`FILE_LINES_*`)은
+# 표에 넣지 않는다 — 그 축에는 `[tool.asgard.health-gate]` 기준선이라는 다른 문이 이미 있고,
+# 추세는 저장소 간·이력 간 비교가 서야 읽을 수 있다.
+#
+# `BRANCH_WARN` 은 **여기서 재지 않는 예산**이다 (분기는 `craft_rules.shape_findings` 가 센다).
+# 그래도 기본값을 여기 두는 것은 표를 읽는 곳을 `budgets()` 하나로 두기 위해서다.
+
+# 70 은 결함 문턱이 아니라 **코드 물량 상위 10% 구간 표시**다. Alves·Ypma·Visser (ICSM 2010) 가
+# 시스템 100개·11,996 KLOC 의 코드 물량 분포에서 메서드 LOC 90분위를 74 로 유도했다.
+# https://webarchive.di.uminho.pt/wiki.di.uminho.pt/twiki/pub/Personal/Joost/PublicationList/AlvesYpmaVisserICSM2010.pdf
+UNIT_LINES_WARN = 70
 FILE_LINES_WARN = 400
 FILE_LINES_SEVERE = 1000
-DEPTH_WARN = 4  # 함수 내부 중첩 깊이
+# 함수 내부 중첩 깊이. 셋 중 **근거가 가장 약한 축**이다 — 현업 개발자 222명의 이해시간 실험
+# (Ajami·Woodbridge·Feitelson, ICPC 2017, https://www.cs.huji.ac.il/w~feit/papers/Complexity17ICPC.pdf)
+# 에서 중첩 if 는 같은 뜻의 평탄한 판보다 오히려 약간 빨랐고, 그 차이는 유의하지 않았다. 그래도
+# 값을 두는 이유는 규칙이 래칫이라, 물려받은 깊이는 안 막고 이번에 더 깊어진 것만 막기 때문이다.
+DEPTH_WARN = 4
+BRANCH_WARN = 15  # 함수 하나의 결정점 예산 — 근거는 `craft_rules.BRANCH_BUDGET` 주석에 있다
 CLONE_WINDOW = 6  # 클론 최소 행 수 (jscpd 기본 5행 대비 보수적)
 CLONE_MIN_CHARS = 120  # 창 전체 최소 길이 — 짧은 보일러플레이트 오탐 차단 (~50 토큰 대용)
 CHURN_COMMITS = 200  # 변경 빈도 관측 창 (커밋 수)
 HISTORY_KEEP = 60  # history.jsonl 보존 스냅샷 수
 _MAX_SOURCE_BYTES = 512 * 1024
 _TOP_N = 10  # 보고에 싣는 상위 항목 수
+
+
+@dataclass(frozen=True)
+class Budgets:
+    """함수 하나에 허용하는 형상. 이 모듈은 앞의 둘만 재고 `branches` 는 `craft_rules` 가 센다 —
+    그래도 한 자료형에 묶는 이유는 게이트와 계측이 **같은 표**를 읽게 하기 위해서다."""
+
+    unit_lines: int
+    depth: int
+    branches: int
+
+
+# 예산을 어디에 두는가: 기준선과 같은 자리, **추적되는 파일**이다. 근거는 아래 `GATE_TABLE`
+# 주석과 같다 — 모든 기계·CI 가 같은 수를 읽고, 무엇보다 예산을 푸는 행위가 diff 에 남는다.
+CRAFT_TABLE = ("tool", "asgard", "craft-budget")
+
+
+def _toml_table(root: str, keys: tuple[str, ...]) -> dict:
+    """`pyproject.toml` 안의 표 하나. 파일이 없거나 못 읽거나 그 표가 없으면 빈 지도.
+
+    빈 지도는 "값이 0"이 아니라 "선언이 없다"다 — 기본값을 세울지 미판정으로 남길지는 호출부가
+    정한다.
+    """
+    try:
+        with open(os.path.join(root, "pyproject.toml"), "rb") as fh:
+            table: object = tomllib.load(fh)
+    except OSError, tomllib.TOMLDecodeError:
+        return {}
+    for key in keys:
+        if not isinstance(table, dict):
+            return {}
+        table = table.get(key, {})
+    return table if isinstance(table, dict) else {}
+
+
+def budgets(root: str) -> Budgets:
+    """`[tool.asgard.craft-budget]` 을 푼 함수 형상 예산. 선언이 없으면 위 기본값 그대로.
+
+    bool·음수·비정수는 조용히 무시하고 기본값을 쓴다 (`gate_baseline` 과 같은 계약). 잘못 적은
+    한 줄로 예산이 0 이 되면 이 저장소의 모든 함수가 한꺼번에 위반이 된다.
+    """
+    table = _toml_table(root, CRAFT_TABLE)
+
+    def value(key: str, fallback: int) -> int:
+        raw = table.get(key)
+        return fallback if isinstance(raw, bool) or not isinstance(raw, int) or raw < 0 else raw
+
+    return Budgets(value("unit_lines", UNIT_LINES_WARN), value("depth", DEPTH_WARN), value("branches", BRANCH_WARN))
+
 
 # 벤더링·산출물·격리 영역 — 우리 나무의 추세가 아니다. code_map._IGNORED_DIRS와 목적이
 # 다르므로(그쪽은 오리엔테이션 맵 범위) 공유하지 않고 여기서 따로 든다.
@@ -159,7 +230,7 @@ class FileHealth:
     max_unit_lines: int  # 최장 함수/메서드 행 수
     max_depth: int  # 함수 내부 최대 중첩 깊이
     units: int  # 함수/메서드 개수
-    big_units: int  # UNIT_LINES_WARN 초과 함수 수
+    big_units: int  # 예산(`Budgets.unit_lines`) 초과 함수 수
     churn: int  # 관측 창 안에서 이 파일을 건드린 커밋 수
     dup_lines: int  # 클론 블록에 참여한 코드 행 수
     fan_out: int = 0  # 내부 모듈 의존 수 (precise만)
@@ -182,7 +253,7 @@ class Snapshot:
     big_files: int  # FILE_LINES_WARN 초과
     severe_files: int  # FILE_LINES_SEVERE 초과
     big_units: int
-    deep_units: int  # DEPTH_WARN 초과 함수를 가진 파일 수
+    deep_units: int  # 예산(`Budgets.depth`) 초과 함수를 가진 파일 수
     dup_lines: int  # 소스만 — 테스트 픽스처 반복이 제품 코드 신호를 덮지 않게 분리한다
     dup_share: float  # dup_lines / code_lines
     test_dup_lines: int  # 테스트 쪽 중복 (참고값 — 판정 대상 아님)
@@ -313,8 +384,8 @@ def _code_lines(text: str, lang: str) -> list[tuple[int, str]]:
     return out
 
 
-def _python_units(text: str) -> tuple[int, int, int, int]:
-    """(함수 수, 최장 함수 행 수, 최대 중첩 깊이, 문턱 초과 함수 수). 파싱 실패는 전부 0."""
+def _python_units(text: str, unit_lines: int) -> tuple[int, int, int, int]:
+    """(함수 수, 최장 함수 행 수, 최대 중첩 깊이, `unit_lines` 초과 함수 수). 파싱 실패는 전부 0."""
     try:
         tree = ast.parse(text)
     except SyntaxError, ValueError, RecursionError:
@@ -326,7 +397,7 @@ def _python_units(text: str) -> tuple[int, int, int, int]:
         units += 1
         span = (getattr(node, "end_lineno", node.lineno) or node.lineno) - node.lineno + 1
         longest = max(longest, span)
-        big += 1 if span > UNIT_LINES_WARN else 0
+        big += 1 if span > unit_lines else 0
         deepest = max(deepest, _depth(node))
     return (units, longest, deepest, big)
 
@@ -517,6 +588,7 @@ def _cycles(graph: dict[str, set[str]]) -> int:
 
 def scan(root: str) -> Snapshot:
     """나무 전체를 훑어 스냅샷 1개를 만든다. 순수 관측 — 파일을 쓰지 않는다."""
+    budget = budgets(root)
     listing, excluded = _iter_files(root)
     texts = {rel: text for rel, _ in listing if (text := _read(root, rel)) is not None}
     langs = {rel: lang for rel, lang in listing if rel in texts}
@@ -525,15 +597,12 @@ def scan(root: str) -> Snapshot:
     marked, clone_groups = _clones(code)
     roots = _package_roots(list(texts))
     graph = _import_graph(root, texts, roots)
-    fan_in: dict[str, int] = {}
-    for deps in graph.values():
-        for dep in deps:
-            fan_in[dep] = fan_in.get(dep, 0) + 1
+    fan_in = Counter(dep for deps in graph.values() for dep in deps)
 
     files: list[FileHealth] = []
     for rel, lang in sorted(langs.items()):
         precise = os.path.splitext(rel)[1] in _PRECISE_SUFFIX
-        units, longest, deepest, big = _python_units(texts[rel]) if precise else (0, 0, 0, 0)
+        units, longest, deepest, big = _python_units(texts[rel], budget.unit_lines) if precise else (0, 0, 0, 0)
         mod = _py_module(rel, roots) if precise else None
         files.append(
             FileHealth(
@@ -576,7 +645,7 @@ def scan(root: str) -> Snapshot:
         big_files=sum(1 for f in source if f.lines > FILE_LINES_WARN),
         severe_files=sum(1 for f in source if f.lines > FILE_LINES_SEVERE),
         big_units=sum(f.big_units for f in source),
-        deep_units=sum(1 for f in source if f.max_depth > DEPTH_WARN),
+        deep_units=sum(1 for f in source if f.max_depth > budget.depth),
         dup_lines=dup_lines,
         dup_share=round(dup_lines / code_lines, 4) if code_lines else 0.0,
         test_dup_lines=sum(f.dup_lines for f in tests),
@@ -587,9 +656,9 @@ def scan(root: str) -> Snapshot:
         largest=[{"path": f.path, "lines": f.lines} for f in sorted(source, key=lambda f: -f.lines)[:_TOP_N]],
         worst_units=[
             {"path": f.path, "lines": f.max_unit_lines, "depth": f.max_depth}
-            for f in sorted((f for f in source if f.max_unit_lines > UNIT_LINES_WARN), key=lambda f: -f.max_unit_lines)[
-                :_TOP_N
-            ]
+            for f in sorted(
+                (f for f in source if f.max_unit_lines > budget.unit_lines), key=lambda f: -f.max_unit_lines
+            )[:_TOP_N]
         ],
         dup_top=[g for g in clone_groups if any(not _is_test(p) for p in g["paths"])][:_TOP_N],
         coupling_top=[
@@ -767,17 +836,7 @@ def gate_baseline(root: str) -> dict[str, int]:
     빈 지도는 "기준선 0"이 아니라 "기준선 없음"이다 — 호출부는 그 지표를 `undetermined` 로
     실어야 한다. 0으로 채우면 기준선을 안 세운 저장소가 전부 빨개진다.
     """
-    try:
-        with open(os.path.join(root, "pyproject.toml"), "rb") as fh:
-            table: object = tomllib.load(fh)
-    except OSError, tomllib.TOMLDecodeError:
-        return {}
-    for key in GATE_TABLE:
-        if not isinstance(table, dict):
-            return {}
-        table = table.get(key, {})
-    if not isinstance(table, dict):
-        return {}
+    table = _toml_table(root, GATE_TABLE)
     out: dict[str, int] = {}
     for metric in GATE_METRICS:
         raw = table.get(metric)

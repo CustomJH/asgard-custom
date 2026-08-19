@@ -175,6 +175,38 @@ class ShippedHookRuns(unittest.TestCase):
                 if flag == "--cc":
                     self.assertEqual("block", payload.get("decision"))
 
+    def _ledger(self) -> list[dict]:
+        """이 저장소의 게이트 사건 장부. 아직 한 줄도 안 쓰였으면 빈 목록."""
+        path = os.path.join(self.root, ".asgard", "state", "gate-events.jsonl")
+        if not os.path.exists(path):
+            return []
+        with open(path, encoding="utf-8") as handle:
+            return [json.loads(line) for line in handle if line.strip()]
+
+    def test_a_block_is_written_to_the_ledger_with_the_rules_that_fired(self):
+        """잡은 사실이 장부에 남는가 — 못 잡은 사실만 남으면 억제 효과를 아무도 못 잰다.
+
+        26-08-19 실측: 이 저장소 장부의 craft 항목 357건이 전부 skip 이었고 block 은 0건이었다.
+        차단 경로에 기록이 없었기 때문이지 한 번도 안 잡아서가 아니다 — 그 상태에서는 "이 규율이
+        아직 필요한가"라는 질문에 답할 근거가 없다.
+        """
+        self._scaffold("--cursor")
+        self._write("src/leak.py", DEFECT)
+        self._sentinel("cursor", ["src/leak.py"])
+        self._run_hook(HOSTS[0][1], ["cursor"], {"cwd": self.root, "session_id": "cursor"})
+        blocks = [r for r in self._ledger() if r.get("gate") == "craft" and r.get("event") == "gate_block"]
+        self.assertEqual(1, len(blocks), self._ledger())
+        self.assertIn("unclosed-acquire", blocks[0]["code"])
+        self.assertIn("swallowed-exception", blocks[0]["code"])
+
+    def test_a_pass_writes_no_block_row(self):
+        """차단만 적는 계측은 '항상 차단'으로 바꿔도 초록이다 — 통과는 조용해야 한다."""
+        self._scaffold("--cursor")
+        self._write("src/ok.py", CLEAN)
+        self._sentinel("cursor", ["src/ok.py"])
+        self._run_hook(HOSTS[0][1], ["cursor"], {"cwd": self.root, "session_id": "cursor"})
+        self.assertEqual([], [r for r in self._ledger() if r.get("event") == "gate_block"])
+
     def test_clean_code_is_not_blocked(self):
         """막는 쪽만 시험하면 훅을 '항상 차단'으로 바꿔도 초록이다 — 음성 대조군이 짝으로 있어야 한다."""
         self._scaffold("--cursor")
