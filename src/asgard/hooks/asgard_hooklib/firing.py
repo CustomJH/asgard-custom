@@ -25,6 +25,7 @@ import sys
 import time
 
 from .paths import repo_root
+from .seen import note as note_project
 
 SCHEMA = 1
 
@@ -133,5 +134,9 @@ def run(gate: str, main) -> None:
         if text:
             sys.stdout.write(text)
             sys.stdout.flush()
-        record(repo_root(), gate, fired, failed)
+        root = repo_root()
+        record(root, gate, fired, failed)
+        # 훅이 돌았다는 것은 여기 Asgard 가 깔려 있다는 뜻이다 — `asgard sync` 가 이 기계에서
+        # 고칠 프로젝트를 찾을 때 쓴다. 등록 여부는 sync 가 정하고 여기서는 흔적만 남긴다.
+        note_project(root)
     raise SystemExit(code)

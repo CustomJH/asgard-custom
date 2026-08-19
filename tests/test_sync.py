@@ -16,6 +16,7 @@ from unittest import mock
 
 from asgard import memory, registry, ui
 from asgard.commands.sync import merge_agents_md, merge_cc_settings, run_sync, sync_project
+from asgard.hooks.asgard_hooklib import seen
 from asgard.templates import agents_md, cc_settings
 
 
@@ -656,6 +657,27 @@ class TestSyncProject(Base):
         entries = registry.load()
         self.assertEqual([p["root"] for p in entries], [self.root])
         self.assertTrue(entries[0]["cc"])
+
+    def test_run_sync_absorbs_projects_the_hooks_have_seen(self):
+        """훅이 흔적을 남긴 프로젝트는 그 폴더에 서 있지 않아도 목록에 오른다.
+
+        `_autoregister_cwd` 는 지금 서 있는 폴더 하나만 흡수한다. 그래서 clone 해 온 저장소는
+        업그레이드가 아무리 돌아도 옛 코어인 채였고, 사용자가 할 수 있는 복구가 프로젝트마다
+        찾아가 `init` 을 다시 돌리는 것뿐이었다. 여기서 재는 것은 흡수 함수가 아니라 `run_sync`
+        가 그것을 **부른다**는 사실이다 — 배선이 빠지면 함수는 초록인 채 아무 일도 안 한다."""
+        sync_project(self.root, cc=True, cursor=False, codex=False)
+        self.assertEqual(registry.load(), [])
+        seen.note(self.root)
+
+        cwd = os.getcwd()
+        os.chdir(self._home.name)  # 프로젝트 밖에 선다 — cwd 흡수 경로가 아니라 흔적 경로를 재려고
+        try:
+            self.assertEqual(run_sync(), 0)
+        finally:
+            os.chdir(cwd)
+
+        self.assertEqual([p["root"] for p in registry.load()], [self.root])
+        self.assertEqual(seen.roots(), [], "흡수한 흔적은 남지 않는다")
 
 
 class TestUnregisteredCwd(Base):

@@ -14,6 +14,7 @@ import os
 import re
 
 from .. import registry, ui
+from ..hooks.asgard_hooklib import seen
 from ..skill_registry import show_skill, skills
 from ..templates.skill_router import direct_skill, openai_skill_metadata, routed_skill
 from .setup import merge_gitignore, plan_files
@@ -304,6 +305,38 @@ def _autoregister_cwd() -> None:
         registry.record(root, cc, cursor, codex)
 
 
+def _absorb_seen() -> None:
+    """훅이 남긴 흔적을 등록부로 옮긴다 — 사용자가 프로젝트마다 `init` 을 다시 돌지 않게.
+
+    `_autoregister_cwd` 는 지금 서 있는 폴더 하나만 흡수한다. 그래서 clone 해 온 저장소나
+    `~/.asgard` 를 잃은 기계의 프로젝트는 업그레이드가 아무리 돌아도 영영 목록 밖이었고,
+    그 상태가 화면에서는 초록으로 보였다. 훅은 셋업된 프로젝트에서만 도니, 훅이 남긴 흔적
+    (`asgard_hooklib.seen`)은 "이 기계에서 실제로 쓰이는 Asgard 프로젝트"의 목록이다.
+
+    흔적은 경로일 뿐이고 등록할 만한지는 여기서 정한다 — 폴더가 남아 있고 호스트 배선
+    디렉토리가 하나라도 있어야 한다. `_autoregister_cwd` 와 달리 AGENTS.md 의 `asgard:`
+    마커를 요구하지 않는다: 그 마커는 "다른 도구가 만든 AGENTS.md"를 걸러내려는 것인데,
+    훅이 돌았다는 사실이 그보다 강한 증거다. 판정이 끝난 흔적은 지운다 — 등록됐거나,
+    프로젝트가 아니거나, 폴더가 사라졌거나 셋 중 하나다.
+    """
+    known = {os.path.realpath(str(p["root"])) for p in registry.load()}
+    for root in seen.roots():
+        real = os.path.realpath(root)
+        if real in known:
+            seen.clear(root)
+            continue
+        if not os.path.isdir(real):
+            seen.clear(root)
+            continue
+        cc, cursor, codex = _detect_flags(real)
+        if not (cc or cursor or codex):
+            seen.clear(root)
+            continue
+        registry.record(real, cc, cursor, codex)
+        known.add(real)
+        seen.clear(root)
+
+
 def _unregistered_cwd_note(projects: list[dict]) -> str:
     """지금 서 있는 폴더가 갱신 목록 밖이면 그 사실. 목록 안이거나 프로젝트 형상이 아니면 빈 문자열.
 
@@ -335,6 +368,7 @@ def run_sync(dry_run: bool = False, list_only: bool = False, json_out: bool = Fa
     아니다 (26-08-05)."""
     ui.set_quiet(ui._QUIET or json_out)
     _autoregister_cwd()
+    _absorb_seen()
     projects = registry.load()
     if here:
         cwd = os.path.realpath(os.getcwd())
