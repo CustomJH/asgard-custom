@@ -58,6 +58,40 @@ def good(sid: str, lang: str, source: str) -> None:
     CASES.append((sid, lang, None, False, source))
 
 
+# ── ⓪ unit-branchy ──────────────────────────────────────────────────
+# 길이와 중첩을 둘 다 지키면서 갈래만 스무 개인 형상 — 두 예산이 못 보는 축이다.
+bad(
+    "branch-py-chain",
+    "python",
+    "unit-branchy",
+    "def route(kind):\n"
+    + "".join('    if kind == "k%d":\n        return %d\n' % (i, i) for i in range(18))
+    + "    return -1\n",
+)
+good(
+    "branch-py-table",
+    "python",
+    'ROUTES = {"k%d" % i: i for i in range(18)}\n\n\ndef route(kind):\n    return ROUTES.get(kind, -1)\n',
+)
+good(
+    "branch-py-under-budget",
+    "python",
+    "def route(kind):\n"
+    + "".join('    if kind == "k%d":\n        return %d\n' % (i, i) for i in range(12))
+    + "    return -1\n",
+)
+# 중첩 헬퍼의 갈래는 헬퍼 것이다 — 바깥이 둘을 합쳐 뒤집어쓰면 쪼갠 사람이 벌을 받는다.
+# 여기서 바깥은 8, 안은 10 이라 합치면 예산을 넘지만 따로 세면 둘 다 안 넘는다.
+good(
+    "branch-py-nested-helper",
+    "python",
+    "def outer(rows):\n    def inner(row):\n"
+    + "".join('        if row == "k%d":\n            return %d\n' % (i, i) for i in range(10))
+    + "        return -1\n\n"
+    + "".join('    if rows == "r%d":\n        return %d\n' % (i, i) for i in range(8))
+    + "    return [inner(r) for r in rows]\n",
+)
+
 # ── ① sql-interpolated ──────────────────────────────────────────────
 bad("sql-py-fstring", "python", "sql-interpolated", 'q = f"SELECT id FROM users WHERE id = {uid}"')
 bad("sql-py-percent", "python", "sql-interpolated", 'q = "SELECT id FROM t WHERE id = %s" % uid')
@@ -66,6 +100,10 @@ bad("sql-py-format", "python", "sql-interpolated", 'q = "DELETE FROM s WHERE uid
 bad("sql-py-update", "python", "sql-interpolated", 'q = "UPDATE t SET a = 1 WHERE id = %d" % uid')
 bad("sql-py-like", "python", "sql-interpolated", 'q = f"SELECT a FROM b WHERE n LIKE {pat}"')
 bad("sql-py-ident", "python", "sql-interpolated", 'q = f"SELECT id FROM {table} WHERE ok = 1"', blocking=False)
+# 따옴표가 연산자와 구멍 사이에 있어도 값 자리다 — 오히려 손으로 조립하고 있다는 증거다.
+bad("sql-py-quoted-pct", "python", "sql-interpolated", """q = "SELECT id FROM t WHERE n = '%s'" % n""")
+bad("sql-py-quoted-fmt", "python", "sql-interpolated", """q = "SELECT id FROM t WHERE n = '{}'".format(n)""")
+bad("sql-py-quoted-like", "python", "sql-interpolated", """q = "SELECT a FROM b WHERE n LIKE '%%%s%%'" % p""")
 bad(
     "sql-java-concat",
     "java",
@@ -101,6 +139,8 @@ good("sql-py-bound-pct", "python", 'cur.execute("SELECT id FROM t WHERE id = %s"
 good("sql-py-const", "python", 'QUERY = "SELECT id FROM users WHERE active = 1"')
 good("sql-py-prose", "python", 'msg = f"Selected {n} rows from the {kind} view"')
 good("sql-py-literal-hole", "python", 'q = f"SELECT id FROM t WHERE id = {1}"')
+# 따옴표만으로는 값 자리가 아니다 — 앞에 비교 연산자가 있어야 한다 (인용된 식별자는 그대로 알림).
+good("sql-py-quoted-ident", "python", "q = f'SELECT id FROM \"{table}\" WHERE ok = 1'")
 good("sql-java-prepared", "java", 'class R { void f() { c.prepareStatement("SELECT id FROM t WHERE id = ?"); } }')
 good(
     "sql-java-placeholders",
@@ -648,7 +688,7 @@ BLOCKING_RULES = frozenset(
     {
         "sql-interpolated", "swallowed-exception", "call-no-timeout", "secret-literal",
         "tx-external-io", "money-float", "unclosed-acquire", "cache-unbounded",
-        "quadratic-scan", "unit-oversize", "unit-deep", "c-alloc-unfreed",
+        "quadratic-scan", "unit-oversize", "unit-deep", "unit-branchy", "c-alloc-unfreed",
         "c-alloc-unchecked", "c-realloc-self-assign", "c-handle-unclosed",
         "c-unbounded-copy", "c-quadratic-scan",
     }
@@ -668,6 +708,7 @@ FAMILY: tuple[tuple[str, frozenset[str]], ...] = (
     ("grow-", frozenset({"unbounded-accumulator"})),
     ("cost-", frozenset({"quadratic-scan"})),
     ("shape-", frozenset({"unit-oversize", "unit-deep"})),
+    ("branch-", frozenset({"unit-branchy"})),
     ("c-alloc-", frozenset({"c-alloc-unfreed", "c-alloc-unchecked"})),
     ("c-realloc-", frozenset({"c-realloc-self-assign"})),
     ("c-handle-", frozenset({"c-handle-unclosed"})),
@@ -754,7 +795,8 @@ class FalsePositives(unittest.TestCase):
     def test_note_level_false_positives_stay_where_they_are(self):
         """알림 오탐은 설계상 남아 있는 것들이다. 늘어나면 알아야 하므로 수를 못박는다.
 
-        지금 남은 둘은 근거 주석이 달린 침묵(알림으로 낮춘 것)과 물음표 목록 조립(식별자 자리)이다.
+        지금 남은 셋은 근거 주석이 달린 침묵(알림으로 낮춘 것), 물음표 목록 조립, 인용된 식별자다.
+        뒤의 둘은 같은 이유로 알림이다 — 값 자리가 아니라 이름 자리라 바인딩으로 못 바꾼다.
         """
         noted = sorted(
             sid
@@ -769,6 +811,7 @@ class FalsePositives(unittest.TestCase):
                 "exc-ts-justified",
                 "sql-java-placeholders",  # 물음표 목록 조립 — 식별자 자리로 읽어 알림에 그친다
                 "sql-java-values",
+                "sql-py-quoted-ident",  # 인용된 식별자 — 앞에 비교 연산자가 없어 값 자리가 아니다
             ],
             noted,
         )
