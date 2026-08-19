@@ -413,6 +413,60 @@ above — the flow's own rule says anything lower triggers a revision pass befor
 below it is a rule violation the tool can see. `A4` fails a grid of same-class cards on equal
 tracks, the welcome-screen fingerprint that started it. The SubagentStop gate hook runs all three.
 
+### Code style
+
+```bash
+asgard style init                  # scan for style config files and write what was found into settings
+asgard style list                  # what this repository declares, and what it has but never declared
+asgard style check                 # run the declared tools over the whole repository
+asgard style check --path src/a.py # only violations in those files block; the rest is inherited debt
+```
+
+Where the three gates above carry their own rules, this one carries none. A team's brace placement
+and import order are already written down — in `checkstyle.xml`, `eslint.config.js`, `.clang-format`
+— and reimplementing them in Python would produce a second copy that drifts. So `asgard style` runs
+the repository's own tools, reads file and line out of their output, and blocks only on violations in
+files the current session wrote. Java, Kotlin, JavaScript/TypeScript, Python, Go, Rust, C/C++, C#,
+Swift, Ruby, PHP, shell, SQL, Terraform, and Dart have detectable defaults; anything else is one
+entry you write by hand.
+
+The declaration lives in `.asgard/asgard-setting-project.json` under `code_style.tools`. An entry
+names the check command, the fix command, the file extensions it owns, and — when the tool's output
+does not match one of the seven built-in diagnostic shapes — a `diagnostic` regex with `file`, `line`,
+and `message` groups. `{files}` inside a command is replaced with the paths being judged; a command
+without it runs over the whole project and is filtered afterwards. Multi-module repositories get one
+entry per module, each with its own `cwd` and `paths`, so a frontend-only change never starts Gradle.
+
+**Adoption is opt-in, the same way the run surface is.** Until `tools` has an entry, the Stop and
+SubagentStop hook reads the settings file and stops there — no child process, no cost. Repairs are
+opt-in twice over: the gate names the fix command rather than running it, unless an entry says
+`"autofix": true`. A tool that could not run is reported as unmeasured, never as clean.
+
+### What the gates actually catch
+
+"Asgard follows engineering principles" is not a claim anyone can check. This turns it into one that
+can be:
+
+```bash
+uv run --no-project python benchmarks/engineering-principles/run.py
+```
+
+The battery takes one counterexample per axis from an ordinary code-review taxonomy — error handling,
+resource lifetime, complexity, coupling, duplication, dead code, naming, documentation, security,
+performance, concurrency — runs the real gates over each, and prints which principles a rule actually
+measures and which pass through untouched. Cases whose principle already has a rule are marked as
+positive controls: if one of those is missed the run fails, because that means the battery broke, not
+the gate. A case that trips some unrelated rule is not counted as covered.
+
+The first run scored 7 of 19 and reported itself broken, which is what found two things at once. One
+was a defect: the SQL rule blocked `WHERE name = %s` but let `WHERE name = '%s'` through as a warning,
+so the most common injection shape in real code was leaking past the highest-value security rule. The
+other was a bad sample: the quadratic-scan rule only fires on locally built sequences on purpose,
+because a parameter could be a set and blocking it would reject correct code. `benchmarks/
+engineering-principles/README.md` records the current score, what each new rule cost, and — with the
+measurement behind each one — the principles deliberately left unmeasured rather than covered by a
+rule that would cry wolf.
+
 ## Agents (Einherjar)
 
 One install can host many agents. An agent owns its **identity** and its **tier-1
