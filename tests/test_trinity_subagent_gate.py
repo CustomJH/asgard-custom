@@ -340,6 +340,49 @@ class TestSubagentGate(TrinityBase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("physical worker", result.stderr.lower())
 
+    def test_a_delivery_specialist_unit_leaves_a_completion_receipt(self):
+        """단위를 thor 가 받아도 워커와 똑같이 세어져야 한다 — 안 그러면 판정자 배차가 막힌다.
+
+        26-08-20 실측: 티켓 일곱이 전부 done 인데 판정자 디스패치가
+        `physical worker receipts missing: expected 7 distinct completed agents, got 5` 로 거절됐다.
+        빠진 둘은 `asgard-thor` 로 띄운 단위였고, 배차 영수증은 일곱 다 있는데 완료 영수증만 다섯이었다.
+        `record_executor_lifecycle` 은 그때도 thor 를 알고 있었다 — 시작 훅이 안 불렸을 뿐이다."""
+        self.open_quest()
+        self.ticket(1)
+        self.ticket(2)
+        for unit, target in ((1, "asgard-worker"), (2, "asgard-thor")):
+            self.sg(
+                "",
+                event="PreToolUse",
+                tool_use_id=f"call-{unit}",
+                tool_input={"subagent_type": target, "prompt": f"[ASGARD_UNIT:{unit}] implement"},
+            )
+        self.sg("asgard-worker", event="SubagentStart", agent_id="worker-a")
+        self.sg("asgard-thor", event="SubagentStart", agent_id="thor-a")
+        self.work(unit=1)
+        self.sg("asgard-worker", event="SubagentStop", agent_id="worker-a")
+        self.work(unit=2)
+        self.sg("asgard-thor", event="SubagentStop", agent_id="thor-a")
+
+        receipts = os.path.join(self.root, ".asgard", "quest", "receipts", "q1")
+        records = [
+            json.load(open(os.path.join(receipts, name)))
+            for name in sorted(os.listdir(receipts))
+            if name.startswith("agent-")
+        ]
+        thor = [record for record in records if record["agent_type"] == "asgard-thor"]
+        self.assertEqual(len(thor), 1, "thor 의 완료 영수증이 없다 — 그 단위는 아무도 안 돈 것으로 읽힌다")
+        self.assertTrue(thor[0]["started_at"] and thor[0]["stopped_at"])
+
+        self.finish_ticket(1)
+        self.finish_ticket(2)
+        result = self.sg(
+            "",
+            event="PreToolUse",
+            tool_input={"subagent_type": "asgard-verifier", "prompt": "verify"},
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_verifier_pretool_allows_distinct_overlapping_workers_for_parallel_wave(self):
         self.open_quest()
         self.ticket(1)

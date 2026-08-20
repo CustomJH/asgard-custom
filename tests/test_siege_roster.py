@@ -318,7 +318,57 @@ class TestTheHostHookRecordsTheCall(RosterBase):
 
 
 class TestTheWiringReachesEveryAgent(RosterBase):
-    """세 호스트의 종료 훅이 역할 셋에만 걸려 있으면 나머지 에이전트는 접히지 않는다."""
+    """세 호스트의 시작·종료 훅이 역할 셋에만 걸려 있으면 나머지 에이전트는 안 잡힌다.
+
+    종료 쪽은 26-08-13 에 풀렸는데 시작 쪽이 그대로 남아 있었다. 그 반쪽이 남긴 자리가
+    26-08-20 실측이다: `[ASGARD_UNIT:<id>]` 를 달고 asgard-thor 로 띄운 단위 둘이 배차 영수증만
+    남기고 완료 영수증을 0건 남겨, 티켓 일곱이 전부 done 인데도 판정자 배차가
+    `physical worker receipts missing: expected 7 distinct completed agents, got 5` 로 막혔다.
+    시작 훅이 안 불리면 `record_agent_start` 가 돌 기회 자체가 없다."""
+
+    def gated_start(self, entries):
+        """시작 배선에서 게이트를 실은 항목 — 하나여야 하고 매처가 없어야 한다."""
+        gate = [entry for entry in entries if "subagent-gate" in json.dumps(entry)]
+        self.assertEqual(len(gate), 1, "시작 훅이 하나가 아니면 영수증이 두 번 적힌다")
+        return gate[0]
+
+    def test_claude_starts_every_agent_not_only_the_three_roles(self):
+        from asgard.templates.claude import cc_settings
+
+        entry = self.gated_start(json.loads(cc_settings())["hooks"]["SubagentStart"])
+        self.assertNotIn("matcher", entry, "역할 매처가 남으면 전문가의 시작이 안 적힌다")
+
+    def test_cursor_starts_every_agent(self):
+        from asgard.templates.cursor import cursor_hooks_json
+
+        entry = self.gated_start(json.loads(cursor_hooks_json())["hooks"]["subagentStart"])
+        self.assertNotIn("matcher", entry)
+
+    def test_codex_starts_every_agent(self):
+        import tomllib
+
+        from asgard.templates.codex import codex_config
+
+        entry = self.gated_start(tomllib.loads(codex_config())["hooks"]["SubagentStart"])
+        self.assertNotIn("matcher", entry)
+
+    def test_every_unit_executor_is_reached_by_the_start_wiring(self):
+        """매처를 다시 걸더라도 이 목록은 통과해야 한다 — 지키는 것은 배선 문구가 아니라 도달이다.
+
+        `UNIT_EXECUTORS` 는 위임 표에서 뽑히므로 표가 넓어지면 같이 넓어진다. 배선에 목록을 손으로
+        적으면 그때 또 갈라진다 (이번 결함이 그것이다)."""
+        import re
+
+        from asgard.hooks.subagent_gate import ROLE_EVENT, UNIT_EXECUTORS
+        from asgard.templates.claude import cc_settings
+
+        entry = self.gated_start(json.loads(cc_settings())["hooks"]["SubagentStart"])
+        pattern = entry.get("matcher")
+        for agent in sorted(set(UNIT_EXECUTORS) | set(ROLE_EVENT)):
+            self.assertTrue(
+                pattern is None or re.match(pattern, agent),
+                "%s 는 시작 배선에 안 걸린다 — 그 단위는 완료 영수증이 없다" % agent,
+            )
 
     def test_claude_settles_every_agent_not_only_the_three_roles(self):
         from asgard.templates.claude import cc_settings

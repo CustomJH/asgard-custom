@@ -137,10 +137,8 @@ def cursor_hooks_json() -> str:
                         },
                     ],
                     "subagentStart": [
-                        {
-                            "matcher": "^asgard-(thinker|worker|verifier)$",
-                            "command": f"{py} .cursor/hooks/subagent-gate.py start",
-                        },
+                        # 역할 셋 매처를 안 건다 — SubagentStop 과 같은 이유다. 단위를 받는 손은 워커만이 아니라 딜리버리 전문가(thor·thor-lead·freyja·eitri)도이고, 시작 훅이 안 불리면 그 단위는 완료 영수증이 없어 아무도 안 돈 것으로 읽혀 판정자 배차가 막힌다 (26-08-20 실측: thor 로 띄운 단위 둘이 배차 영수증만 남고 완료 영수증 0건). 게이트가 스스로 agent_type 을 걸러 모르는 종류는 fail-open 으로 빠지므로, 목록을 배선에 손으로 적을 이유가 없다.
+                        {"command": f"{py} .cursor/hooks/subagent-gate.py start"},
                         {"command": f"{py} .cursor/hooks/lagom-subagent.py cursor"},
                         {"command": f"{py} .cursor/hooks/charter-activate.py cursor"},
                         {"command": f"{py} .cursor/hooks/manual-activate.py cursor"},
