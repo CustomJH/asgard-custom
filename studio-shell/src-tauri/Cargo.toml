@@ -1,6 +1,6 @@
 [package]
 name = "asgard-studio"
-version = "0.10.21"
+version = "0.10.22"
 description = "Native shell for Asgard Studio"
 authors = ["Asgard"]
 edition = "2021"
