@@ -38,6 +38,7 @@ COMMANDS = (
     "next",
     "close",
     "verify-baseline",
+    "amend-criteria",
     "ticket-claim",
     "ticket-heartbeat",
     "ticket-finish",

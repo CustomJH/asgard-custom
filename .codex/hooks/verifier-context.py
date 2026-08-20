@@ -43,7 +43,7 @@ if _HOOK_DIR not in sys.path:
     sys.path.append(_HOOK_DIR)
 
 from asgard_hooklib.baseline import MAX_CHECKS  # noqa: E402
-from asgard_hooklib.contracts import contract_criteria, criteria_contracts  # noqa: E402
+from asgard_hooklib.contracts import amendment, criteria_contracts, effective_criteria  # noqa: E402
 from asgard_hooklib.firing import run  # noqa: E402
 from asgard_hooklib.inject import client, emit_context  # noqa: E402
 from asgard_hooklib.paths import git, quest_dir  # noqa: E402
@@ -169,7 +169,7 @@ def changed_files(root: str, ref: str) -> list:
 
 
 def commitments(root: str, events: list) -> tuple:
-    """판정자가 자기 명령을 고르기 전에 알아야 하는 셋 — `(계약, 베이스라인 명령, 이미 돌린 행, 그 상태)`.
+    """판정자가 자기 명령을 고르기 전에 알아야 하는 것 — `(계약, 베이스라인 명령, 이미 돌린 행, 그 상태, 기준 수정)`.
 
     퀘스트가 선언한 verify 계약과 프로젝트 베이스라인은 이 판정이 무엇으로 채점되는지를 정하는데,
     지금까지 판정자에게 가는 길이 없었다. 그래서 판정자는 채점 기준을 모르는 채 명령을 골랐고,
@@ -180,7 +180,8 @@ def commitments(root: str, events: list) -> tuple:
     넘기는 것은 사실뿐이고 무엇을 돌릴지는 안 정한다. 판정 독립성은 판정자가 명령을 직접
     돌리는 데서 나오므로, 여기서 "다시 안 돌려도 된다"고 말하면 그 독립성을 이 훅이 깎는다.
     이미 돌린 행에는 그것이 **어느 트리에서** 나왔는지를 함께 적어 판정자가 스스로 정하게 한다."""
-    contracts = criteria_contracts(contract_criteria(*(e.get("criteria") for e in events)))
+    amended = amendment(events)
+    contracts = criteria_contracts(effective_criteria(events))
     try:
         checks = detect_checks(root, load_policy(root))
     except Exception:
@@ -195,7 +196,7 @@ def commitments(root: str, events: list) -> tuple:
         rows += [r for r in (event.get("criteria_checks") or []) if isinstance(r, dict)]
         state = str(baseline.get("state") or "")
         break
-    return contracts, list(checks), rows, state
+    return contracts, list(checks), rows, state, amended
 
 
 def check_mark(row: dict) -> str:
@@ -286,6 +287,7 @@ def render_commitments(
     rows: list,
     state: str,
     moved: int = 0,
+    amended: dict | None = None,
 ) -> None:
     """이 판정이 무엇으로 채점되는지, 그리고 하네스가 이미 무엇을 돌렸는지를 본문에 붙인다.
 
@@ -295,6 +297,17 @@ def render_commitments(
     없는 사실을 주는 것이 침묵보다 나쁘다는 이 파일의 규약은 여기에도 걸린다."""
     if contracts:
         lines.append("")
+        # 수정된 계약을 수정 사실 없이 적으면 판정자는 그것을 개봉 기준으로 읽는다. 바를 옮길 수
+        # 있게 하면서 검증 독립성을 지키는 자리가 여기다 — 금지가 아니라 노출로 선다. 원본은
+        # 기장의 개봉 이벤트에 그대로 있고, 판정자는 `git show`/`quest-log.py replay` 로 읽는다.
+        if amended:
+            lines.append(
+                "The criteria below were AMENDED at turn %s, after this quest opened. The opening "
+                "criteria are still in the ledger (quest-log.py replay). Judge whether this amendment "
+                "moved the bar to fit the work." % str(amended.get("turn") or "?")
+            )
+            lines.append("  reason given: %s" % str(amended.get("subtask") or "")[:CMD_CHARS])
+            lines.append("")
         lines.append(
             "Declared verify contracts (%d) — the harness runs these itself, and it refuses a PASS," % len(contracts)
         )
@@ -353,6 +366,7 @@ def render(
     checks: list | None = None,
     rows: list | None = None,
     state: str = "",
+    amended: dict | None = None,
 ) -> str:
     """판정자가 읽을 블록. 사실만 적고 해석은 안 적는다."""
     where = "the last verdict (turn %d)" % turn if turn else "the quest opening"
@@ -372,7 +386,7 @@ def render(
     if len(files) > MAX_FILES:
         lines.append("  … %d more — read them with git diff --name-status" % (len(files) - MAX_FILES))
     # 기록을 못 읽는 호스트에서도 채점 기준은 그대로 유효하다 — BLANK_REASON 의 이른 반환보다 앞에 둔다.
-    render_commitments(lines, turn, contracts or [], checks or [], rows or [], state, len(files))
+    render_commitments(lines, turn, contracts or [], checks or [], rows or [], state, len(files), amended)
     if depth in BLANK_REASON:
         # 침묵보다 나쁜 것은 없는 사실을 주는 것이다 — 빈 목록은 "안 돌렸다"로 읽힌다.
         lines.append("")
@@ -433,10 +447,10 @@ def main() -> None:
         files = changed_files(root, ref)
         if not (files or commands or writes):
             sys.exit(0)  # 실을 것이 없으면 아무 말도 안 한다
-        contracts, checks, rows, state = commitments(root, events)
+        contracts, checks, rows, state, amended = commitments(root, events)
         emit_context(
             client(),
-            render(ref, turn, files, commands, writes, depth, contracts, checks, rows, state),
+            render(ref, turn, files, commands, writes, depth, contracts, checks, rows, state, amended),
             "SubagentStart",
         )
     except Exception:

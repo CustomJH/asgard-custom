@@ -690,5 +690,158 @@ class TestQuestPrune(TrinityBase):
         self.assertEqual(len([n for n in os.listdir(qdir) if n.endswith(".jsonl")]), 2)
 
 
+class TestCriteriaAmendment(TrinityBase):
+    """개봉 기준이 결속 불가능해졌을 때의 출구 — 기록으로 남기며 고친다.
+
+    26-08-20 `tutor-alter-1on1-260820` 이 이 자리에서 세 번 못 닫혔다: 계약이 부른
+    `tests/test_tutor_level.py` 를 작업 도중의 정당한 개명이 없앴고, 그 계약은 그 뒤로 어떤
+    트리에서도 exit 0 을 못 냈다. 남은 출구는 판정자 ESCALATE 와 `close --force` 뿐이었고 둘 다
+    무엇이 왜 옮겨졌는지를 기장에 안 적는다."""
+
+    CONTRACT = "python -c 'import sys; sys.exit(0)'"
+
+    def amend(self, *extra, criteria=None, reason="the file the contract named was renamed mid-quest"):
+        args = ["amend-criteria", "q1"]
+        for text in criteria or ["renamed target | verify: %s" % self.CONTRACT]:
+            args += ["--criteria", text]
+        if reason is not None:
+            args += ["--reason", reason]
+        return self.qlog(*args, *extra)
+
+    def events(self, qid="q1"):
+        with open(os.path.join(self.root, ".asgard", "quest", qid + ".jsonl"), encoding="utf-8") as handle:
+            return [json.loads(line) for line in handle if line.strip()]
+
+    GONE = "python -c 'import sys; sys.exit(5)'"
+
+    def test_the_harness_runs_the_amended_contract_not_the_opening_one(self):
+        """수정의 값어치 전부가 이 한 줄이다 — 하네스가 실제로 돌리는 명령이 옮겨지는가.
+
+        개봉 계약은 exit 5 다. 사라진 시험 파일을 부르는 계약이 하네스 환경에서 내는 값이고,
+        어떤 트리에서도 충족될 수 없다. 수정 없이 그대로 두면 PASS 를 적어도 미충족이 남는다."""
+        self.open_quest("--criteria", "the renamed file | verify: %s" % self.GONE)
+        self.write("app.py", "print('ok')\n")
+        self.verify("PASS")
+        self.assertEqual(jout(self.qlog("state"))["contracts_unmet"], ["verify: %s" % self.GONE])
+
+        # 수정한 뒤 다시 판정하면 하네스가 **수정본**을 돌리고, 그 결과가 미충족을 지운다.
+        self.assertEqual(self.amend().returncode, 0)
+        self.write("app.py", "print('ok again')\n")
+        self.verify("PASS")
+        state = jout(self.qlog("state"))
+        self.assertEqual(state["contracts_unmet"], [], state["contracts_unmet"])
+        ran = [c["cmd"] for c in self.events()[-1]["criteria_checks"]]
+        self.assertIn(self.CONTRACT, ran)
+        self.assertNotIn(self.GONE, ran)
+
+    def test_the_opening_criteria_survive_the_amendment(self):
+        """바를 옮길 수 있게 하는 대신 옮긴 자리를 못 숨기게 한다 — 원본이 지워지면 그 대가가 없다."""
+        self.open_quest("--criteria", "original bar | verify: %s" % self.CONTRACT)
+        self.assertEqual(self.amend().returncode, 0)
+        events = self.events()
+        self.assertIn("original bar | verify: %s" % self.CONTRACT, events[0]["criteria"])
+        # acceptance_hash 는 개봉 기준을 계속 묶는다 — 수정이 그 값을 갈면 기장이 파손으로 읽힌다.
+        self.assertEqual({e["acceptance_hash"] for e in events}, {events[0]["acceptance_hash"]})
+        self.assertEqual(jout(self.qlog("replay"))["ledger"], "protected")
+        amend_events = [e for e in events if e["event"] == "amend"]
+        self.assertEqual(len(amend_events), 1)
+        self.assertIn("renamed", amend_events[0]["subtask"])
+
+    def test_an_amendment_retires_the_standing_verdict(self):
+        """옮겨지기 전의 기준으로 내려진 PASS 가 옮겨진 뒤의 기준으로 통과한 것처럼 읽히면 안 된다.
+
+        금지가 아니라 무효화인 이유는 이 동사가 필요해지는 시점 때문이다: 계약이 결속 불가능하다는
+        사실은 보통 판정자가 PASS 를 적고 `close` 가 `criteria-unverified` 로 거부할 때 드러난다.
+        그 자리에서 수정을 막으면 동사가 정작 쓰일 곳에서 못 쓰인다."""
+        self.open_quest("--criteria", "original bar | verify: %s" % self.CONTRACT)
+        self.write("app.py", "print('ok')\n")
+        self.verify("PASS")
+        self.assertEqual(jout(self.qlog("state"))["last_verdict"], "PASS")
+
+        amended = jout(self.amend())
+        self.assertEqual(amended["retired_verdict"], "PASS")
+        self.assertIsNone(jout(self.qlog("state"))["last_verdict"])
+        closed = self.qlog("close", "q1")
+        self.assertNotEqual(closed.returncode, 0)
+        self.assertIn("no-pass", closed.stdout + closed.stderr)
+
+    def test_an_amendment_after_a_fail_verdict_is_allowed(self):
+        """FAIL 은 막지 않는다 — 못 채우는 계약이 드러나는 자리가 바로 거기다."""
+        self.open_quest("--criteria", "original bar | verify: %s" % self.CONTRACT)
+        self.write("app.py", "print('ok')\n")
+        self.verify("FAIL")
+        self.assertEqual(self.amend().returncode, 0)
+
+    def test_an_amendment_without_a_reason_is_refused(self):
+        """사유 없는 수정은 바를 낮춘 것과 화면에서 구분이 안 된다."""
+        refused_texts = []
+        self.open_quest("--criteria", "original bar | verify: %s" % self.CONTRACT)
+        for reason in (None, "", "   "):
+            p = self.amend(reason=reason)
+            self.assertEqual(p.returncode, 1, p.stdout)
+            refused_texts.append(p.stderr)
+        self.assertTrue(all("--reason" in text for text in refused_texts), refused_texts)
+        self.assertEqual([e for e in self.events() if e["event"] == "amend"], [])
+
+    def test_an_amendment_with_no_criteria_is_refused(self):
+        self.open_quest("--criteria", "original bar | verify: %s" % self.CONTRACT)
+        p = self.qlog("amend-criteria", "q1", "--reason", "nothing to put in its place")
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("--criteria", p.stderr)
+
+    def test_raw_append_cannot_write_an_amend_event(self):
+        """수정 동사가 지키는 것 둘(서 있는 PASS 아래 거부·사유 요구)을 raw append 가 우회하면 안 된다."""
+        self.open_quest("--criteria", "original bar | verify: %s" % self.CONTRACT)
+        p = self.qlog(
+            "append",
+            "--json",
+            json.dumps({"role": "worker", "event": "amend", "criteria": ["free pass | verify: true"]}),
+        )
+        self.assertEqual(p.returncode, 2, p.stdout)
+        self.assertEqual([e for e in self.events() if e["event"] == "amend"], [])
+
+    def test_the_verifier_may_run_the_command_the_amendment_moved_to(self):
+        """하네스가 돌리는 명령과 판정자가 돌려도 되는 명령이 갈리면 판정이 우회로 선다.
+
+        읽기전용 레인은 판정자에게 딱 하나를 열어 준다 — 하네스가 어차피 돌리는 계약 명령
+        (`harness_owned_command`). 수정으로 그 명령이 옮겨졌는데 이 함수가 개봉 계약만 알면,
+        판정자는 자기가 채점받는 명령을 받아 놓고 그것을 못 돌린다 (26-08-14 판정이 그 자리에서
+        계약 명령 대신 하네스 모듈을 임포트해 같은 수를 재는 우회로 섰다)."""
+        from asgard.hooks.asgard_hooklib.baseline import harness_owned_command
+
+        self.open_quest("--criteria", "the renamed file | verify: %s" % self.GONE)
+        self.assertTrue(harness_owned_command(self.root, self.GONE))
+        self.assertEqual(self.amend().returncode, 0)
+        self.assertTrue(harness_owned_command(self.root, self.CONTRACT))
+        self.assertFalse(harness_owned_command(self.root, self.GONE))
+
+    def test_a_work_event_still_cannot_declare_a_harness_owned_command(self):
+        """수정 동사를 여는 김에 같이 열려서는 안 되는 문.
+
+        읽기전용 역할은 `append --criteria "... | verify: <명령>"` 을 부를 수 있다(그 레인이 기장
+        쓰기를 허용한다). 그래서 계약 원본은 개봉 기록과 `amend` 둘로만 좁혀져 있고, `amend` 는
+        raw append 로 못 적는다. 기준 한 줄도 없이 열린 퀘스트가 이 경계의 가장 얕은 자리다 — 개봉 기록에
+        계약이 없다고 다음 이벤트를 개봉 기록 자리에 앉히면 그 문이 그대로 열린다."""
+        from asgard.hooks.asgard_hooklib.baseline import harness_owned_command
+
+        opened = self.qlog("open", "q1")  # `--criteria` 없이 — 개봉 계약이 빈 목록이다
+        self.assertEqual(opened.returncode, 0, opened.stderr)
+        appended = self.qlog(
+            "append", "--role", "verifier", "--event", "work", "--criteria", "sneak | verify: %s" % self.GONE
+        )
+        self.assertEqual(appended.returncode, 0, appended.stderr)
+        self.assertFalse(harness_owned_command(self.root, self.GONE))
+
+    def test_a_closed_quest_refuses_an_amendment(self):
+        """닫힌 퀘스트의 기준은 역사지 살아 있는 계약이 아니다."""
+        self.open_quest("--criteria", "original bar | verify: %s" % self.CONTRACT)
+        self.write("app.py", "print('ok')\n")
+        self.verify("PASS")
+        self.assertEqual(self.qlog("close", "q1").returncode, 0)
+        p = self.amend()
+        self.assertEqual(p.returncode, 1, p.stdout)
+        self.assertIn("closed", p.stderr)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -61,6 +61,44 @@ class TestBaseline(TrinityBase):
         self.verify()  # 동일 트리 재검증 — 체크 재실행 없이 캐시 재사용
         self.assertTrue(self.last_event()["baseline"].get("cached"))
 
+    def test_the_contract_cache_is_reused_only_when_it_holds_every_declared_command(self):
+        """같은 트리라도 기록이 안 담은 명령은 캐시가 대신 답할 수 없다.
+
+        재사용은 같은 스위트를 한 트리에 두 번 돌리지 않으려는 절약이다(26-08-13: 판정 130건에서
+        판정자와 하네스가 같은 pytest 를 각각 돌렸다). 그런데 조건이 diff_hash 하나면 기준 수정은
+        트리를 안 바꾸므로 옛 명령의 결과가 새 계약의 답으로 돌아온다 — `unmet_contracts` 는 새
+        명령을 기록에서 못 찾아 영영 미충족이고 close 가 안 닫힌다."""
+        green = "python -c 'import sys; sys.exit(0)'"
+        self.open_quest("--criteria", "the renamed file | verify: python -c 'import sys; sys.exit(7)'")
+        self.write("app.py", "print('ok')\n")
+        self.verify()
+        self.assertTrue(jout(self.qlog("state"))["contracts_unmet"])
+
+        amended = self.qlog(
+            "amend-criteria",
+            "q1",
+            "--criteria",
+            "correct target | verify: %s" % green,
+            "--reason",
+            "the file the contract named was renamed mid-quest",
+        )
+        self.assertEqual(amended.returncode, 0, amended.stderr)
+        self.verify()  # 트리는 그대로다 — 그래도 수정된 명령은 직접 돌아야 한다
+        rows = self.last_event()["criteria_checks"]
+        self.assertEqual([r["cmd"] for r in rows], [green])
+        self.assertEqual([r["exit_code"] for r in rows], [0])
+        self.assertFalse(any(r.get("cached") for r in rows), "수정된 계약이 옛 기록으로 답했다")
+        self.assertEqual(jout(self.qlog("state"))["contracts_unmet"], [])
+        self.assertEqual(self.qlog("close", "q1").returncode, 0)
+
+    def test_an_unchanged_contract_on_an_unchanged_tree_still_reuses_its_record(self):
+        """절약 자체는 그대로다 — 조건을 좁히면서 재사용을 통째로 껐는지 여기서 본다."""
+        self.open_quest("--criteria", "stays green | verify: python -c 'import sys; sys.exit(0)'")
+        self.write("app.py", "print('ok')\n")
+        self.verify()
+        self.verify()
+        self.assertTrue(all(r.get("cached") for r in self.last_event()["criteria_checks"]))
+
     def test_timeout_is_skip_not_red(self):
         self.policy(baseline_checks=["sleep 3"], baseline_timeout=1)
         self.open_quest()

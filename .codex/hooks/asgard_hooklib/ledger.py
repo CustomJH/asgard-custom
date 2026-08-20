@@ -25,6 +25,7 @@ EVENTS = {
     "fail",
     "escalate",
     "delegate",
+    "amend",
     "ticket",
     "ticket_lease",
     "quest_closed",
@@ -37,7 +38,11 @@ EVENTS = {
 # 같은 이유로 티켓을 in_progress로 되돌려 놓았다.
 # 갱신은 claim token을 검증하는 ticket-heartbeat만 적을 수 있다 — raw append로 열어 두면
 # 토큰 없이 남의 lease를 미는 문이 된다.
-APPEND_EVENTS = EVENTS - {"ticket_lease"}
+# amend: 기준 수정 전용 — 상태 전이가 아니라 **채점 기준**을 옮기는 이벤트다. raw append 로
+# 열어 두면 수정 동사가 지키는 것 둘이 그대로 우회된다: 서 있는 PASS 아래에서의 거부와, 사유를
+# 반드시 남기게 하는 요건. 그러면 워커가 채점 기준을 이벤트 한 줄로 조용히 갈아 끼울 수 있다.
+# 수정은 `quest-log.py amend-criteria` 만 적는다.
+APPEND_EVENTS = EVENTS - {"ticket_lease", "amend"}
 
 
 VERDICTS = {"PASS", "FAIL", "ESCALATE", "NA"}

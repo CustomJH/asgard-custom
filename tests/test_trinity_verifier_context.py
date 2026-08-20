@@ -12,6 +12,7 @@ import unittest
 
 from hookscaffold import deploy_library
 from trinity_base import (
+    QLOG,
     SRC,
     TRACKER,
     VCONTEXT,
@@ -402,6 +403,35 @@ class TestWhatTheVerdictIsScoredOn(TrinityBase):
         p = run(VCONTEXT, stdin=self.payload(transcript_path=path), cwd=self.root)
         self.assertEqual(p.returncode, 0, p.stderr)
         return json.loads(p.stdout)["hookSpecificOutput"]["additionalContext"] if p.stdout.strip() else ""
+
+    def test_an_amended_contract_reaches_the_verifier_as_amended(self):
+        """수정된 계약을 수정 사실 없이 실으면 판정자는 그것을 개봉 기준으로 읽는다.
+
+        기준 수정 동사(`quest-log.py amend-criteria`)는 판정받는 쪽이 자기 바를 다시 쓸 수 있게
+        한다. 그 동사가 검증 독립성을 안 깎는 근거가 전부 이 주입면이다 — 금지가 아니라 노출로
+        서므로, 이 줄이 사라지면 남는 것은 조용히 옮겨진 바뿐이다."""
+        self.open_quest("--criteria", "the renamed file | verify: python -c 'import sys; sys.exit(5)'")
+        self.write("app.py", "print('ok')\n")
+        amended = run(
+            QLOG,
+            [
+                "amend-criteria",
+                "q1",
+                "--criteria",
+                "app runs | verify: %s" % self.CHECK,
+                "--reason",
+                "the file the contract named was renamed mid-quest",
+            ],
+            cwd=self.root,
+        )
+        self.assertEqual(amended.returncode, 0, amended.stderr)
+
+        text = self.context()
+        self.assertIn("AMENDED", text)
+        self.assertIn("renamed mid-quest", text)
+        self.assertIn(self.CHECK, text)
+        # 원본이 어디 있는지도 함께 말한다 — 없으면 판정자는 바가 어디서 왔는지 못 되짚는다.
+        self.assertIn("replay", text)
 
     def test_the_declared_contracts_reach_the_verifier(self):
         """계약이 하네스에만 있으면 판정자는 자기 기준을 새로 세운다 — 채점표를 모르는 채로."""

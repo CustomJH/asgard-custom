@@ -47,8 +47,8 @@ if _HOOK_DIR not in sys.path:
 # 지키는 것은 "두 모듈이 같은 출처를 본다"는 계약 자체다.
 from asgard_hooklib.contracts import (  # noqa: E402
     artifact_scope,  # noqa: F401
-    contract_criteria,
     criteria_contracts,  # noqa: F401
+    effective_criteria,
     quest_events_scope,
     unmet_contracts,
 )
@@ -474,7 +474,16 @@ def main():
         # 판정 레코드 = verify 이벤트의 PASS 또는 ESCALATE. ESCALATE는 Canon 9의 정규 종료
         # (close도 인정) — 오딘 보고 세션을 게이트가 인질로 잡으면 정직한 에스컬레이션이
         # 3회 헛차단 + fail-open 상한에 기대게 된다 (E2E 벤치 S4에서 실측된 마찰).
-        verdicts = [e for e in events if e.get("event") == "verify" and e.get("verdict") in ("PASS", "ESCALATE")]
+        # 기준 수정 뒤의 판정만 센다. 수정 이전의 PASS 는 옮겨지기 전의 기준으로 내려진 것이라
+        # close 쪽에서 이미 무효다 (`summary.amend_after_verify` 가 `last_verdict` 를 비운다).
+        # 두 쪽 기준이 갈리면 게이트는 통과시키고 close 는 거부하는 자리가 생기는데, 이 파일의
+        # 서두와 `transition.completion_decision` 이 그 둘의 동일 유지를 계약으로 걸고 있다.
+        retired_before = max((i for i, e in enumerate(events) if e.get("event") == "amend"), default=-1)
+        verdicts = [
+            e
+            for i, e in enumerate(events)
+            if i > retired_before and e.get("event") == "verify" and e.get("verdict") in ("PASS", "ESCALATE")
+        ]
         if not verdicts:
             block(root, sid, "no-verdict")
         p = verdicts[-1]
@@ -515,7 +524,7 @@ def main():
         unfinished = [unit for unit, status in ticket_state.items() if status != "done"]
         if unfinished:
             block(root, sid, "tickets-incomplete", units=", ".join(unfinished[:6]))
-        unmet = unmet_contracts(root, contract_criteria(*(e.get("criteria") for e in events)), p)
+        unmet = unmet_contracts(root, effective_criteria(events), p)
         if unmet:
             block(root, sid, "criteria-unverified", unmet="; ".join(map(str, unmet[:3])))
         if not pass_evidence(p, no_change=current == EMPTY):

@@ -68,8 +68,9 @@ from asgard_hooklib.baseline import (  # noqa: E402
 )
 from asgard_hooklib.contracts import (  # noqa: E402
     artifact_scope,
-    contract_criteria,
+    contract_criteria,  # noqa: F401
     criteria_contracts,  # noqa: F401
+    effective_criteria,
     quest_events_scope,
     unmet_contracts,
 )
@@ -235,6 +236,7 @@ def _parser() -> argparse.ArgumentParser:
             "next",
             "close",
             "verify-baseline",
+            "amend-criteria",
             "ticket-claim",
             "ticket-heartbeat",
             "ticket-finish",
@@ -243,6 +245,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     ap.add_argument("quest_id", nargs="?")
     ap.add_argument("--criteria", action="append", default=[])
+    ap.add_argument("--reason", default="", help="amend-criteria: why the opening criteria can no longer bind")
     ap.add_argument("--request", default="", help="open: original task text for crash-safe native resume")
     ap.add_argument("--request-stdin", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--base-ref", help=argparse.SUPPRESS)
@@ -589,7 +592,7 @@ def _verify_evidence(root: str, policy: dict, events: list[dict], ev: dict) -> N
             ev["baseline"] = bl
             ran = baseline_ran(root, policy, bl)
     # criteria verify 계약 — 하네스가 계약 명령을 직접 실행해 기록 (stdin 위조는 normalize가 버림)
-    crit = contract_criteria(ev.get("criteria"), *(e.get("criteria") for e in events))
+    crit = effective_criteria(events, ev.get("criteria"))
     cc = run_criteria_checks(root, policy, crit, events, ev["diff_hash"], ran)
     if cc is not None:
         ev["criteria_checks"] = cc
@@ -598,6 +601,59 @@ def _verify_evidence(root: str, policy: dict, events: list[dict], ev: dict) -> N
     ev["tree_ref"] = current_tree_ref(root)
     ev["peer_tree"] = peer_current(root)
     ev["verification_id"] = verification_identity(ev)
+
+
+def _cmd_amend_criteria(root: str, qid: str, events: list[dict], args) -> int:
+    """amend-criteria — 결속 불가능해진 기준을 기록으로 남기며 고친다.
+
+    개봉 기준은 개봉 시점에 고정되고, 그 뒤의 정당한 변경이 그 기준을 못 채우게 만들 수 있다:
+    계약이 부른 시험 파일을 작업 도중의 개명이 없애면 그 계약은 영영 exit 0 을 못 낸다. 지금까지
+    그 자리의 출구는 판정자 ESCALATE 나 `close --force` 둘이었고, 둘 다 무엇이 왜 옮겨졌는지를
+    기장에 안 적는다 (26-08-20 `tutor-alter-1on1-260820` 이 이 자리에서 세 번 못 닫혔다).
+
+    이 동사가 바꾸는 것은 "바를 옮길 수 있는가"가 아니라 "옮긴 자리가 보이는가"다. 원본 기준은
+    개봉 이벤트에 그대로 남고 `acceptance_hash` 도 개봉 기준을 계속 묶으므로 수정은 새 이벤트로만
+    설 수 있다. 판정자 주입면이 수정 사실과 사유를 함께 받는다 — 판정받는 쪽이 자기 바를 다시
+    쓰는 것을 금지가 아니라 노출로 막는다.
+
+    서 있는 판정은 이 동사가 물린다 (`summary.amend_after_verify`). PASS 뒤의 수정을 금지하면
+    이 동사는 정작 필요한 자리에서 못 쓰인다 — 계약이 결속 불가능하다는 사실은 보통 판정자가
+    PASS 를 적고 `close` 가 `criteria-unverified` 로 거부할 때 드러나기 때문이다. 그래서 막는
+    대신 그 PASS 를 물리고 새 판정을 요구한다. 그 새 판정의 주입면이 수정 사실과 사유를 함께 적는다."""
+    reason = " ".join(str(args.reason or "").split())
+    if not args.criteria:
+        return _error("amend-criteria requires at least one --criteria")
+    if not reason:
+        return _error(
+            "amend-criteria requires --reason — an unexplained amendment is indistinguishable from lowering the bar"
+        )
+    if any(e.get("event") == "quest_closed" for e in events):
+        return _error("quest is closed — its criteria are history, not a live contract")
+    previous = effective_criteria(events)
+    retired = next((e.get("verdict") for e in reversed(events) if e.get("event") == "verify"), None)
+    ev = normalize(
+        {"role": args.role or "worker", "event": "amend", "criteria": args.criteria, "subtask": reason},
+        events,
+        qid,
+        args.session,
+    )
+    write_event(root, qid, ev)
+    print(
+        json.dumps(
+            {
+                "amended": qid,
+                "turn": ev["turn"],
+                "reason": reason,
+                "criteria": ev["criteria"],
+                "replaced": list(previous),
+                # 물린 판정을 여기서 말하지 않으면 호출자는 close 가 왜 no-pass 로 거부하는지를
+                # 다음 턴에 가서야 안다.
+                "retired_verdict": retired,
+            },
+            ensure_ascii=False,
+        )
+    )
+    return 0
 
 
 def _cmd_append(root: str, qid: str, events: list[dict], policy: dict, args) -> int:
@@ -693,7 +749,7 @@ def _baseline_failing(root: str, policy: dict, events: list[dict], ev: dict, obs
         ev["verdict"] = "FAIL"
         ev["failure_sig"] = "unsafe-map-link"
         return failing
-    crit = contract_criteria(*(e.get("criteria") for e in events))
+    crit = effective_criteria(events)
     # 이 경로도 바로 위에서 baseline 을 돌렸다 — 계약이 같은 명령이면 같은 트리에서 두 번 돌 이유가
     # 없다. 종전에는 append 만 공유해서, 정작 LLM 없이 끝나는 싼 레인이 스위트를 두 번 물었다.
     cc = run_criteria_checks(
@@ -937,6 +993,8 @@ def main(argv: list[str] | None = None, root: str | None = None) -> int:
         return _cmd_append(root, qid, events, policy, args)
     if args.cmd == "verify-baseline":
         return _cmd_verify_baseline(root, qid, events, policy, args)
+    if args.cmd == "amend-criteria":
+        return _cmd_amend_criteria(root, qid, events, args)
 
     s = summarize(root, qid, events, policy)
     s["tests_available"] = tests_available(root)

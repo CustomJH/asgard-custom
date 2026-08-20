@@ -11,6 +11,7 @@ import unittest
 
 from trinity_base import (
     GATE,
+    QLOG,
     SENTINEL,
     TrinityBase,
     jout,
@@ -311,6 +312,42 @@ class TestQuestEnforcement(TrinityBase):
         out = jout(stopped)
         self.assertIs(out.get("continue"), False)
         self.assertIn("there is no quest log", out.get("stopReason", ""))
+
+
+class TestAmendedCriteriaRetireTheVerdict(TrinityBase):
+    """기준이 옮겨지면 게이트도 close 도 새 판정을 요구한다 — 두 쪽 기준은 같아야 한다.
+
+    `transition.completion_decision` 과 이 게이트의 Stop 차단 기준이 갈리면, 게이트는 통과시키고
+    close 는 거부하는 자리가 생긴다. 계약을 통째로 뺀 수정이 그 자리의 가장 얕은 입구다: 계약이
+    없으면 `criteria-unverified` 가 안 걸려 낡은 PASS 가 게이트를 그대로 지나간다."""
+
+    CONTRACT = "python -c 'import sys; sys.exit(0)'"
+
+    def test_a_pass_from_before_the_amendment_no_longer_satisfies_the_stop_gate(self):
+        self.open_quest("--criteria", "original bar | verify: %s" % self.CONTRACT)
+        self.write("app.py", "print('ok')\n")
+        self.verify("PASS")
+        b, _ = self.blocked(self.gate())
+        self.assertFalse(b, "수정 전에는 그 PASS 가 게이트를 지나야 한다")
+
+        amended = run(
+            QLOG,
+            ["amend-criteria", "q1", "--criteria", "no contract at all", "--reason", "the named file was renamed"],
+            cwd=self.root,
+        )
+        self.assertEqual(amended.returncode, 0, amended.stderr)
+
+        b, reason = self.blocked(self.gate())
+        self.assertTrue(b, "수정이 물린 PASS 로 턴이 끝났다")
+        self.assertIn("no-verdict", reason)
+        # close 쪽도 같은 답을 내야 한다 — 이 시험이 지키는 것이 그 동일성이다.
+        closed = run(QLOG, ["close", "q1"], cwd=self.root)
+        self.assertNotEqual(closed.returncode, 0)
+        self.assertIn("no-pass", closed.stdout + closed.stderr)
+
+    def blocked(self, p):
+        out = jout(p)
+        return out.get("decision") == "block", out.get("reason", "")
 
 
 class TestQuestScopedStale(TrinityBase):

@@ -11,7 +11,7 @@ import contextlib
 import json
 import os
 
-from .contracts import quest_events_scope, unmet_contracts
+from .contracts import effective_criteria, quest_events_scope, unmet_contracts
 from .evidence import evidence_breadth, evidence_items, pass_evidence
 from .integrity import EMPTY, verification_identity
 from .ledger import TICKET_STATUSES, fold_tickets, load_events, replay_ledger, verifiable_units
@@ -201,6 +201,10 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
     # sticky FAIL이 WORKER_RETRY를 무한 재발화시키는 루프 방지 (재검증 없이 재시도 반복).
     last_verify_i = max((i for i, e in enumerate(events) if e.get("event") == "verify"), default=-1)
     work_after_verify = any(e.get("event") == "work" for e in events[last_verify_i + 1 :]) if verifies else False
+    # 기준 수정도 서 있는 판정을 물린다. 그 판정은 옮겨지기 전의 기준으로 내려진 것이라, 옮긴 뒤의
+    # 기준으로 통과했다고 읽히면 안 된다 — 작업이 더 붙었을 때와 같은 취급이다. `frozen_since_fail`
+    # 은 이 축을 안 쓴다: 수정은 트리를 안 바꾸므로 "적어 놓고 아무것도 안 바꿨다"가 아니다.
+    amend_after_verify = any(e.get("event") == "amend" for e in events[last_verify_i + 1 :]) if verifies else False
     fail_streak, fail_streak_any = fail_streaks(events)
     sens = [f for f in changed if sensitive_path(f, policy["sensitive_paths"])]
     dts = deleted_tests(root, base_ref, current_ref=current_ref)
@@ -243,7 +247,9 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
         "base_ref": base_ref,
         "turns": len(events),
         "last_event": events[-1].get("event") if events else None,
-        "last_verdict": None if work_after_verify else (verifies[-1].get("verdict") if verifies else None),
+        "last_verdict": (
+            None if (work_after_verify or amend_after_verify) else (verifies[-1].get("verdict") if verifies else None)
+        ),
         "failure_count": max([int(e.get("failure_count") or 0) for e in events] + [fail_streak]),
         "fail_streak_any": fail_streak_any,
         "unchanged_since_fail": frozen_since_fail(verifies, work_after_verify, cur),
@@ -280,9 +286,7 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
         # 하네스 베이스라인 상태 — 기록 없음(구 로그·체크 미설정) = none = 요건 면제 (fail-open)
         "baseline_state": ((last_pass or {}).get("baseline") or {}).get("state") or "none",
         # criteria verify 계약 미충족 목록 — 계약 없는 기준은 빈 리스트 (하위호환, 요건 면제)
-        "contracts_unmet": unmet_contracts(
-            root, next((e.get("criteria") for e in events if e.get("criteria")), []), last_pass or {}
-        ),
+        "contracts_unmet": unmet_contracts(root, effective_criteria(events), last_pass or {}),
         # 무인 nudge 상태 (Canon 8) — 마커 파일 대신 로그 구조가 상한을 센다:
         #   replan_after_escalate = 마지막 ESCALATE 이후 plan 존재 (nudge/오딘 답변이 소비됨 → 실행 재개)
         #   escalate_nudged       = 어떤 ESCALATE 든 이후 plan이 존재 (퀘스트당 nudge 1회 소진)

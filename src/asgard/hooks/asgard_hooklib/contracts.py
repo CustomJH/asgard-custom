@@ -100,6 +100,33 @@ def contract_criteria(*sources) -> list:
     return string_sources[0] if string_sources else []
 
 
+def amendment(events) -> dict | None:
+    """마지막으로 기록된 기준 수정 이벤트 — 없으면 None.
+
+    수정은 개봉 기준을 지우지 않는다. 개봉 이벤트는 기장에 그대로 남고 `acceptance_hash` 도
+    개봉 기준을 계속 묶는다 (`integrity.ledger_integrity` 가 그 값이 바뀐 기장을 파손으로 읽는다).
+    그래서 바가 옮겨진 사실은 기장에서 지울 수 없고, 판정자는 옮긴 사유까지 함께 읽는다."""
+    for event in reversed(list(events or [])):
+        if isinstance(event, dict) and event.get("event") == "amend" and event.get("criteria"):
+            return event
+    return None
+
+
+def effective_criteria(events, *extra) -> list:
+    """지금 이 퀘스트를 채점하는 기준 — 기록된 수정이 있으면 그 기준, 없으면 `contract_criteria`.
+
+    개봉 기준은 개봉 시점에 고정되고 그 뒤의 정당한 변경에 걸린다: 계약이 부른 시험 파일을
+    작업 도중의 개명이 없애면 그 계약은 영영 못 채워진다 (26-08-20 `tutor-alter-1on1-260820`).
+    수정 이벤트가 그 자리를 맡는다.
+
+    계약을 읽는 자리가 여럿이라 여기 한 함수만 부른다 — 하나라도 개봉 기준을 계속 읽으면 하네스가
+    돌리는 명령과 게이트가 채점하는 명령이 갈라져, 통과할 수 없는 미충족이 다시 선다."""
+    amended = amendment(events)
+    if amended:
+        return [c for c in amended["criteria"] if isinstance(c, str)]
+    return contract_criteria(*extra, *(e.get("criteria") for e in (events or []) if isinstance(e, dict)))
+
+
 def unmet_contracts(root: str, criteria, rec: dict) -> list[str]:
     """PASS 레코드(rec) 기준 미충족 계약 목록. 명령은 하네스 기록(criteria_checks)의 exit 0만 인정,
     산출물은 지금(호출 시점) 존재를 라이브 재확인 — 산출물은 .gitignore로 diff-hash 밖일 수 있어

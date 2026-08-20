@@ -224,9 +224,18 @@ def run_criteria_checks(
     contracts = [c for c in criteria_contracts(criteria) if c["verify_cmd"]]
     if not contracts:
         return None
+    # 재사용 조건은 트리가 같은 것만으로는 부족하다 — **선언된 명령을 전부 담은** 기록이어야 한다.
+    # 기준 수정(`quest-log.py amend-criteria`)은 트리를 안 바꾸므로 diff_hash 만 보면 옛 명령의
+    # 결과가 새 계약의 답으로 돌아온다. 그러면 `unmet_contracts` 는 새 명령을 기록에서 못 찾아
+    # 영영 미충족이고, close 는 닫히지 않는다 — 계약만 잘못 적혔고 코드는 다 선 경우가 그 동사의
+    # 주 용례라 정작 필요한 자리에서 못 쓰인다.
+    wanted = {" ".join(str(c["verify_cmd"]).split()) for c in contracts}
     for e in reversed(events):
         cc = e.get("criteria_checks")
         if cc and e.get("event") == "verify" and e.get("diff_hash") == diff_hash:
+            have = {" ".join(str(r.get("cmd", "")).split()) for r in cc if isinstance(r, dict)}
+            if not wanted <= have:
+                break  # 기록이 안 담은 명령이 있다 — 이 트리에서 직접 돌린다
             return [{**c, "cached": True} for c in cc if isinstance(c, dict)]
     timeout = int(policy.get("baseline_timeout") or 120)
     results: list[dict] = []
@@ -273,29 +282,43 @@ def run_criteria_checks(
 
 
 def _declared_verify_commands(root: str) -> list[str]:
-    """활성 퀘스트가 **개봉 기록에** 선언한 verify 계약 명령.
+    """활성 퀘스트가 **개봉 기록과 기준 수정 기록에** 선언한 verify 계약 명령.
 
-    첫 기록 하나만 본다. 뒤따르는 이벤트의 criteria 까지 세면 읽기전용 역할이 진행 중인 퀘스트에
-    자기 허용을 덧붙일 수 있다 — 그 역할은 `quest-log.py append --criteria "... | verify: <명령>"`
-    을 부를 수 있고(읽기전용 레인이 기장 쓰기를 허용한다), 그러면 아래 함수가 그 문자열을 하네스
-    소유로 읽는다.
+    개봉 기록과 `amend` 이벤트 둘만 본다. 그 밖의 이벤트에 실린 criteria 까지 세면 읽기전용 역할이
+    진행 중인 퀘스트에 자기 허용을 덧붙일 수 있다 — 그 역할은
+    `quest-log.py append --criteria "... | verify: <명령>"` 을 부를 수 있고(읽기전용 레인이 기장
+    쓰기를 허용한다), 그러면 아래 함수가 그 문자열을 하네스 소유로 읽는다. `amend` 는 raw append
+    로 못 적는다 (`ledger.APPEND_EVENTS`).
 
     이것이 막는 것은 거기까지다. `open` 도 같은 레인에서 허용되므로, 읽기전용 역할이 계약을 실은
     퀘스트를 새로 열면 그 계약이 다시 개봉 기록이 된다. 그래도 실행 능력은 안 늘어난다 — 하네스가
-    `run_criteria_checks` 에서 그 문자열을 `shell=True` 로 어차피 돌린다. 문이 옮겨질 뿐이다."""
+    `run_criteria_checks` 에서 그 문자열을 `shell=True` 로 어차피 돌린다. 문이 옮겨질 뿐이다.
+
+    수정 기록을 여기서도 읽는 이유는 두 소비처가 갈리면 안 되기 때문이다. 하네스는 수정된 계약을
+    돌리는데(`effective_criteria`) 이 함수가 개봉 계약만 알면, 판정자는 자기가 채점받는 명령을
+    받아 놓고 그것을 못 돌린다 — 26-08-14 판정이 그 자리에서 계약 명령 대신 하네스 모듈을 임포트해
+    같은 수를 재는 우회로 섰고, 그 우회는 검증 독립성의 근거를 판정자 손에서 뺀다."""
     qid = active_quest(root)
     if not qid:
         return []
+    criteria: list = []
+    opening_read = False
     for line in read_text(os.path.join(quest_dir(root), qid + ".jsonl")).splitlines():
         if not line.strip():
             continue
         try:
-            opening = json.loads(line)
+            event = json.loads(line)
         except ValueError:
-            return []  # 개봉 기록을 못 읽으면 무엇이 선언됐는지도 말할 수 없다
-        contracts = criteria_contracts(contract_criteria(opening.get("criteria")))
-        return [c["verify_cmd"] for c in contracts if c.get("verify_cmd")]
-    return []
+            return []  # 기록 한 줄을 못 읽으면 무엇이 선언됐는지도 말할 수 없다
+        # 개봉 기록은 첫 줄 **하나**다. "아직 계약을 못 찾았으면 계속 본다"로 적으면 기준 없이
+        # 열린 퀘스트에서 둘째 줄이 개봉 기록 자리를 차지해, 이 함수가 막으려던 그 문이 열린다.
+        if not opening_read:
+            opening_read = True
+            criteria = contract_criteria(event.get("criteria"))
+        elif event.get("event") == "amend" and event.get("criteria"):
+            criteria = contract_criteria(event.get("criteria"))
+    contracts = criteria_contracts(criteria)
+    return [c["verify_cmd"] for c in contracts if c.get("verify_cmd")]
 
 
 def harness_owned_command(root: str, command: str) -> bool:
