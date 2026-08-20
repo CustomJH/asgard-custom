@@ -469,6 +469,11 @@ def memory_connect(
     adopt_existing: bool = typer.Option(
         False, "--adopt-existing", help="take over a namespace that already exists — look at it first"
     ),
+    recover_binding: bool = typer.Option(
+        False,
+        "--recover-binding",
+        help="this project lost its ownership record — read it back from git history instead of minting a new one",
+    ),
     timeout: int = typer.Option(
         None, "--timeout", help="how long to wait, in seconds — slow gateways need more than the usual 15"
     ),
@@ -484,6 +489,7 @@ def memory_connect(
             option_values=option,
             claim=claim,
             adopt_existing=adopt_existing,
+            recover_binding=recover_binding,
             timeout=timeout,
             json_out=json_out,
         )

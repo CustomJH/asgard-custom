@@ -33,8 +33,19 @@ class ProjectMemoryConfigError(ValueError):
     """A project-memory config file is present but malformed."""
 
 
+BINDING_SIDECAR_RELPATH = ".asgard/memory/binding.json"
+BINDING_HISTORY_DEPTH = 20  # 사이드카를 건드린 커밋만 세는 상한 — 이력 전체를 걷지 않는다
+
+
 def _binding_sidecar_path(root: str) -> str:
-    return os.path.join(root, ".asgard", "memory", "binding.json")
+    return os.path.join(root, *BINDING_SIDECAR_RELPATH.split("/"))
+
+
+def _sidecar_fields(raw: object) -> dict:
+    """사이드카 JSON에서 신원 세 칸만 뽑는다. dict가 아니면 빈 dict (fail-safe)."""
+    if not isinstance(raw, dict):
+        return {}
+    return {key: str(raw.get(key) or "").strip() for key in ("project_id", "project_uid", "binding_id")}
 
 
 def read_binding_sidecar(root: str) -> dict:
@@ -45,12 +56,50 @@ def read_binding_sidecar(root: str) -> dict:
     공유된다. 깨진 파일은 없음과 동일 (fail-safe)."""
     try:
         with open(_binding_sidecar_path(root), encoding="utf-8") as source:
-            raw = json.load(source)
-        if not isinstance(raw, dict):
-            return {}
-        return {key: str(raw.get(key) or "").strip() for key in ("project_id", "project_uid", "binding_id")}
+            return _sidecar_fields(json.load(source))
     except Exception:
         return {}
+
+
+def recover_binding_sidecar(root: str) -> dict:
+    """사라진 사이드카를 git 이력에서 되찾는다 — 이력에 없거나 git이 없으면 빈 dict.
+
+    재초기화가 `.asgard/`를 다시 깔면 이 저장소의 소유권 마커만 사라지고 backend에 세운 마커는
+    남는다. 그러면 저장소가 자기 뱅크에서 foreign으로 거절당하는데 되돌릴 손이 없었다
+    (26-08-20 실측: 커밋 4669fe7a가 지운 신원이 a179046에 그대로 있다). 이력은 그 신원을 들고
+    있으므로 여기서 읽어 온다.
+
+    되찾은 값은 증거일 뿐 통행증이 아니다 — backend 마커와 대조하는 것은 여전히
+    `_bind_namespace`이고, project_uid가 어긋나면 거절이다. 이력이 없는 저장소는 아무것도
+    되찾지 못하고 새 uid를 받는다."""
+
+    def _git(*args: str) -> str | None:
+        # git이 없거나, 여기가 저장소가 아니거나, 그 revision에 파일이 없는 것 — 셋 다 "이력이
+        # 증명하지 못한다"는 같은 답이다. 되찾기 실패가 connect 실패는 아니므로 None으로 돌린다.
+        try:
+            done = subprocess.run(["git", "-C", root, *args], capture_output=True, check=True, timeout=10)
+        except OSError, subprocess.SubprocessError:
+            return None
+        return done.stdout.decode("utf-8", "surrogateescape")
+
+    prefix = _git("rev-parse", "--show-prefix")
+    if prefix is None:
+        return {}
+    relpath = prefix.strip() + BINDING_SIDECAR_RELPATH
+    commits = _git("rev-list", f"-n{BINDING_HISTORY_DEPTH}", "HEAD", "--", relpath) or ""
+    for commit in commits.split():
+        # 사이드카를 지운 커밋에서는 그 부모가 마지막 내용을 들고 있다 — 둘 다 본다.
+        for revision in (f"{commit}:{relpath}", f"{commit}^:{relpath}"):
+            blob = _git("show", revision)
+            if blob is None:
+                continue
+            try:
+                recovered = _sidecar_fields(json.loads(blob))
+            except ValueError:  # 그 커밋의 사이드카가 깨져 있으면 다음 후보로
+                continue
+            if recovered.get("project_uid"):
+                return recovered
+    return {}
 
 
 def _write_binding_sidecar(root: str, project_id: str, project_uid: str, binding_id: str) -> None:
@@ -183,12 +232,19 @@ def project_memory_section(project: dict) -> dict | None:
 
     `_`로 시작하는 키는 스캐폴드가 심는 주석·입력 예제(_comment·_example)라 설정으로 치지
     않는다. 실 설정 키가 하나도 없으면 None — opt-in 미연결(공란 시드) 상태로, 깨진 설정과
-    구별된다 (미연결 시드를 malformed로 읽으면 fresh init이 doctor에서 빨갛게 뜬다)."""
+    구별된다 (미연결 시드를 malformed로 읽으면 fresh init이 doctor에서 빨갛게 뜬다).
+
+    `enabled` 하나만 남은 섹션도 미연결로 친다. 스캐폴드가 새 저장소마다 `enabled: false`를
+    적기 때문에(templates.trinity.project_settings) 그 형태는 이제 결정이 아니라 손대지 않은
+    시드다. 선언으로 읽으면 _config_at이 그 자리에서 None을 돌려주고 상향 탐색이 멈춘다 —
+    갓 init한 모노레포 하위 폴더가 부모 뱅크를 못 보는 26-08-11의 그 형상이다 (실측: 부모가
+    연결된 트리에서 하위 폴더가 bank=parent-bank → None 으로 바뀐다). 끄겠다는 결정은 연결
+    키가 함께 있는 섹션으로 적힌다 — 그때는 아래 project_memory_disabled가 그대로 잡는다."""
     for name in (PROJECT_SECTION, LEGACY_PROJECT_SECTION):
         raw = project.get(name)
         if isinstance(raw, dict):
             section = {key: value for key, value in raw.items() if not str(key).startswith("_")}
-            if section:
+            if section and set(section) != {"enabled"}:
                 return section
     return None
 
@@ -276,7 +332,7 @@ def find_config(start: str | None = None, *, strict: bool = False) -> tuple[str,
     깨진 JSON·필수 키 누락은 없음과 동일 (fail-safe — 툴 미노출이 오동작보다 낫다).
 
     탐색이 두 축인 이유는 26-08-11 실측한 형상이다. `.asgard` 는 있는데 `project_memory` 가
-    아직 빈 시드(`_comment`·`_example` 뿐)인 저장소에서 옛 코드는 그 자리에서 멈췄다 —
+    아직 빈 시드(`enabled: false`와 `_comment`·`_example` 뿐)인 저장소에서 옛 코드는 그 자리에서 멈췄다 —
     모노레포 하위 폴더가 부모의 연결을 못 봤고, 짝 저장소는 애초에 위쪽에 없었다. 그래서
     ① 선언이 **없는** 자리는 답이 아니라고 보고 계속 올라가고, ② 그래도 못 찾으면 이 프로젝트가
     `asgard root add` 로 연 저장소들을 본다. 두 축 다 반환하는 뿌리는 설정이 실제로 사는

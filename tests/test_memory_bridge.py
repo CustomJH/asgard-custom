@@ -5,10 +5,13 @@ recall 패스스루(오염 필터+경계 무력화) / retain 2단 승인(1회 �
 파괴 툴 비노출 / 서버 불능 fail-open. 가짜 Hindsight = 스레드 http.server.
 """
 
+import contextlib
 import hashlib
+import io
 import json
 import os
 import shutil
+import subprocess
 import tempfile
 import threading
 import time
@@ -20,6 +23,12 @@ from unittest import mock
 from asgard import memory, project_memory
 from asgard import memory_bridge as mb
 
+FAKE_PROJECT_UID = "11111111-1111-4111-8111-111111111111"
+FAKE_BINDING_ID = "22222222-2222-4222-8222-222222222222"
+BINDING_DOCUMENT = "asgard:project-binding:v1"
+OTHER_PROJECT_UID = "33333333-3333-4333-8333-333333333333"  # 엉뚱한 뱅크에 붙었을 때 적히는 신원
+OTHER_BINDING_ID = "44444444-4444-4444-8444-444444444444"
+
 
 class FakeHindsight(BaseHTTPRequestHandler):
     """recall/retain 두 표면만 흉내 — 요청 본문을 클래스에 기록 (검증 표면)."""
@@ -30,8 +39,10 @@ class FakeHindsight(BaseHTTPRequestHandler):
     recall_requests: list[dict] = []
     tag_patches: list[tuple[str, list[str]]] = []
     fail_retain = False
-    project_uid = "11111111-1111-4111-8111-111111111111"
-    binding_id = "22222222-2222-4222-8222-222222222222"
+    project_uid = FAKE_PROJECT_UID
+    binding_id = FAKE_BINDING_ID
+    serve_binding = True  # False = 아직 아무도 안 묶은 네임스페이스. 쓰고 나면 쓴 값을 돌려준다
+    document_total = 0  # 네임스페이스에 든 문서 수 — connect의 소유권 관문이 세는 값
 
     def _json(self, out, status=200):
         data = json.dumps(out).encode()
@@ -43,6 +54,10 @@ class FakeHindsight(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if "/documents/asgard%3Aproject-binding%3Av1" in self.path:
+            if not type(self).serve_binding:
+                self.send_response(404)
+                self.end_headers()
+                return
             content = json.dumps(
                 {
                     "binding_id": type(self).binding_id,
@@ -57,6 +72,8 @@ class FakeHindsight(BaseHTTPRequestHandler):
             self._json({"original_text": content, "id": "asgard:project-binding:v1", "bank_id": "proj-test"})
         elif self.path.endswith("/stats"):
             self._json({"total_documents": 1})
+        elif "/documents?" in self.path:
+            self._json({"total": type(self).document_total, "documents": []})
         else:
             self._json({})
 
@@ -81,6 +98,12 @@ class FakeHindsight(BaseHTTPRequestHandler):
                 self.end_headers()
                 return
             type(self).store.append(body)
+            for item in body.get("items") or []:
+                if item.get("document_id") == BINDING_DOCUMENT:
+                    written = json.loads(item.get("content") or "{}")
+                    type(self).project_uid = written.get("project_uid", "")
+                    type(self).binding_id = written.get("binding_id", "")
+                    type(self).serve_binding = True
             out = {"success": True, "items_count": len(body.get("items", []))}
         self._json(out)
 
@@ -106,6 +129,10 @@ class BridgeBase(unittest.TestCase):
         FakeHindsight.recall_requests = []
         FakeHindsight.tag_patches = []
         FakeHindsight.fail_retain = False
+        FakeHindsight.serve_binding = True
+        FakeHindsight.document_total = 0
+        FakeHindsight.project_uid = FAKE_PROJECT_UID
+        FakeHindsight.binding_id = FAKE_BINDING_ID
         self.tmp = tempfile.mkdtemp(prefix="asgard-bridge-")
         self._old_home = os.environ.get("HOME")
         os.environ["HOME"] = self.tmp
@@ -442,6 +469,28 @@ class TestConfigInheritance(BridgeBase):
         self.assertEqual(found[0], os.path.realpath(self.root))
         self.assertEqual(found[1]["bank"], "proj-test")
 
+    def test_seeded_off_toggle_alone_keeps_the_walk_going(self):
+        """스캐폴드가 적는 `enabled: false` 한 줄은 결정이 아니다 — 연결 키가 없으면 계속 올라간다.
+
+        새 저장소마다 이 형태가 깔리므로, 이것을 "여기서는 안 쓴다"로 읽으면 갓 init 한 하위
+        폴더 전부가 부모의 연결을 잃는다."""
+        from asgard.settings import save_project
+
+        child = os.path.join(self.root, "packages", "web")
+        os.makedirs(child)
+        save_project(child, "project_memory", {"enabled": False})
+        found = mb.find_config(child)
+        assert found is not None
+        self.assertEqual(found[1]["bank"], "proj-test")
+        self.assertIsNone(mb.project_memory_section({"project_memory": {"enabled": False}}))
+
+    def test_connected_section_still_stops_at_off(self):
+        """연결 키가 함께 있으면 `enabled: false` 는 그대로 답이다 — 토글이 무력해지지 않았다."""
+        section = {"engine": "hindsight", "endpoint": "http://memory:8888", "project_id": "b", "enabled": False}
+        chosen = mb.project_memory_section({"project_memory": section})
+        self.assertEqual(chosen, section)
+        self.assertTrue(mb.project_memory_disabled(chosen))
+
     def test_declared_work_root_supplies_the_bank(self):
         """짝 저장소를 `asgard root add` 로 열었으면 그 저장소의 뱅크를 잇는다."""
         from asgard.settings import save_project
@@ -667,6 +716,47 @@ class TestTagsOnlyRehydrate(BridgeBase):
         self.assertEqual(rest, [])
         self.assertTrue(document_id.startswith("asgard:record:"))
         self.assertIn("confidence:verified", tags)
+
+
+class TestEmptyCanonicalRehydrate(BridgeBase):
+    """정본 0건은 초록이 아니다 — doctor 와 AGENTS.md 가 처방하는 복구 명령이라 여기서 초록을
+    내면 사람은 고쳐졌다고 읽고 뱅크는 그대로 남는다."""
+
+    def _rehydrate(self, **kwargs):
+        found = mb.find_config(self.root)
+        assert found is not None
+        root, cfg = found
+        plan = project_memory.rehydration_plan(root, cfg)
+        self.assertEqual(plan["records"], [])
+        return project_memory.rehydrate_records(root, cfg, plan["plan_id"], **kwargs)
+
+    def test_empty_canonical_over_a_stocked_bank_reports_the_missing_source(self):
+        FakeHindsight.document_total = 3
+        result = self._rehydrate(tags_only=True)
+        self.assertFalse(result["success"], result)
+        self.assertEqual(result["code"], "canonical-empty-bank-holds-records")
+        self.assertEqual(result["bank_documents"], 3)
+        self.assertIn("3 document(s)", result["error"])
+        self.assertIn(project_memory.RECORDS_RELATIVE_DIR, result["error"])
+        self.assertEqual(FakeHindsight.store, [])  # 뱅크는 손대지 않았다
+        self.assertEqual(FakeHindsight.tag_patches, [])
+
+    def test_empty_canonical_over_an_empty_bank_is_a_separate_state(self):
+        FakeHindsight.document_total = 0
+        result = self._rehydrate()
+        self.assertFalse(result["success"], result)
+        self.assertEqual(result["code"], "canonical-and-bank-empty")
+        self.assertEqual(result["bank_documents"], 0)
+        self.assertIn("nothing to rehydrate", result["error"])
+        self.assertEqual(FakeHindsight.store, [])
+
+    def test_uncountable_bank_is_not_read_as_either(self):
+        FakeHindsight.document_total = -1  # backend 가 목록 total 을 거절한다
+        result = self._rehydrate()
+        self.assertFalse(result["success"], result)
+        self.assertEqual(result["code"], "bank-unreachable")
+        self.assertIsNone(result["bank_documents"])
+        self.assertIn("ValueError", result["error"])
 
 
 class TestProtocol(BridgeBase):
@@ -1492,6 +1582,208 @@ class TestConnectNamesAnUninjectedBank(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as td:
             self.assertEqual("", _uninjected_note(td))
+
+
+@unittest.skipUnless(shutil.which("git"), "git is required to prove ownership from history")
+class TestBindingRecoveredFromGit(BridgeBase):
+    """사이드카를 잃은 저장소가 자기 뱅크로 돌아오는 길 — 증명은 git 이력이 한다.
+
+    재초기화가 `.asgard/`를 다시 깔면 소유권 마커(project_uid·binding_id)만 사라지고 backend에
+    세운 마커는 남는다. 그러면 저장소가 자기 뱅크에서 foreign으로 거절당하는데, connect는 uid를
+    인자로 안 받고 되찾는 명령도 없어 되돌릴 손이 없었다 (26-08-20 실측). 되찾기는 게이트를
+    푸는 것이 아니라 게이트가 요구하는 증거를 복원하는 것이므로, 이력과 마커가 어긋나면 그대로
+    거절이어야 한다.
+
+    되찾기는 `--recover-binding`을 준 실행에서만 일어난다. 기본값이 되찾기가 되면, 조상 저장소의
+    기록을 지우고 새로 시작하려는 fork·clone이 아무도 안 물어본 채 조상의 뱅크로 걸어 들어간다 —
+    되찾은 uid가 마커와 맞아 버리기 때문이다. 플래그가 곧 그 동의 표면이다."""
+
+    def setUp(self):
+        super().setUp()
+        self.repo = os.path.join(self.tmp, "repo")
+        os.makedirs(self.repo)
+        self.git("init", "-q")
+        cwd = os.getcwd()
+        os.chdir(self.repo)
+        self.addCleanup(os.chdir, cwd)
+
+    def git(self, *args: str) -> None:
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                self.repo,
+                "-c",
+                "user.email=t@asgard",
+                "-c",
+                "user.name=t",
+                "-c",
+                "commit.gpgsign=false",
+                *args,
+            ],
+            check=True,
+            capture_output=True,
+        )
+
+    def commit_sidecar(self, project_uid: str, project_id: str = "proj-test") -> None:
+        """이력에 사이드카를 남긴 뒤 지운다 — 재초기화가 남기는 것과 같은 모양."""
+        path = os.path.join(self.repo, ".asgard", "memory", "binding.json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as sink:
+            json.dump(
+                {"project_id": project_id, "project_uid": project_uid, "binding_id": self.binding_id},
+                sink,
+            )
+        self.git("add", "-A")
+        self.git("commit", "-qm", "bind")
+        os.remove(path)
+        self.git("add", "-A")
+        self.git("commit", "-qm", "reinit drops the sidecar")
+
+    def bind_to_another_bank(self) -> None:
+        """이 저장소를 엉뚱한 뱅크에 묶어 둔다 — 설정 섹션과 사이드카 양쪽에 다른 uid가 적힌다.
+
+        "foreign project" 거절을 만난 사람이 실제로 하는 다음 수다. 새 뱅크에 붙는 순간 신원이
+        다시 적히고, 그때부터 조회는 이력에 닿기 전에 그 값에서 멈춘다."""
+        mb.write_config(
+            self.repo,
+            f"http://127.0.0.1:{self.port}",
+            "some-other-bank",
+            project_uid=OTHER_PROJECT_UID,
+            binding_id=OTHER_BINDING_ID,
+        )
+        settings = os.path.join(self.repo, ".asgard", "asgard-setting-project.json")
+        with open(settings, encoding="utf-8") as source:
+            saved = json.load(source)
+        saved["project_memory"]["project_uid"] = OTHER_PROJECT_UID  # 구 스키마 잔존 값까지 같은 상태로
+        saved["project_memory"]["binding_id"] = OTHER_BINDING_ID
+        with open(settings, "w", encoding="utf-8") as sink:
+            json.dump(saved, sink)
+
+    def seed_unrelated_history(self) -> None:
+        with open(os.path.join(self.repo, "README.md"), "w", encoding="utf-8") as sink:
+            sink.write("no binding ever lived here\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "seed")
+
+    def connect(self, project_id: str | None = None, **kwargs) -> tuple[int, dict]:
+        from asgard.commands.memory import run_connect
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = run_connect(f"http://127.0.0.1:{self.port}", project_id, json_out=True, **kwargs)
+        return code, json.loads(out.getvalue() or "{}")
+
+    def connect_text(self, project_id: str | None = None, **kwargs) -> str:
+        """사람 표면 — 화면에 나가는 문장 전부 (stdout+stderr)."""
+        from asgard.commands.memory import run_connect
+
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            run_connect(f"http://127.0.0.1:{self.port}", project_id, **kwargs)
+        return out.getvalue() + err.getvalue()
+
+    def test_connect_recovers_the_lost_sidecar_from_git(self):
+        self.commit_sidecar(self.project_uid)
+        self.assertEqual(mb.read_binding_sidecar(self.repo), {})  # 되찾기 전에는 신원이 없다
+
+        code, payload = self.connect(recover_binding=True)
+        self.assertEqual(code, 0, payload)
+        self.assertTrue(payload["binding_recovered"])
+        self.assertEqual(payload["project_uid"], self.project_uid)
+        self.assertEqual(payload["binding_id"], self.binding_id)
+        self.assertEqual(payload["project_id"], "proj-test")  # 뱅크 이름도 이력이 안다
+        restored = mb.read_binding_sidecar(self.repo)
+        self.assertEqual(restored["project_uid"], self.project_uid)
+        self.assertEqual(restored["binding_id"], self.binding_id)
+
+    def test_history_that_disagrees_with_the_marker_is_refused(self):
+        """이력이 다른 신원을 말하면 되찾기는 통행증이 못 된다 — 게이트를 그대로 통과한다."""
+        self.commit_sidecar("99999999-9999-4999-8999-999999999999")
+        # 되찾기 자체는 성공한다 — 거절은 그 값을 마커와 대조한 결과여야 한다.
+        self.assertEqual(mb.recover_binding_sidecar(self.repo)["project_uid"], "99999999-9999-4999-8999-999999999999")
+
+        code, payload = self.connect("proj-test", recover_binding=True)
+        self.assertNotEqual(code, 0)
+        self.assertIn("foreign", payload["error"]["message"])
+        self.assertEqual(mb.read_binding_sidecar(self.repo), {})  # 거절은 아무것도 안 남긴다
+
+    def test_a_bank_the_history_does_not_name_still_asks_for_consent(self):
+        """되찾기는 증거를 복원할 뿐 동의를 대신하지 않는다.
+
+        이력이 적어 둔 뱅크와 지금 붙는 뱅크의 이름이 다르면 binding_id는 안 물려받는다 —
+        uid로 주인은 증명됐어도 그 뱅크를 넘겨받겠다는 말은 --adopt-existing이 한다."""
+        self.commit_sidecar(self.project_uid, project_id="proj-test-old")
+
+        code, payload = self.connect("proj-test", recover_binding=True)
+        self.assertNotEqual(code, 0)
+        self.assertIn("adopt-existing", payload["error"]["message"])
+
+        code, payload = self.connect("proj-test", recover_binding=True, adopt_existing=True)
+        self.assertEqual(code, 0, payload)
+        self.assertEqual(payload["project_uid"], self.project_uid)
+        self.assertEqual(mb.read_binding_sidecar(self.repo)["binding_id"], self.binding_id)
+
+    def test_the_flag_is_what_decides_and_it_defaults_to_off(self):
+        """이력이 마커와 똑같은 신원을 들고 있어도, 플래그가 없으면 안 쓴다.
+
+        플래그 없는 실행이 거절당한다는 것이 곧 새 uid로 붙었다는 증거다 — 이력의 uid를 썼다면
+        마커와 맞아 통과했을 것이다."""
+        self.commit_sidecar(self.project_uid)
+
+        code, payload = self.connect("proj-test")
+        self.assertNotEqual(code, 0)
+        self.assertIn("foreign", payload["error"]["message"])
+        self.assertEqual(mb.read_binding_sidecar(self.repo), {})
+        # 못 찾는 플래그는 없는 플래그다 — 되찾을 게 있다는 사실과 이름을 화면에서 말한다.
+        self.assertIn("--recover-binding", self.connect_text("proj-test"))
+
+    def test_the_default_path_mints_a_fresh_uid(self):
+        """되찾기를 안 부른 연결은 이 변경 전과 똑같이 새 uid를 낸다."""
+        FakeHindsight.serve_binding = False  # 아직 아무도 안 묶은 빈 네임스페이스
+        self.commit_sidecar(self.project_uid)
+
+        code, payload = self.connect("proj-test")
+        self.assertEqual(code, 0, payload)
+        self.assertFalse(payload["binding_recovered"])
+        self.assertNotEqual(payload["project_uid"], self.project_uid)
+        self.assertNotEqual(mb.read_binding_sidecar(self.repo)["project_uid"], self.project_uid)
+
+    def test_the_flag_outranks_the_bank_this_project_is_bound_to_now(self):
+        """엉뚱한 뱅크에 이미 묶인 저장소가 집으로 돌아오는 길.
+
+        플래그를 친다는 것은 "지금 가진 신원 말고 이력이 든 신원"이라는 말이므로, 조회는 설정
+        섹션·사이드카에 적힌 uid에서 멈추면 안 된다. 멈추면 이력도 마커도 플래그도 다 맞는데
+        저장소만 못 돌아오는 상태가 된다 (26-08-20 실측)."""
+        self.commit_sidecar(self.project_uid)
+        self.bind_to_another_bank()
+        self.assertEqual(mb.read_binding_sidecar(self.repo)["project_uid"], OTHER_PROJECT_UID)
+
+        code, payload = self.connect("proj-test", recover_binding=True)
+        self.assertEqual(code, 0, payload)
+        self.assertTrue(payload["binding_recovered"])
+        self.assertEqual(payload["project_uid"], self.project_uid)  # 이력이 이겼다
+        self.assertEqual(payload["binding_id"], self.binding_id)
+        self.assertEqual(mb.read_binding_sidecar(self.repo)["project_uid"], self.project_uid)
+
+    def test_without_the_flag_the_identity_it_is_bound_to_now_still_wins(self):
+        """플래그가 없으면 순서는 한 글자도 안 변한다 — 지금 적혀 있는 신원 그대로."""
+        self.commit_sidecar(self.project_uid)
+        self.bind_to_another_bank()
+
+        code, payload = self.connect("proj-test")
+        self.assertNotEqual(code, 0)
+        self.assertIn("foreign", payload["error"]["message"])
+        self.assertEqual(mb.read_binding_sidecar(self.repo)["project_uid"], OTHER_PROJECT_UID)
+
+    def test_a_repository_without_that_history_gets_no_recovery(self):
+        self.seed_unrelated_history()
+        self.assertEqual(mb.recover_binding_sidecar(self.repo), {})
+
+        code, payload = self.connect("proj-test", recover_binding=True)
+        self.assertNotEqual(code, 0)
+        self.assertIn("foreign", payload["error"]["message"])
+        self.assertEqual(mb.read_binding_sidecar(self.repo), {})
 
 
 if __name__ == "__main__":

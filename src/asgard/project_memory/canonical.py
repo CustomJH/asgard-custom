@@ -20,6 +20,21 @@ RECORD_SCHEMA = "asgard-project-memory-v1"
 RECORDS_RELATIVE_DIR = os.path.join(".asgard", "memory", "records")
 MAX_RECORD_FILE_BYTES = 1_000_000
 
+# 정본 record 가 0건인 상태는 서로 다른 셋이고, 셋 다 items_count 가 0이라 개수로는 안 갈린다.
+# 뱅크의 문서 수가 그 셋을 가르는 유일한 관측값이라 빈 계획은 뱅크를 한 번 세고 답한다.
+# 정본과 뱅크가 함께 비어 있으면 재수화할 것이 없고, 정본만 비어 있으면 정본이 사라진 것이며,
+# 세는 것 자체가 실패하면 어느 쪽인지 모른다 — 셋 다 성공이 아니므로 CLI 는 1을 낸다.
+EMPTY_PLAN_MESSAGES: dict[str, str] = {
+    "canonical-and-bank-empty": "canonical records are 0 and the bank holds no document; nothing to rehydrate",
+    "canonical-empty-bank-holds-records": (
+        "canonical records are 0 while the bank holds {count} document(s). The bank was left untouched; "
+        "restore {records_dir} (git show <commit>^:{records_dir}/<file>.md) and preview again"
+    ),
+    "bank-unreachable": (
+        "canonical records are 0 and the bank document count is unreachable ({detail}); the bank was left untouched"
+    ),
+}
+
 
 def _unsafe_path(path: str) -> bool:
     return os.path.islink(path) or bool(getattr(os.path, "isjunction", lambda _path: False)(path))
@@ -302,11 +317,32 @@ def rehydrate_records(root: str, cfg: dict, expected_plan_id: str, *, tags_only:
     if not secrets.compare_digest(expected_plan_id, plan["plan_id"]):
         raise ValueError("rehydrate plan changed; run preview again")
     if not plan["items"]:
-        return {"success": True, "items_count": 0, "plan_id": plan["plan_id"]}
+        return {**_empty_plan_result(cfg), "plan_id": plan["plan_id"]}
     if tags_only:
         return {**_retag_items(cfg, plan["items"]), "plan_id": plan["plan_id"]}
     result = server_retain_items(cfg, plan["items"])
     return {**result, "plan_id": plan["plan_id"]}
+
+
+def _empty_plan_result(cfg: dict) -> dict:
+    """정본이 0건일 때 뱅크 문서 수로 상태를 가른다 — 어느 갈래에서도 뱅크에 쓰지 않는다."""
+    from ..project_memory_backends import get_backend
+
+    count: int | None = None
+    detail = ""
+    try:
+        backend = get_backend(cfg)
+        try:
+            count = backend.namespace_document_count()
+        finally:
+            backend.close()
+    except Exception as exc:
+        code = "bank-unreachable"
+        detail = f"{type(exc).__name__}: {exc}"
+    else:
+        code = "canonical-and-bank-empty" if count == 0 else "canonical-empty-bank-holds-records"
+    message = EMPTY_PLAN_MESSAGES[code].format(count=count, records_dir=RECORDS_RELATIVE_DIR, detail=detail)
+    return {"success": False, "items_count": 0, "code": code, "bank_documents": count, "error": message}
 
 
 def _retag_items(cfg: dict, items: list[dict]) -> dict:

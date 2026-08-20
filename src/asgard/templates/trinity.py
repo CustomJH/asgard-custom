@@ -21,7 +21,11 @@ def project_settings() -> str:
 
     lagom.mode는 default full이라 resolve 기본값과 동일하지만, 이 파일이 사용자가 모드를
     조정하는 표면이므로 명시적으로 적어 둔다 — 없으면 "라곰이 꺼졌나" 오해한다.
-    project_memory는 opt-in 연결이라 기본 미연결이 정상 상태다. JSON에 주석이 없으므로
+    project_memory는 opt-in 연결이라 기본 미연결이 정상 상태다. 그 상태를 섹션 첫 줄의
+    `enabled: false`로 눈에 보이게 적는다 — 손잡이가 파일에 없으면 무엇을 뒤집어야 켜지는지
+    읽을 수 없다. 이 한 키만 있는 섹션은 여전히 "아직 안 적은 시드"로 읽힌다
+    (project_memory_section이 enabled 하나만 남은 섹션을 선언으로 치지 않는다) — 그래야
+    갓 init한 모노레포 하위 폴더가 부모의 연결을 계속 찾아 올라간다. JSON에 주석이 없으므로
     `_`로 시작하는 키(_comment·_example)를 주석으로 심는다 — project_memory_section이
     무시하고, 실 설정 키가 없으면 미연결로 해석돼 도구가 노출되지 않는다. 과거의 빈
     {"memory": {}} 시드는 무엇을 채워야 하는지 보이지 않았고 strict 탐색(doctor)에서
@@ -32,11 +36,15 @@ def project_settings() -> str:
     from ..lagom import DEFAULT_MODE
 
     project_memory_seed = {
+        # 섹션의 첫 줄 = 사람이 먼저 읽는 자리. 연결 키가 하나도 없는 동안 이 키는 상태 표시이지
+        # 결정이 아니다 (config.project_memory_section 참조).
+        "enabled": False,
         "_comment": (
-            "Project shared memory — one `asgard memory connect <endpoint>` fills this in "
+            "Project shared memory — off until you connect it. `asgard memory connect <endpoint>` "
+            "rewrites this section with engine/endpoint/project_id and turns it on "
             "(project_id = memory bank name, auto-derived unless given). Ownership identity "
             "(project_uid/binding_id) is managed by Asgard in .asgard/memory/binding.json — "
-            "never edit it by hand. Set `enabled: false` to switch project memory off. "
+            "never edit it by hand. On a connected section, `enabled: false` switches it back off. "
             "Keys starting with `_` are comments and ignored."
         ),
         "_example": {

@@ -4,6 +4,7 @@ import json as _json
 import os
 import re
 import uuid
+from typing import NamedTuple
 
 from ... import errors, memory, ui
 from ._core import _emit, _guard
@@ -105,6 +106,112 @@ def _connected_report(root: str, engine: str, project_id: str, config_path: str)
     ui.step("팀원 1회 등록: claude mcp add --scope user asgard-memory -- asgard memory mcp")
 
 
+def _first(*values: object) -> str:
+    """여러 출처에서 오는 한 칸의 값 — 비어 있지 않은 첫 값, 없으면 빈 문자열."""
+    for value in values:
+        if text := str(value or "").strip():
+            return text
+    return ""
+
+
+def _same_target(previous: dict, *, endpoint: str, engine: str, project_id: str) -> bool:
+    """직전 설정이 지금 붙는 곳과 같은 엔진·엔드포인트·뱅크인가 — 결속을 물려받아도 되는 조건."""
+    return (
+        _first(previous.get("engine"), "hindsight").lower() == engine
+        and _first(previous.get("endpoint"), previous.get("server")).rstrip("/") == endpoint.rstrip("/")
+        and _first(previous.get("project_id"), previous.get("bank")) == project_id
+    )
+
+
+def _identity_in_history(root: str, *, has_identity: bool, recover_binding: bool, json_out: bool) -> dict:
+    """git 이력이 든 신원 — `--recover-binding`을 받은 실행에서만 쓴다. 그 밖에는 늘 빈 dict.
+
+    플래그는 "지금 적혀 있는 신원 말고 이력이 든 신원"이라는 말이므로, 이미 신원이 있어도 이력이
+    우선한다. 그러지 않으면 엉뚱한 뱅크에 한 번 묶인 저장소는 영영 못 돌아온다 — "foreign project"
+    거절을 만난 사람의 다음 수가 다른 뱅크에 새로 붙는 것이고, 그 순간 설정과 사이드카에 새 uid가
+    적혀 조회가 거기서 멈추기 때문이다 (26-08-20 실측).
+
+    플래그가 없으면 이 함수는 아무것도 안 정한다. 신원이 없을 때 이력에 되찾을 게 있다는 사실만
+    화면에서 말하고 빈 dict를 돌려준다 — 못 찾는 플래그는 없는 플래그다."""
+    from ... import memory_bridge
+
+    if has_identity and not recover_binding:
+        return {}
+    in_history = memory_bridge.recover_binding_sidecar(root)
+    if not in_history:
+        return {}
+    if recover_binding:
+        if not json_out:
+            uid = in_history.get("project_uid", "")
+            ui.step(f"git 이력에서 소유권 신원을 되찾았어요 (project_uid={uid[:8]}…)")
+        return in_history
+    if not json_out:
+        ui.warn("git 이력에 이 저장소가 쓰던 소유권 신원이 남아 있는데, 새 uid로 붙어요")
+        ui.step("예전 뱅크로 돌아가려면 같은 명령을 `--recover-binding`으로 다시 실행하세요")
+    return {}
+
+
+class _ConnectIdentity(NamedTuple):
+    """connect가 backend에 내밀 신원 — 누구인지(project_uid), 어느 뱅크인지(project_id), 어느 결속인지."""
+
+    project_id: str
+    project_uid: str
+    binding_id: str
+    explicit_project_id: bool
+    recovered: dict  # git 이력에서 되찾은 사이드카 — 되찾은 게 없으면 빈 dict
+
+
+def _connect_identity(
+    root: str,
+    previous: dict,
+    project_id: str | None,
+    *,
+    endpoint: str,
+    engine: str,
+    recover_binding: bool,
+    json_out: bool,
+) -> _ConnectIdentity:
+    """신원 순서 — `--recover-binding`이면 git 이력이 먼저, 아니면 설정 섹션 → 사이드카 → 새로 발급.
+
+    소유권 신원은 설정 파일이 아니라 사이드카(.asgard/memory/binding.json)에 있다 — 설정 섹션만
+    읽으면 재연결이 매번 새 project_uid를 발급하고, 서버의 기존 마커와 어긋나 자기 뱅크를
+    "foreign"으로 거절한다. 그러면 timeout·endpoint 조정도, 설정 변경으로 무효화된 신뢰의
+    재승인도 불가능해진다 — 그 무효화가 안내하는 수리 명령이 바로 이 connect 다 (26-07-26 실측).
+    find_config는 이미 같은 사이드카를 병합한다 (단일 신원 출처).
+
+    git 이력은 `--recover-binding`을 받았을 때만 읽고, 그때는 지금 적혀 있는 신원보다 앞선다
+    (`_identity_in_history`). 기본값이 되찾기가 되면 조상 저장소를 지우고 새로 시작한 fork·clone이
+    아무도 안 물어본 채 조상의 뱅크로 걸어 들어간다 — 되찾은 uid가 마커와 맞아 버리기 때문이다.
+    그래서 플래그가 곧 동의 표면이고, 안 주면 순서도 값도 예전 그대로다.
+
+    되찾은 값은 증거일 뿐 통행증이 아니다 — backend 마커와 대조하는 것은 여전히
+    `_bind_namespace`이고, 어긋나면 거절이다."""
+    from ... import memory_bridge
+
+    sidecar = memory_bridge.read_binding_sidecar(root)
+    uid = _first(previous.get("project_uid"), sidecar.get("project_uid"))
+    recovered = _identity_in_history(root, has_identity=bool(uid), recover_binding=recover_binding, json_out=json_out)
+    project_uid = recovered.get("project_uid") or uid or str(uuid.uuid4())
+    if recovered:
+        # 되찾기가 이긴 실행에서는 뱅크도 결속도 이력 것만 쓴다. 지금 적혀 있는 결속은 다른
+        # 뱅크 것이라, 섞으면 uid는 이력이고 binding_id는 남의 뱅크가 되어 drift로 막힌다.
+        pid = _first(project_id, recovered.get("project_id"))
+    else:
+        pid = _first(project_id, previous.get("project_id"), previous.get("bank"), sidecar.get("project_id"))
+    if not pid:
+        slug = re.sub(r"[^A-Za-z0-9._-]+", "-", os.path.basename(root)).strip("-.") or "project"
+        pid = f"{slug}-{project_uid[:8]}"
+    if recovered:
+        # 이력이 적어 둔 뱅크 이름과 지금 붙는 뱅크가 같을 때만 binding_id도 물려받는다 —
+        # 이름이 다르면 그 뱅크를 넘겨받겠다는 동의(--adopt-existing)를 따로 받는다.
+        binding_id = recovered["binding_id"] if recovered.get("project_id") == pid else ""
+    elif _same_target(previous, endpoint=endpoint, engine=engine, project_id=pid):
+        binding_id = _first(previous.get("binding_id"), sidecar.get("binding_id"))
+    else:
+        binding_id = ""
+    return _ConnectIdentity(pid, project_uid, binding_id, bool(_first(project_id)), recovered)
+
+
 def run_connect(
     endpoint: str,
     project_id: str | None,
@@ -113,6 +220,7 @@ def run_connect(
     option_values: list[str] | None = None,
     claim: bool = False,
     adopt_existing: bool = False,
+    recover_binding: bool = False,
     timeout: int | None = None,
     json_out: bool = False,
 ) -> int:
@@ -125,29 +233,19 @@ def run_connect(
 
         root = os.getcwd()
         previous = dict(memory_bridge.project_memory_section(load_project(root)) or {})
-        # 소유권 신원은 설정 파일이 아니라 사이드카(.asgard/memory/binding.json)에 있다 — 설정 섹션만
-        # 읽으면 재연결이 매번 새 project_uid를 발급하고, 서버의 기존 마커와 어긋나 자기 뱅크를
-        # "foreign"으로 거절한다. 그러면 timeout·endpoint 조정도, 설정 변경으로 무효화된 신뢰의
-        # 재승인도 불가능해진다 — 그 무효화가 안내하는 수리 명령이 바로 이 connect 다 (26-07-26 실측).
-        # find_config는 이미 같은 사이드카를 병합한다 (단일 신원 출처).
-        sidecar = memory_bridge.read_binding_sidecar(root)
-        previous_uid = str(previous.get("project_uid") or sidecar.get("project_uid") or "").strip()
-        project_uid = previous_uid or str(uuid.uuid4())
-        explicit_project_id = bool(project_id and project_id.strip())
-        pid = str(
-            project_id or previous.get("project_id") or previous.get("bank") or sidecar.get("project_id") or ""
-        ).strip()
-        if not pid:
-            slug = re.sub(r"[^A-Za-z0-9._-]+", "-", os.path.basename(root)).strip("-.") or "project"
-            pid = f"{slug}-{project_uid[:8]}"
         selected_engine = engine.strip().lower()
         selected_options = _backend_options(option_values or [])
-        same_target = (
-            str(previous.get("engine") or "hindsight").strip().lower() == selected_engine
-            and str(previous.get("endpoint") or previous.get("server") or "").rstrip("/") == endpoint.rstrip("/")
-            and str(previous.get("project_id") or previous.get("bank") or "").strip() == pid
+        identity = _connect_identity(
+            root,
+            previous,
+            project_id,
+            endpoint=endpoint,
+            engine=selected_engine,
+            recover_binding=recover_binding,
+            json_out=json_out,
         )
-        binding_id = str(previous.get("binding_id") or sidecar.get("binding_id") or "").strip() if same_target else ""
+        pid, project_uid, binding_id = identity.project_id, identity.project_uid, identity.binding_id
+        explicit_project_id = identity.explicit_project_id
         config = {
             "engine": selected_engine,
             "endpoint": endpoint.rstrip("/"),
@@ -193,6 +291,7 @@ def run_connect(
                     "project_id": pid,
                     "project_uid": project_uid,
                     "binding_id": binding_id,
+                    "binding_recovered": bool(identity.recovered),
                     "config_path": p,
                     "auto_recall": not _uninjected_note(root),
                 }

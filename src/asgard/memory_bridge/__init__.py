@@ -73,6 +73,7 @@ from .config import (
     project_memory_disabled,
     project_memory_section,
     read_binding_sidecar,
+    recover_binding_sidecar,
     stage_retain,
     write_config,
 )
@@ -157,6 +158,7 @@ __all__ = [
     "machine_grants",
     "project_memory_disabled",
     "read_binding_sidecar",
+    "recover_binding_sidecar",
     "reset_recall_health",
     "revoke_machine_approval",
     "finish_retain",
