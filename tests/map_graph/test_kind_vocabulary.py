@@ -82,7 +82,9 @@ class TestKindVocabulary(Base):
 
         self.seed()
         scan_graph(self.root)
-        payload = graph_payload(self.root, graph_state(self.root))
+        state = graph_state(self.root)
+        self.assertIsNotNone(state, "스캔 직후인데 그래프 상태가 없다")
+        payload = graph_payload(self.root, state or {})
         self.assertEqual(payload["kinds"], list(self.kinds))
 
     def test_standalone_view_knows_every_kind(self):

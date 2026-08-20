@@ -10,7 +10,7 @@ import unicodedata
 from dataclasses import dataclass
 from urllib.parse import urlsplit, urlunsplit
 
-EVIDENCE_KINDS = (
+EVIDENCE_KINDS: tuple[str, ...] = (
     "route",  # HTTP/웹 엔드포인트
     "page",  # 프론트 클라이언트 라우트 (파일 기반 라우팅)
     "component",  # UI 컴포넌트 — 선언(components/ 트리)과 템플릿 태그 소비가 이름으로 수렴
