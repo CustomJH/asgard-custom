@@ -31,12 +31,13 @@ def run_norn(
                 return 0
             ui.head(f"위그드라실 노른 자동 통합 · 모드 {result['mode']}")
             for op in result["applied"]:
-                if op["op"] == "insight":
-                    ui.ok(f"insight 기록 · {op['title']} ({op['confidence']}) ← {', '.join(op['sources'])}")
-                elif op["op"] == "contradiction":
-                    ui.warn(f"contradiction · {op['a']} ↔ {op['b']} — 사람이 해소")
+                name, target = op["op"], norn_mod.op_target(op)
+                if name == "insight":
+                    ui.ok(f"{name} 기록 · {op['title']} ({op['confidence']}) ← {', '.join(op['sources'])}")
+                elif name == "contradiction":
+                    ui.warn(f"{name} · {target} — 사람이 해소")
                 else:
-                    ui.ok(f"{op['op']} · {op.get('slug') or op.get('src', '')}")
+                    ui.ok(f"{name} · {target or '?'}")
             for op in result["proposed"]:
                 flag = f" ⚠ 극성 충돌 [{op['polarity_conflict']}]" if op.get("polarity_conflict") else ""
                 ui.step(f"제안 잔류 · {op['op']}{flag} — asgard memory norn으로 검토")
@@ -66,17 +67,25 @@ def run_norn(
             ui.ok("제안할 게 없어요 — 위키가 이미 정돈돼 있네요")
             return 0
         for op in plan["ops"]:
-            if op["op"] == "merge":
-                ui.step(f"merge · {op['src']} → {op['dst']} (sim {op['sim']}) — {op['why']}")
-            elif op["op"] == "archive":
-                ui.step(f"archive · {op['slug']} — {op['why']}")
-            elif op["op"] == "insight":
-                ui.step(f"insight · {op['title']} ({op['confidence']}) ← {', '.join(op['sources'])}")
+            # 줄머리 이름은 언제나 op 자신의 것이고, 갈래는 덧붙일 말만 정한다. 갈래마다 이름을
+            # 다시 적으면 갈래 하나가 어긋난 순간 쓰기 op이 보고 전용 op의 이름으로 나간다 —
+            # 오딘은 아무것도 안 바뀐다고 읽고 --apply를 누르게 된다.
+            name, target, why = op["op"], norn_mod.op_target(op), op.get("why", "")
+            if name == "merge":
+                ui.step(f"{name} · {target} (sim {op.get('sim', '?')}) — {why}")
+            elif name == "archive":
+                ui.step(f"{name} · {target} — {why}")
+            elif name == "insight":
+                ui.step(f"{name} · {op['title']} ({op['confidence']}) ← {', '.join(op['sources'])}")
                 # 적용 전에 반드시 보여야 하는 표식 — 출처의 주장을 뒤집었을 수 있다는 신호다.
                 if flag := op.get("polarity_conflict"):
                     ui.warn(f"  ⚠ 극성 충돌 [{flag}] — 출처와 대조하고 적용할 것")
-            else:
-                ui.warn(f"contradiction · {op['a']} ↔ {op['b']} — {op['why']}")
+            elif name == "link":
+                ui.warn(f"{name} · {target} (sim {op.get('sim', '?')}) — {why} · 양쪽 페이지의 links를 다시 쓴다")
+            elif name == "contradiction":
+                ui.warn(f"{name} · {target} — {why} · 보고 전용, 페이지는 안 고친다")
+            else:  # 처음 보는 op — 무엇을 하는지 모르니 다른 op의 이름을 빌려 부르지 않는다
+                ui.warn(f"{name} · {target or '?'} — {why}")
         for row in plan["dropped"]:
             ui.step(ui.dim(f"기각 · {row['op'].get('op', '?')} — {row['reason']}"))
         if not apply:

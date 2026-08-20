@@ -82,6 +82,7 @@ from .apply import (  # noqa: F401 — 밑줄 이름은 시험이 직접 임포�
     _write_report,
     apply_norn,
     archive_page,
+    op_target,
     restore_page,
 )
 from .auto import (  # noqa: F401

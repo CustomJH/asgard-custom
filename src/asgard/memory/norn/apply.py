@@ -37,6 +37,22 @@ REPORTS_DIR = "reports"
 BACKUP_KEEP = 5
 
 
+def op_target(op: dict) -> str:
+    """op이 가리키는 대상 한 마디 — 짝이면 둘을 잇고(`src → dst` · `a ↔ b`), 하나면 그것을 적는다.
+
+    op 이름별 표가 아니라 op이 실제로 들고 있는 칸에서 뽑는다. `plan.py`의 op 문법이 하나
+    늘어도 이 함수는 따라 늘 필요가 없고, 처음 보는 op도 대상이 빈칸으로 나가지 않는다.
+    아무 칸도 없으면 빈 문자열이라 부르는 쪽이 op 이름만 적게 된다.
+    """
+    for left, right, joiner in (("src", "dst", " → "), ("a", "b", " ↔ ")):
+        if op.get(left) and op.get(right):
+            return f"{op[left]}{joiner}{op[right]}"
+    for key in ("slug", "title"):
+        if op.get(key):
+            return str(op[key])
+    return ""
+
+
 def _backup(d: str) -> str:
     """pages/ 전체 스냅샷 — 손질은 언제든 되돌릴 수 있어야 한다."""
     ts = _dt.datetime.now(_dt.UTC).strftime("%Y%m%d%H%M%S")
@@ -200,24 +216,31 @@ def _write_report(
     ts = _dt.datetime.now(_dt.UTC).strftime("%Y%m%d-%H%M")
     lines = [f"# Norn {ts}", ""]
     for op in applied:
-        if op["op"] == "merge":
-            lines.append(f"- merge: [[{op['src']}]] → [[{op['dst']}]] (sim {op.get('sim', '?')}) — {op['why']}")
-        elif op["op"] == "archive":
-            lines.append(f"- archive: {op['slug']} — {op['why']} (복원: asgard memory norn-restore {op['slug']})")
-        elif op["op"] == "insight":
+        # 이름은 언제나 op 자신의 것을 쓴다 — 갈래는 덧붙일 말만 정한다. 갈래에 이름을 다시
+        # 적으면 갈래가 하나 어긋난 순간 쓰기 op이 보고 전용 op의 이름으로 기록에 남는다.
+        name = op["op"]
+        if name == "merge":
+            lines.append(f"- {name}: [[{op['src']}]] → [[{op['dst']}]] (sim {op.get('sim', '?')}) — {op['why']}")
+        elif name == "archive":
+            lines.append(f"- {name}: {op['slug']} — {op['why']} (복원: asgard memory norn-restore {op['slug']})")
+        elif name == "insight":
             srcs = ", ".join(f"[[{s}]]" for s in op["sources"])
             lines.append(
-                f"- insight: [[{op.get('slug', '')}]] ({op['confidence']}, "
+                f"- {name}: [[{op.get('slug', '')}]] ({op['confidence']}, "
                 f"grounding {op.get('grounding', '?')}) ← {srcs}"
             )
-        else:
+        elif name == "link":
+            lines.append(f"- {name}: [[{op['a']}]] ↔ [[{op['b']}]] — {op['why']} (양쪽 페이지의 links를 다시 쓴다)")
+        elif name == "contradiction":
             # 처음 보는 것과 또 보는 것을 가려 쓴다 — 같은 경고가 매번 같은 얼굴로 뜨면
             # 사람은 그 줄을 안 읽게 된다. 장부가 신원을 쥐고 있어 여기선 표시만 한다.
             entry = (ledger or {}).get(contradiction_key(op["a"], op["b"])) or {}
             seen = "" if entry.get("new", True) else f" · {entry.get('count', 2)}번째 감지"
             if entry.get("status") == ACKNOWLEDGED:
                 seen += " · 이미 본 것"
-            lines.append(f"- ⚠ contradiction: [[{op['a']}]] ↔ [[{op['b']}]] — {op['why']} (사람이 해소){seen}")
+            lines.append(f"- ⚠ {name}: [[{op['a']}]] ↔ [[{op['b']}]] — {op['why']} (사람이 해소){seen}")
+        else:  # 처음 보는 op — 무엇을 하는지 모르니 다른 op의 이름을 빌려 적지 않는다
+            lines.append(f"- {name}: {op_target(op) or '?'} — {op.get('why', '')}")
     for op in failed:
         lines.append(f"- ✗ {op['op']} 실패 — {op.get('error', '')}")
     for op in plan.get("proposed") or []:  # 자율 런의 잔류 제안 — 백그라운드 결과도 흔적을 남긴다
@@ -226,7 +249,7 @@ def _write_report(
             if flag := op.get("polarity_conflict"):
                 target += f" ⚠ 극성 충돌 [{flag}] — 출처와 대조할 것"
         else:
-            target = op.get("slug") or f"{op.get('src', '')} → {op.get('dst', '')}"
+            target = op_target(op) or "?"
         lines.append(f"- (제안) {op['op']}: {target} — 검토: asgard memory norn")
     for row in plan.get("dropped") or []:
         lines.append(f"- (기각) {row['op'].get('op', '?')} — {row['reason']}")

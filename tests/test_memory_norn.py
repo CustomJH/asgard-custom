@@ -5,10 +5,13 @@
 복원 / 넛지 latch / HindsightBackend.reflect 계약. 전부 temp HOME 격리.
 """
 
+import contextlib
 import datetime as _dt
 import inspect
+import io
 import json
 import os
+import re
 import shutil
 import tempfile
 import unittest
@@ -1141,3 +1144,80 @@ class TestNornLinkOp(NornBase):
 
         self.assertIn(a, hits)  # 어휘로도 시맨틱으로도 안 걸리는 페이지가
         self.assertTrue(hits[a]["graph"])  # 오직 그래프로 딸려온다
+
+
+class TestAnOpIsNamedAsItself(NornBase):
+    """어떤 op도 다른 op의 이름을 뒤집어쓰고 사람 앞에 나오지 않는다 — 검토 화면도, 리포트도.
+
+    고치기 전에는 두 자리 다 merge·archive·insight만 갈래로 두고 나머지를 통째로 else에
+    떨어뜨려 contradiction이라고 찍었다. `link`는 양쪽 frontmatter를 다시 쓰는 쓰기 op인데
+    (`_add_link`, 백업 대상이다) contradiction은 보고 전용이라, 오딘은 아무것도 안 바뀐다고
+    읽은 화면 위에서 --apply를 누르게 된다.
+
+    시험이 오늘의 op 이름 다섯을 세지 않는 것이 요점이다. 목록을 확인하는 시험은 내일 추가된
+    여섯 번째 op이 같은 else로 떨어져도 초록을 낸다. 그래서 여기서는 어디에도 없는 이름을
+    하나 지어 넣고 두 가지만 본다 — 그 줄이 자기 이름을 쓰는가, 그리고 정본에 있는 어떤 op
+    이름도 안 쓰는가. 정본은 `_NORN_SYS`의 op 문법에서 읽으므로 op이 늘면 금지 이름도 는다.
+    """
+
+    UNKNOWN = {"op": "unheard-of", "a": "page-a", "b": "page-b", "sim": 0.5, "why": "무엇을 하는 op인지 모른다"}
+
+    def _op_names(self) -> set[str]:
+        """op 이름 정본 — 손으로 적으면 시험이 코드보다 먼저 낡는다."""
+        names = set(re.findall(r'[{]"op":"(\w+)"', norn._NORN_SYS))
+        self.assertGreaterEqual(len(names), 5, "op 문법을 못 읽었다 — _NORN_SYS 형식이 바뀌었나")
+        return names
+
+    def _samples(self) -> list[dict]:
+        return [
+            {"op": "merge", "src": "page-a", "dst": "page-b", "sim": 0.4, "why": "같은 사실이다"},
+            {"op": "archive", "slug": "page-a", "why": "오래됐다"},
+            {"op": "insight", "title": "제목", "text": "본문", "confidence": "low", "sources": ["page-a", "page-b"]},
+            {"op": "contradiction", "a": "page-a", "b": "page-b", "why": "서로 어긋난다"},
+            {"op": "link", "a": "page-a", "b": "page-b", "sim": 0.5, "why": "앞뒤로 이어진다"},
+            self.UNKNOWN,
+        ]
+
+    def _screen(self, op: dict) -> str:
+        """검토 화면(`asgard memory norn`) 한 판 — LLM 왕복 없이 op 하나만 그린다."""
+        from asgard.commands.memory import evolution
+
+        buf = io.StringIO()
+        with (
+            mock.patch.object(norn, "plan_norn", lambda root, d=None: {"ops": [op], "dropped": [], "signals": {}}),
+            mock.patch.object(norn, "norn_due", lambda d: (False, "테스트")),
+            contextlib.redirect_stdout(buf),
+        ):
+            self.assertEqual(evolution.run_norn(apply=False, json_out=False), 0)
+        return buf.getvalue()
+
+    def _report(self, **plan_and_ops) -> str:
+        report = norn._write_report(self.d, plan_and_ops.get("plan", {}), plan_and_ops.get("applied", []), [], "")
+        return open(report, encoding="utf-8").read()
+
+    def test_the_review_screen_never_lends_one_ops_name_to_another(self):
+        for op in self._samples():
+            with self.subTest(op=op["op"]):
+                out = self._screen(op)
+                self.assertIn(op["op"], out)
+                for other in self._op_names() - {op["op"]}:
+                    self.assertNotIn(other, out, f"{op['op']}이 {other}의 이름으로 나왔다")
+
+    def test_the_report_never_lends_one_ops_name_to_another(self):
+        for op in self._samples():
+            with self.subTest(op=op["op"]):
+                text = self._report(applied=[{**op, "why": op.get("why", "")}])
+                self.assertIn(op["op"], text)
+                for other in self._op_names() - {op["op"]}:
+                    self.assertNotIn(other, text, f"{op['op']}이 {other}의 이름으로 적혔다")
+
+    def test_the_screen_says_which_ops_touch_the_pages(self):
+        """이름만 맞아서는 부족하다 — 누르기 전에 쓰기인지 보고인지가 그 줄에 있어야 한다."""
+        self.assertIn("다시 쓴다", self._screen(self._samples()[4]))
+        self.assertIn("보고 전용", self._screen(self._samples()[3]))
+
+    def test_a_proposed_op_names_its_pages_instead_of_an_empty_arrow(self):
+        """제안 줄의 대상은 op이 실제로 들고 있는 칸에서 나온다 — link는 a/b라 src/dst가 빈다."""
+        text = self._report(plan={"proposed": [self._samples()[4]]})
+        self.assertIn("page-a ↔ page-b", text)
+        self.assertNotIn(":  →", text)
