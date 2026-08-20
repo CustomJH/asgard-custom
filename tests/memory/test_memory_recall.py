@@ -93,6 +93,35 @@ class TestRankFusion(MemoryBase):
         hits = memory.query("레시피 김치", track=False)
         self.assertEqual(hits[0]["slug"], "zz-recipe")
 
+    def test_tie_run_takes_the_last_rank_of_its_run(self):
+        """동점 구간은 구간의 마지막 순위를 받는다 — 구간이 커지면 기여가 작아져야 한다.
+
+        옛 정책(구간 첫 순위)에서는 몇 장이 묶이든 전부 rank 1 = 1/(60+1) = 0.0164 였다.
+        그래서 잡음 39장의 동점과 단독 1위 증거 한 장이 소수점까지 같은 점수가 됐고,
+        타이브레이크가 잡음 쪽을 위로 올렸다 (H6, 26-08-20)."""
+        for i in range(4):
+            memory.add("공통 낱말 하나만 들어 있는 잡음 문서.", title=f"n{i}")
+        hits = memory.query("공통", track=False)  # 2글자 → FTS 없음, 스캔 4장 동점
+        self.assertEqual(len(hits), 4)
+        self.assertEqual({h["score"] for h in hits}, {round(1 / (60 + 4), 4)})
+
+    def test_latin_token_does_not_match_inside_a_longer_latin_word(self):
+        """라틴 토큰은 낱말 경계로만 맞는다 — `round` 가 `grounding` 을 부르면 안 된다.
+
+        옛 규칙(전 토큰 부분문자열)에서는 이 질의가 grounding 페이지를 그대로 회수했다.
+        개인 위키 실측 26-08-20: `round` 한 낱말이 `grounding` 안쪽에서 56장 중 36장에
+        걸려, 그 36장이 스캔 동점을 이뤄 유일한 정답을 52건 중 41위로 밀었다."""
+        memory.add("근거 대조 grounding 절차를 적어 둔 문서.", title="grounding-page")
+        self.assertEqual(memory.query("round", track=False), [])
+        self.assertEqual(  # 온전한 낱말은 그대로 회수한다
+            [h["slug"] for h in memory.query("grounding", track=False)], ["grounding-page"]
+        )
+
+    def test_korean_token_still_matches_as_substring(self):
+        """한국어는 조사·어미가 붙어 낱말 경계가 없다 — 부분문자열 회수를 잃으면 안 된다."""
+        memory.add("배포본은 소스보다 뒤져 있다.", title="deploy-lag")
+        self.assertEqual([h["slug"] for h in memory.query("배포", track=False)], ["deploy-lag"])
+
 
 class TestAssociativeGraphRecall(MemoryBase):
     """명시 링크 PPR 스트림 — flat retrieval이 못 찾는 연상 경로만 보완한다."""

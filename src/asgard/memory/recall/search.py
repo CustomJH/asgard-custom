@@ -49,6 +49,52 @@ def _sem_floor() -> float:
 # (`_dispersion`, 리랭크 QPP 게이트와 같은 자)으로 접근할 것.
 
 
+def _word_matcher(word: str):
+    """스캔 토큰 하나의 매칭 규칙 — 라틴 토큰은 낱말 경계, 그 밖은 부분문자열.
+
+    한국어는 어절이 낱말 경계와 어긋나고 조사·어미가 붙으므로 부분문자열 매칭이 회수의
+    전제다(`query` 의 `_KO_PARTICLES` 갈래). 라틴 문자에는 그 전제가 없는데 같은 규칙을 받아
+    영어 토큰이 더 긴 영어 낱말 **안쪽**에 걸렸다. 실측 26-08-20, 질의 `approval round trip
+    for saving memories` 를 개인 위키 56장에 건 결과: `round` 가 `grounding` 안쪽에서 36장,
+    `for` 가 `platform`·`before` 안쪽에서 3장, 합쳐 39장이 스캔 점수 1 로 동점이 됐다. 그
+    동점이 문턱을 넘은 유일한 시맨틱 증거를 52건 중 41위까지 밀었다. 경계를 걸면 `round` 는
+    0장, `for` 는 1장이 되고 같은 정답이 2위로 올라온다. 오딘의 LLM 행 기본 프롬프트가
+    영어라 이 경로는 드물지 않다 — 질의는 영어인데 이 위키의 본문은 한국어다.
+
+    경계 문자를 `[a-z0-9]` 로 좁히고 `-`·`_` 는 뺐다. 이 위키의 정본 어휘가 `asgard-verifier`
+    ·`memory_bridge` 처럼 이어져 있어서, 그 둘까지 경계에 넣으면 같은 코퍼스에서 `memory` 가
+    3장 → 0장, `asgard` 가 21장 → 13장으로 줄어든다. 부분문자열이 정말 필요한 라틴 질의는
+    FTS trigram 스트림이 그대로 회수한다."""
+    if word.isascii():
+        pat = re.compile(r"(?<![a-z0-9])" + re.escape(word) + r"(?![a-z0-9])")
+        return lambda hay: pat.search(hay) is not None
+    return lambda hay: word in hay
+
+
+def _add_ranks(scores: dict[str, float], ordered: list[tuple[str, float]], weight: float = 1.0) -> None:
+    """동점 구간은 그 구간의 **마지막** 순위를 함께 받는다 (수정 경쟁 순위).
+
+    구간의 첫 순위를 주면 동점 구간의 크기가 기여에서 사라진다. 실측 26-08-20:
+    `approval round trip for saving memories` 에서 스캔 점수 1 로 묶인 39장이 전부
+    rank 1 = 1/(60+1) = 0.016393 을 받아, 문턱을 넘은 유일한 시맨틱 증거(코사인 0.429,
+    2위 0.166)와 소수점까지 같은 점수가 됐다. 마지막 순위를 주면 그 39장은 구간 끝
+    순위를 함께 받고, 단독 1위인 증거는 rank 1 을 그대로 지킨다 — 39장 중 아무거나
+    하나만 맞은 것과 57장 중 하나만 맞은 것을 같은 값으로 세지 않는다.
+
+    구간 안에서 i+1 을 쓰지 않는 이유: scan_order 는 점수가 같은 원소들의 상대 순서가
+    임의(dict 삽입 순)라 그 값을 순위로 쓰면 같은 질의가 실행마다 다른 랭킹을 낸다."""
+    n = len(ordered)
+    i = 0
+    while i < n:
+        j = i
+        while j + 1 < n and ordered[j + 1][1] == ordered[i][1]:
+            j += 1
+        rank = j + 1
+        for slug, _s in ordered[i : j + 1]:
+            scores[slug] += weight / (RRF_K + rank)
+        i = j + 1
+
+
 def _temporal_multiplier(meta: dict, today: _dt.date | None = None) -> float:
     """빠르게 낡는 reference만 보수적으로 보정한다. 날짜 불명·다른 kind는 중립."""
     if _kind(meta) not in TEMPORAL_KINDS:
@@ -100,8 +146,8 @@ def query(
     세면 한 번 실린 페이지가 영영 부패 후보가 못 된다.
 
     랭킹 = RRF(rank fusion). BM25 값과 스캔 매칭 카운트는 척도가 달라 점수 혼합이 무의미하므로
-    각 경로의 '순위'만 합산한다 (동점 = 동순위). RRF 동률은 reference 최신성 → usage 회수
-    빈도 → slug 순으로 가른다 — 보조 신호는 관련도 순위를 넘지 못한다.
+    각 경로의 '순위'만 합산한다 (동점 구간은 구간의 마지막 순위 — `_add_ranks`). RRF 동률은
+    reference 최신성 → usage 회수 빈도 → slug 순으로 가른다 — 보조 신호는 관련도 순위를 넘지 못한다.
     오염 페이지는 결과에서 제외한다 (2차 리뷰 ② — query 출력은 에이전트 컨텍스트로 흘러간다).
     제외 수는 결과에 실리지 않고 lint가 threat로 보고한다.
 
@@ -142,11 +188,17 @@ def query(
     # 승계(ingest)가 정본 어휘를 슬롯 안에서 갈아끼우므로 질의도 슬롯 단위로 넓힌다.
     scan_words.extend(slot_query_aliases(text))
     scan_words = list(dict.fromkeys(scan_words))
+    scan_matchers = [(w, _word_matcher(w)) for w in scan_words]
+    # 구절 가산점도 낱말과 같은 규칙을 지난다. 한 낱말짜리 영어 질의는 구절이 곧 그 낱말이라,
+    # 여기만 원시 부분문자열로 두면 `round` 가 `grounding` 페이지에 3점을 주고 낱말 쪽에서
+    # 막은 잡음이 그대로 돌아온다 (실측 26-08-20 — 이 경로 하나 때문에 pin 시험이 빨갛게 났다).
+    phrase_hit = _word_matcher(phrase)
 
     def _scan_score(meta: dict, body: str) -> tuple[list[str], int]:
         hay = (meta.get("title", "") + "\n" + body).lower()
-        matched = [w for w in scan_words if w in hay]
-        return matched, len(matched) + (3 if phrase and phrase in hay else 0)
+        matched = [w for w, hit in scan_matchers if hit(hay)]
+        # 빈 질의는 `phrase` 에서 먼저 끊는다 — 빈 문자열로 만든 경계 패턴은 어디서나 맞는다.
+        return matched, len(matched) + (3 if phrase and phrase_hit(hay) else 0)
 
     # 후보 수집: slug → (meta, body, matched, scan_score). FTS 순위는 별도 리스트로 보존.
     cand: dict[str, tuple[dict, str, list[str], int]] = {}
@@ -228,13 +280,6 @@ def query(
     # LLM 추출 그래프/별도 DB 없이 기존 Zettelkasten 링크를 실제 검색 신호로 재사용한다.
     seed_scores = dict.fromkeys(cand, 0.0)
 
-    def _add_ranks(scores: dict[str, float], ordered: list[tuple[str, float]], weight: float = 1.0) -> None:
-        rank, prev = 0, None
-        for i, (slug, s) in enumerate(ordered):
-            if s != prev:
-                rank, prev = i + 1, s
-            scores[slug] += weight / (RRF_K + rank)
-
     for ordered in (fts_order, scan_order, sem_order):
         _add_ranks(seed_scores, ordered)
     graph_order = _graph_order(clean_pages_map, seed_scores, d) if expand_links else []
@@ -245,7 +290,7 @@ def query(
             matched, s = _scan_score(meta, body)
             cand[slug] = (meta, body, matched, s)
 
-    # RRF: 경로별 순위 기여 1/(RRF_K+rank) 합산. 동점은 동순위 — 진짜 동등만 동률로 남는다.
+    # RRF: 경로별 순위 기여 1/(RRF_K+rank) 합산. 동점 구간은 그 구간의 마지막 순위를 함께 받는다.
     rrf = dict.fromkeys(cand, 0.0)
 
     _add_ranks(rrf, fts_order)
