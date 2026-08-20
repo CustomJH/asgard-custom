@@ -7,8 +7,8 @@
 ## Orientation
 
 - Project root: `./`
-- Languages by observed source files: Python (781), JavaScript (12), Rust (2)
-- Evidence scan: 1033 files; 51 landmarks
+- Languages by observed source files: Python (786), JavaScript (12), Rust (2)
+- Evidence scan: 1040 files; 51 landmarks
 
 ## Landmarks
 
@@ -79,6 +79,8 @@
 - `docker/README.md` — doc: 컨테이너 하나 = 에이전트 하나 · sections: 먼저 — 이 폴더에 이미지가 둘 있고, 서로 다른 것이에요; 가르는 것은 두 줄이에요; 1. 호스트의 에이전트를 그대로 컨테이너에 (_asgard start_); 2. 컨테이너 전용 에이전트 여럿 (compose); 자격증명은 기본으로 안 넘어가요; 알아둘 것
 - `docs/HANDOVER-large-files-260817.md` — doc: 인수인계 — 대형 파일 리팩토링 (2026-08-17) · sections: ① 끝난 것 — 릴리즈가 다시 실패하지 않게; ② 대형 파일 — churn×lines 상위 셋 완료 (26-08-17); 시작하는 법
 - `docs/HANDOVER-se-baseline-260819.md` — doc: 인수인계 — 엔지니어링 기본 세팅 (2026-08-19) · sections: 지금 상태; 이번 변경이 한 것; 만진 파일 열셋; 할 일 셋; 앞 세션이 남긴 함정 둘 (되풀이하지 마라)
+- `docs/HANDOVER-tutor-1on1-260820.md` — doc: 인수인계 — 튜터 1:1 학습 체계 (2026-08-20) · sections: 무엇을 만든 것인가; 설계를 정한 실측 — 이게 이 작업의 전부다; 선 것 넷; 지금 도는 모습; 판정 상태 — 여기가 인계의 핵심; 판정자가 직접 재서 통과시킨 것 (FAIL 근거가 아니다)
+- `docs/MEMORY-AUDIT-260820.md` — doc: 메모리 전수 점검 — 2026-08-20 · sections: 한 줄; 1. 헤드라인 — 아무도 못 알아챈 한 주; 2. 그 위에 올라탄 결함 — 높음; 3. 중간; 4. 낮음; 5. 정상으로 확인된 것
 - `docs/engineering-baseline.md` — doc: 코드 형상 문턱 — 결정표 · sections: 조사가 확인한 것 중 가장 중요한 사실; 결정표; 신설하지 않기로 한 축 셋; Lint Leakage 감사; 저장소가 값을 정하는 문; 근거
 - `studio-shell/README.md` — doc: Asgard Studio native shell · sections: Run; Build; Icons
 - `benchmarks/bragi-humanvoice/README.md` — doc: Bragi — human-voice bench · sections: Running; Part A — upstream labeled pairs; Part B — held-out human corpus; Part C — live A/B on a real model; Honest limits
@@ -111,8 +113,6 @@
 - `benchmarks/roundtable/REPORT.md` — doc: 원탁 대조 벤치 — 좌석 여럿이 모델 하나보다 결함을 더 짚는가 (2026-08-14) · sections: 결과 — 중립 좌석으로 돌린 24짝; 첫 회차는 무효다 — 좌석이 답을 알고 있었다; 이 벤치가 찾아낸 제품 결함 둘; 기능 점검 — 실물로 확인한 것; 어떻게 쟀나; 이 벤치를 만들며 잡힌 것
 - `benchmarks/shortcut-recall/REPORT.md` — doc: 숏컷 벤치 — recall 주입 on/off A/B (26-07-16, 36런) · sections: 질문; 방법 (harness.py); 결과 (results-36runs.jsonl — 런당 1행 append, 원본 그대로); 판정기 주의 (jsonl 의 _success_ 필드를 그대로 믿지 말 것); 한계
 - `benchmarks/skill-uptake/REPORT.md` — doc: 스킬 도달 실측 — 배차가 새 스킬에 닿는가 (2026-08-13) · sections: 결과; 돌리는 법; 이 실측이 찾아낸 것; 이 벤치가 못 재는 것
-- `docker/asgard-k6/README.md` — doc: asgard-k6 — 부하 시험 러너 이미지 · sections: 왜 우리 이름의 이미지인가; 볼륨은 프로젝트 것이다; 수동 스택
-- `docker/asgard-project-memory/README.md` — doc: asgard-project-memory — 2차 메모리(프로젝트 메모리) Hindsight 서버 · sections: 기본 구성 (2026-07-23 확정); 백엔드 제약 — 이 구성의 모든 상한이 여기서 나온다; 기동; 뱅크 단위 설정 — compose 가 못 닿는 층; 클라이언트; 설계 결정
 
 ## Public surfaces
 

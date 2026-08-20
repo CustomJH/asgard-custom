@@ -12,7 +12,7 @@
 
 - Coverage status: partial · 3 named limits
 - api_route_unresolved [api_call:/api/memory/] — a relative API call did not converge on a route · files 1
-- test_sources_excluded [repository] — 263 test source files are outside the production relation graph · files 263
+- test_sources_excluded [repository] — 266 test source files are outside the production relation graph · files 266
 - unsupported_source_suffix [.rs] — no relation extractor is configured for Rust (.rs) · files 2
 
 ## Commands
