@@ -1,0 +1,5 @@
+interface:
+  display_name: "learned-new-unit-exceeds-nesting-budget"
+  short_description: "new-unit-exceeds-nesting-budget — .gitignore, memory.py, __init__.py, wiring.py 외 6개에서 겪고 고친 자리 (FAIL 4회 뒤 PASS)"
+policy:
+  allow_implicit_invocation: false

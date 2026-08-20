@@ -1,0 +1,5 @@
+interface:
+  display_name: "learned-comment-likens-code"
+  short_description: "comment-likens-code — baseline.py, contracts.py, ledger.py, summary.py 외 4개에서 겪고 고친 자리 (FAIL 1회 뒤 PASS)"
+policy:
+  allow_implicit_invocation: false
