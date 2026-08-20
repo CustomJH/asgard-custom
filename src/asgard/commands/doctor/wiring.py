@@ -7,7 +7,7 @@ import re
 import shlex
 from typing import NamedTuple
 
-from ...platform import HOOK_LAUNCHER, hook_python_argv, hook_python_token
+from ...platform import HOOK_LAUNCHER, PREFLIGHT_PS1, PREFLIGHT_SH, hook_python_argv, hook_python_token
 from ...templates.roles import ROLE_AGENTS
 
 
@@ -107,7 +107,7 @@ def _wired_hook_argv(root: str) -> list[str] | None:
                 # 환경 프리플라이트는 파이썬 없이 도는 sh 라서 배선 첫 줄에 선다 (templates/env.py).
                 # 그 줄을 여기서 읽으면 이 검사가 `sh -c pass` 를 돌리게 되고, uv 가 없는 기계에서도
                 # 초록이 뜬다 — 이 검사가 존재하는 이유 그 자체를 지우는 자리다.
-                if "env-setup.sh" in command or "env-setup.ps1" in command:
+                if PREFLIGHT_SH in command or PREFLIGHT_PS1 in command:
                     continue
                 # posix=False — Windows 경로의 역슬래시를 탈출 문자로 먹지 않는다.
                 argv = [token.strip('"') for token in shlex.split(command, posix=False)]
@@ -231,6 +231,71 @@ def _role_agents_check(root: str) -> dict:
             else f"{len(stale)}/{len(agents)} on an older contract: " + ", ".join(stale[:4])
         ),
         "fix": _TRINITY_FIX if missing else "asgard sync — 스캐폴드를 현행 역할 계약으로 갱신",
+    }
+
+
+# doctor 의 클라이언트 좌표 → setup 의 클라이언트 이름. 두 표가 같은 것을 다른 이름으로 부른다.
+_SETUP_CLIENT = {".claude": "claude-code", ".cursor": "cursor", ".codex": "codex"}
+
+
+def _hook_copy_gap(path: str, body: str) -> str | None:
+    """깔린 사본 하나와 템플릿의 차이 — 같으면 None, 다르면 이름 뒤에 붙일 까닭.
+
+    이 행 하나가 진단 전체를 끝내면 안 된다. UTF-8 이 아닌 사본은 `OSError` 가 아니라
+    `UnicodeDecodeError`(=`ValueError`) 를 내고, `run_doctor` 도 `_trinity_checks` 도 검사를
+    감싸지 않아 그대로 올라가면 doctor 가 한 줄도 못 그린다. 이 모듈의 프로젝트 검사는 권고라
+    치명적이면 안 된다 (같은 이유로 `_stale_role_agents` 도 `except Exception` 이다)."""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return None if handle.read() == body else ""
+    except FileNotFoundError:
+        return " (없음)"
+    except Exception:
+        return " (못 읽음)"
+
+
+def _stale_hook_files(root: str) -> list[str]:
+    """이 판의 템플릿과 내용이 다른, 이미 깔린 훅 파일 이름.
+
+    배선이 옳아도 파일이 낡으면 그 훅은 낡은 판정을 한다. 26-08-20 에 한 세션에서 두 번 났다 —
+    치환 가드가 없는 프리플라이트 사본이 남았고, 함수를 옮긴 뒤 옛 자리를 가리키는 안내가 사본에
+    그대로 실려 있었다. 두 번 다 배선 검사는 초록이었다. 계약은 파일 존재가 아니라 내용이다
+    (`_stale_role_agents` 와 같은 독법).
+
+    없는 파일도 여기서 센다. 배선 검사(`_client_hook_gaps`)의 존재 확인은 **배선된 `.py`** 만
+    덮어서, CC 배포 파일 56개 중 26개만 본다. 나머지 30개에는 `asgard_hooklib/` 24개가 들어 있고,
+    그중 하나가 없으면 그것을 임포트하는 훅이 임포트에서 죽는다 — `paths` 는 훅 27개를 전부
+    죽인다 (26-08-20 실측).
+
+    렌더러는 setup/sync 가 쓰는 것과 같은 `hook_files` 다 — 목록을 여기 다시 적으면 훅이 늘 때마다
+    이 자리가 조용히 뒤처진다."""
+    from ..setup import hook_files
+
+    stale: list[str] = []
+    for client in _MEMORY_CLIENTS:
+        # `hook_files` 는 setup 의 클라이언트 이름을 받는다 (`_Client.name` 은 화면용 라벨이라
+        # 다르다). 틀린 이름을 넘기면 그 클라이언트에만 있는 파일이 비교에서 조용히 빠진다 —
+        # CC 의 `lagom-statusline.sh` 가 그 자리다. 표에 없는 폴더는 건너뛴다: 대괄호로 찾으면
+        # 클라이언트가 하나 늘 때 진단 전체가 KeyError 로 죽는다.
+        setup_client = _SETUP_CLIENT.get(client.folder)
+        hooks_dir = os.path.join(root, client.folder, "hooks")
+        if not setup_client or not os.path.isdir(hooks_dir):
+            continue
+        for path, body in hook_files(hooks_dir, setup_client):
+            gap = _hook_copy_gap(path, body)
+            if gap is not None:
+                stale.append("%s/%s%s" % (client.folder, os.path.relpath(path, hooks_dir), gap))
+    return stale
+
+
+def _hook_files_check(root: str) -> dict:
+    """깔린 훅 파일이 이 판의 템플릿과 같은가 — 배선이 아니라 내용을 본다."""
+    stale = _stale_hook_files(root)
+    return {
+        "name": "hook files (deployed copies)",
+        "ok": not stale,
+        "detail": "current" if not stale else "%d 어긋남: %s" % (len(stale), ", ".join(sorted(stale)[:4])),
+        "fix": "asgard sync — 깔린 훅 사본을 이 판의 템플릿으로 갱신",
     }
 
 

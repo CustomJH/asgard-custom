@@ -13,6 +13,7 @@ SessionStart 의 **첫** 줄로 배선된다 (뒤에 오는 줄들이 부를 런
 
 import json
 import os
+import pathlib
 import shutil
 import subprocess
 import sys
@@ -26,7 +27,7 @@ from unittest import mock  # noqa: E402
 from asgard import platform as asg_platform  # noqa: E402
 from asgard.commands.doctor.wiring import _wired_hook_argv  # noqa: E402
 from asgard.commands.setup import hook_files  # noqa: E402
-from asgard.platform import HOOK_LAUNCHER, PYTHON_PIN  # noqa: E402
+from asgard.platform import HOOK_LAUNCHER, PREFLIGHT_PS1, PREFLIGHT_SH, PYTHON_PIN  # noqa: E402
 from asgard.templates import cc_settings, codex_config, cursor_hooks_json  # noqa: E402
 from asgard.templates.env import env_setup_ps1, env_setup_sh, hook_launcher_sh  # noqa: E402
 
@@ -73,6 +74,16 @@ class TestScaffold(unittest.TestCase):
         """자리표시자가 남으면 그 자리의 함수가 통째로 빠진 채 스크립트가 돈다."""
         leftovers = [w for w in env_setup_sh().split() if w.startswith("__") and w.endswith("__")]
         self.assertEqual(leftovers, [])
+
+    def test_the_deploy_table_takes_the_names_from_platform(self):
+        """파일 이름이 두 자리에 살면 한쪽을 고칠 때 다른 쪽이 조용히 뒤처진다."""
+        names = [os.path.basename(path) for path, _ in hook_files("H", "claude-code")]
+        self.assertIn(PREFLIGHT_SH, names)
+        self.assertIn(PREFLIGHT_PS1, names)
+        source = pathlib.Path("src/asgard/commands/setup.py").read_text(encoding="utf-8")
+        table = source.split("def hook_files(")[1].split("\ndef ")[0]
+        for literal in ('"%s"' % PREFLIGHT_SH, '"%s"' % PREFLIGHT_PS1):
+            self.assertNotIn(literal, table, "이름을 platform 상수 대신 다시 적었다")
 
     def test_deployed_to_every_client(self):
         for client in ("claude-code", "codex", "cursor"):

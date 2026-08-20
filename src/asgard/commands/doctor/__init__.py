@@ -30,6 +30,7 @@ from .gate import (
 )
 from .memory import (
     _bank_reachability_check,
+    _document_lane_check,
     _injection_budget_check,
     _memory_curator_check,
     _memory_durability_check,
@@ -42,6 +43,7 @@ from .wiring import (  # noqa: F401 — 아래 넷은 여기서 안 쓰고 다�
     _client_config,
     _client_wiring_checks,
     _einherjar_check,
+    _hook_files_check,
     _hook_interpreter_check,
     _hook_wired,
     _lagom_mode_check,
@@ -72,9 +74,16 @@ def _trinity_checks(root: str) -> list[dict]:
     # 뱅크 상태와 주입 경로는 다른 질문이다 — 앞은 backend 가 살아 있는가, 뒤는 이 저장소의
     # 세션 프롬프트에 그게 들어가는가. 둘이 같이 있어야 "연결은 됐는데 아무 프롬프트에도 안 들어가는"
     # 뱅크가 행 하나로 보인다. 뒤쪽은 정상이면 행을 안 내므로 평소 표면은 안 길어진다.
+    # 문서 레인은 뱅크와 별개 층이다 — 정본이 저장소에 있고 인덱스가 로컬이라 미연결 저장소에도
+    # 살아 있을 수 있다. 그래서 뱅크 행들과 나란히, 연결 여부와 무관하게 묻는다.
     memory_rows = [
         row
-        for row in (_shared_memory_check(root), _bank_reachability_check(root), _injection_budget_check(root))
+        for row in (
+            _shared_memory_check(root),
+            _bank_reachability_check(root),
+            _injection_budget_check(root),
+            _document_lane_check(root),
+        )
         if row
     ]
     if not os.path.exists(os.path.join(root, "AGENTS.md")):
@@ -85,6 +94,7 @@ def _trinity_checks(root: str) -> list[dict]:
         _trinity_policy_check(root),
         _role_agents_check(root),
         _trinity_hooks_check(root),
+        _hook_files_check(root),
     ]
     checks += [row for row in (_custom_manual_check(root), _einherjar_check(root), _lagom_mode_check(root)) if row]
     checks += _client_wiring_checks(root)

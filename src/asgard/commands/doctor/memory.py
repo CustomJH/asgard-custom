@@ -416,3 +416,43 @@ def _memory_durability_check() -> dict | None:
         }
     except Exception:
         return None
+
+
+def _document_lane_check(root: str) -> dict | None:
+    """로컬 문서 레인 현황 — 레인을 쓰는 저장소에서만 한 줄.
+
+    이 레인의 소비처는 턴 시작 주입 하나뿐이라, 인덱스가 못 서도 화면에서는 "관련 문서 없음"과
+    구별이 안 된다. 여기가 그 둘을 가르는 자리다. backend 연결과는 무관하다 — 정본이 저장소에
+    있고 인덱스가 로컬이라 서버가 죽어 있어도, 오프라인에서도 도는 레인이다.
+
+    레인을 안 쓰는 저장소는 행 자체를 안 낸다 (`documents.lane_present` 와 같은 계약).
+    회수가 읽는 뿌리를 그대로 재려고 `find_config` 의 결과를 먼저 따른다 — 위쪽 폴더가
+    프로젝트 메모리를 적었으면 주입도 그 폴더의 정본을 읽는다."""
+    try:
+        from ...memory_bridge import find_config
+        from ...project_memory import documents
+
+        found = find_config(root)
+        lane_root = found[0] if found else os.path.realpath(root)
+        if not documents.lane_present(lane_root):
+            return None
+        info = documents.stats(lane_root)
+    except Exception:
+        return None  # 진단 실패는 doctor 를 막지 않는다 (fail-open)
+    where = "" if os.path.realpath(lane_root) == os.path.realpath(root) else f" · {lane_root}"
+    if info["error"]:
+        return {
+            "name": "project document lane",
+            "ok": False,
+            "detail": f"문서 {info['documents']}건 · 인덱스 불능: {info['error']}{where}",
+            "fix": (
+                f"인덱스는 파생물이라 지우면 다시 생겨요 — {documents.INDEX_RELATIVE_PATH} 를 지우고 다시 조회해요 "
+                "(정본 문서는 그대로예요)"
+            ),
+        }
+    return {
+        "name": "project document lane",
+        "ok": True,
+        "detail": f"문서 {info['documents']}건 · 조각 {info['chunks']}개 · 정본 {info['bytes']:,}B{where}",
+        "fix": "",
+    }

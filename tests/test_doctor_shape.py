@@ -21,6 +21,7 @@ import re
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from contextlib import redirect_stdout
 from pathlib import Path
 
@@ -144,6 +145,62 @@ class TestTrinityRowNames(unittest.TestCase):
         self.assertNotIn("memory wiring (CC)", names)
 
 
+class TestDocumentLaneRow(unittest.TestCase):
+    """로컬 문서 레인의 유일한 소비처는 턴 시작 주입이라, 고장과 무적중이 화면에서 같아 보였다.
+
+    이 행이 그 둘을 가른다. 레인을 안 쓰는 저장소에는 행 자체가 없어야 한다 — 쓰지도 않는
+    파생 인덱스를 온 저장소에 심지 않는 `documents.lane_present` 계약과 같은 이유다."""
+
+    @staticmethod
+    def _with_a_document(root: str) -> None:
+        from asgard.project_memory import documents
+
+        class Doc:
+            document_id = "d1"
+            name = "release.md"
+            kind = "spec"
+            strategy = "local"
+            content_hash = "a" * 64
+            text = "# 릴리스 절차\n\n배포는 스테이징을 거친 뒤 운영으로 올린다\n"
+            entities: list = []
+
+        documents.save_document(root, Doc())
+
+    def test_a_repo_without_the_lane_gets_no_row(self):
+        with tempfile.TemporaryDirectory() as td:
+            _scaffolded(td)
+            names = [c["name"] for c in doctor._trinity_checks(td)]
+        self.assertNotIn("project document lane", names)
+
+    def test_the_row_reports_the_size_of_what_was_ingested(self):
+        with tempfile.TemporaryDirectory() as td:
+            _scaffolded(td)
+            self._with_a_document(td)
+            rows = {c["name"]: c for c in doctor._trinity_checks(td)}
+        self.assertIn("project document lane", rows)
+        row = rows["project document lane"]
+        self.assertTrue(row["ok"])
+        self.assertIn("문서 1건", row["detail"])
+        self.assertIn("조각", row["detail"])
+
+    def test_an_unreadable_index_is_named_instead_of_read_as_no_hits(self):
+        import sqlite3
+
+        from asgard.project_memory import documents
+
+        with tempfile.TemporaryDirectory() as td:
+            _scaffolded(td)
+            self._with_a_document(td)
+            with unittest.mock.patch.object(
+                documents, "_db", side_effect=sqlite3.OperationalError("database is locked")
+            ):
+                rows = {c["name"]: c for c in doctor._trinity_checks(td)}
+        row = rows["project document lane"]
+        self.assertFalse(row["ok"])
+        self.assertIn("database is locked", row["detail"])
+        self.assertTrue(row["fix"])
+
+
 class TestTemplateRegisteredHooksAreWired(unittest.TestCase):
     """`trinity hooks + Stop gate` 는 정본 템플릿이 등록하는 훅 전부를 잰다.
 
@@ -253,6 +310,100 @@ class TestTemplateRegisteredHooksAreWired(unittest.TestCase):
         self.assertFalse(row["ok"])
         self.assertIn("Cursor", row["detail"])
         self.assertIn("verifier-context", row["detail"])
+
+
+class TestDeployedHookCopies(unittest.TestCase):
+    """배선이 옳아도 파일이 낡으면 그 훅은 낡은 판정을 한다.
+
+    26-08-20 에 한 세션에서 두 번 났다 — 치환 가드가 없는 프리플라이트 사본이 남았고, 함수를 옮긴
+    뒤 옛 자리를 가리키는 안내가 사본에 그대로 실려 있었다. 두 번 다 배선 검사는 초록이었다."""
+
+    def _deploy(self, root: str) -> list:
+        from asgard.commands.setup import hook_files
+
+        files = hook_files(os.path.join(root, ".claude", "hooks"), "claude-code")
+        for path, body in files:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(body)
+        return files
+
+    def test_a_fresh_deploy_is_current(self):
+        from asgard.commands.doctor.wiring import _hook_files_check
+
+        with tempfile.TemporaryDirectory() as root:
+            self._deploy(root)
+            row = _hook_files_check(root)
+        self.assertTrue(row["ok"], row["detail"])
+        self.assertEqual(REQUIRED_KEYS, REQUIRED_KEYS & set(row))
+
+    def test_a_drifted_copy_is_caught_and_sync_is_prescribed(self):
+        from asgard.commands.doctor.wiring import _hook_files_check
+
+        with tempfile.TemporaryDirectory() as root:
+            files = self._deploy(root)
+            victim = next(p for p, _ in files if p.endswith("env-setup.sh"))
+            with open(victim, "a", encoding="utf-8") as handle:
+                handle.write("# 옛 판이 남긴 줄\n")
+            row = _hook_files_check(root)
+        self.assertFalse(row["ok"])
+        self.assertIn("env-setup.sh", row["detail"])
+        self.assertIn("asgard sync", row["fix"])
+
+    def test_a_client_only_file_is_compared_too(self):
+        """`hook_files` 는 클라이언트마다 표가 갈린다 — 이름을 잘못 넘기면 그 파일이 조용히 빠진다."""
+        from asgard.commands.doctor.wiring import _hook_files_check
+
+        with tempfile.TemporaryDirectory() as root:
+            files = self._deploy(root)
+            victim = next(p for p, _ in files if p.endswith("lagom-statusline.sh"))
+            with open(victim, "a", encoding="utf-8") as handle:
+                handle.write("# drift\n")
+            row = _hook_files_check(root)
+        self.assertFalse(row["ok"], "CC 전용 파일이 비교에서 빠졌다")
+        self.assertIn("lagom-statusline.sh", row["detail"])
+
+    def test_a_missing_library_module_is_caught_here(self):
+        """배선 검사의 존재 확인은 배선된 `.py` 만 덮는다 — 56개 중 26개다 (26-08-20 실측).
+
+        나머지 30개에 `asgard_hooklib/` 24개가 들어 있고 그 자리를 아무도 안 보고 있었다. 희생자로
+        고른 `paths.py` 는 임포트 폐포로 훅 27개를 전부 죽인다 — 이 층에서 가장 넓은 모듈이다."""
+        from asgard.commands.doctor.wiring import _hook_files_check
+
+        with tempfile.TemporaryDirectory() as root:
+            files = self._deploy(root)
+            os.remove(next(p for p, _ in files if p.endswith(os.path.join("asgard_hooklib", "paths.py"))))
+            row = _hook_files_check(root)
+        self.assertFalse(row["ok"], "훅 라이브러리가 빠졌는데 초록이다")
+        self.assertIn("paths.py", row["detail"])
+
+    def test_an_undecodable_copy_does_not_kill_the_diagnosis(self):
+        """이 행 하나가 진단 전체를 끝내면 안 된다 — 프로젝트 검사는 권고다.
+
+        UTF-8 이 아닌 사본은 `OSError` 가 아니라 `UnicodeDecodeError` 를 낸다. 좁은 except 로
+        받던 판에서는 그 예외가 `run_doctor` 까지 올라가 doctor 가 한 줄도 못 그렸다."""
+        from asgard.commands.doctor.wiring import _hook_files_check
+
+        with tempfile.TemporaryDirectory() as root:
+            files = self._deploy(root)
+            victim = next(p for p, _ in files if p.endswith("quest-log.py"))
+            with open(victim, "wb") as handle:
+                handle.write(b"\xff\xfe\x00\x00 not utf-8")
+            row = _hook_files_check(root)
+        self.assertFalse(row["ok"])
+        self.assertIn("quest-log.py", row["detail"])
+
+    def test_an_unknown_client_folder_is_skipped_not_fatal(self):
+        """표에 없는 폴더를 대괄호로 찾으면 클라이언트가 하나 늘 때 진단이 통째로 죽는다."""
+        from asgard.commands.doctor import wiring
+
+        with tempfile.TemporaryDirectory() as root:
+            self._deploy(root)
+            os.makedirs(os.path.join(root, ".newhost", "hooks"))
+            extra = wiring._Client("New", ".newhost", "x.json", "SessionStart", "UserPromptSubmit", ".agents")
+            with unittest.mock.patch.object(wiring, "_MEMORY_CLIENTS", (*wiring._MEMORY_CLIENTS, extra)):
+                row = wiring._hook_files_check(root)
+        self.assertTrue(row["ok"], row["detail"])
 
 
 class TestPiecesStandAlone(unittest.TestCase):
