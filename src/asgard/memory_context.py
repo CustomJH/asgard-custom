@@ -245,14 +245,41 @@ DROP_TAINTED = "tainted"  # 오염 의심 — 인젝션 스캔 적중·신뢰 �
 DROP_MISMATCH = "mismatch"  # 정본 불일치 — 저장소 정본으로 확인되지 않았다 (소유권·바이트·신선도)
 DROP_OTHER = "other"  # 그 밖 — 통제 문서·빈 본문·자격 미달(status/confidence)·질의 무관
 DROP_REASONS = (DROP_TAINTED, DROP_MISMATCH, DROP_OTHER)
+# 회수가 아예 답을 못 낸 경우 — 상한(`inject_timeout`) 초과이거나 backend 에 못 닿았다. 후보를
+# 판정해서 떨어뜨린 것이 아니라 판정할 후보를 못 받은 것이라 DROP_REASONS 에 섞지 않는다.
+# `filter_project_hits` 는 이 키를 만들지 않는다 — 만드는 자리는 `project_recall_rows` 뿐이다.
+DROP_UNREACHED = "unreached"
 
 _DROP_LABELS = ((DROP_TAINTED, "오염 의심"), (DROP_MISMATCH, "정본 불일치"), (DROP_OTHER, "기타"))
+# 자동 주입면이 알리는 사유 — 저장소나 연결이 망가졌다는 뜻인 것만 남긴다. DROP_OTHER 를 뺀
+# 이유는 그 칸의 대부분이 "질의와 어휘가 안 겹친다"는 건강한 기권이라는 것이다. 그것까지
+# 알리면 거의 모든 턴에 한 줄이 붙고, 그러면 정작 망가진 두 사유가 자기 잡음에 묻힌다.
+_PROJECT_DROP_LABELS = ((DROP_TAINTED, "오염 의심"), (DROP_MISMATCH, "정본 불일치"))
+# 버린 것을 사람이 직접 볼 수 있는 명령. 한 줄 안내는 세부를 안 싣고 이 문을 가리킨다.
+PROJECT_DROP_HINT = "asgard memory project-recall --unfiltered"
+
+
+def _drop_parts(tally: dict[str, int], labels: tuple[tuple[str, str], ...]) -> list[str]:
+    """사유별 "<사유> N건" 조각. 0건인 사유는 안 넣는다."""
+    return [f"{label} {tally[key]}건" for key, label in labels if tally.get(key)]
 
 
 def drop_note(tally: dict[str, int]) -> str:
     """제외 안내 한 줄 — 사유별로 갈라 센다. 아무것도 안 빠졌으면 빈 문자열."""
-    parts = [f"{label} {tally[key]}건" for key, label in _DROP_LABELS if tally.get(key)]
+    parts = _drop_parts(tally, _DROP_LABELS)
     return f"\n({' · '.join(parts)} 제외)" if parts else ""
+
+
+def project_drop_note(tally: dict[str, int]) -> str:
+    """자동 주입면이 프로젝트 레인의 침묵에 붙일 한 줄. 앞뒤 줄바꿈은 붙이는 쪽이 건다.
+
+    `drop_note` 와 갈라 둔 이유는 독자가 다르다는 것이다. 저쪽은 사람이 `project-recall` 을
+    직접 친 화면이라 무엇을 물었는지 알고 있고, 이쪽은 매 턴 프롬프트에 실려 나가므로 어느
+    레인의 말인지와 전량을 확인할 명령을 한 줄 안에 다 담아야 한다."""
+    if tally.get(DROP_UNREACHED):
+        return f"(프로젝트 메모리 회수 실패 — 상한 초과이거나 backend 에 못 닿았다; {PROJECT_DROP_HINT})"
+    parts = _drop_parts(tally, _PROJECT_DROP_LABELS)
+    return f"(프로젝트 메모리 후보 {' · '.join(parts)} 제외 — 전량은 {PROJECT_DROP_HINT})" if parts else ""
 
 
 # backend 에게 미리 거는 필터 — `_injectable_knowledge` 가 보는 두 축을 그대로 태그로 쓴다.
@@ -517,29 +544,41 @@ def inject_timeout(cfg: dict) -> int:
     return max(1, min(value, INJECT_TIMEOUT_CEILING))
 
 
-def project_recall_rows(query: str, *, start: str | None = None, max_results: int = 5) -> tuple[list[str], str]:
-    """프로젝트 backend 회수 본문 목록 + project_id — 렌더도 예산도 없다 (조립기가 건다).
+def project_recall_rows(
+    query: str, *, start: str | None = None, max_results: int = 5
+) -> tuple[list[str], str, dict[str, int]]:
+    """프로젝트 backend 회수 본문 목록 + project_id + 탈락 집계 — 렌더도 예산도 없다 (조립기가 건다).
+
+    셋째 값은 이 레인이 무엇을 왜 못 실었는지다(`DROP_REASONS` 또는 `DROP_UNREACHED` 를 키로).
+    이 집계를 버리면 "기억할 게 없다"와 "정본을 잃어 전량 탈락했다"가 호출부에서 똑같이 빈
+    목록으로 보이고, 그 둘을 못 가르는 동안 주입이 끊긴 것을 아무도 못 알아챈다.
 
     관계 확장(1홉 이웃)까지 여기서 붙인다: 이웃은 질의에 답한 것이 아니라 답한 것이 의존하는
     것이라 본체 뒤에 와야 하고, 그 순서는 후보의 rank로 표현된다."""
     found = find_config(start or os.getcwd())
     if not found:
-        return [], ""
+        return [], "", {}
     root, cfg = found
     if not is_backend_trusted(cfg):
-        return [], ""
+        return [], "", {}
     query = query[:RECALL_QUERY_MAX_CHARS]
     # 턴 시작 자동 주입은 원격 장애로 대화를 붙잡지 않는다. 명시 MCP 조회의 긴 timeout과 분리.
     operation_timeout = inject_timeout(cfg)
+    project_id = _neutralize(str(cfg.get("project_id") or cfg.get("bank") or ""))[:120]
     # raw source artifact가 긴 코드 조각으로 budget을 선점하지 않도록, 더 넓게 검색한 뒤
     # 승인된 구조화 record를 먼저 배치한다. 각 그룹 내부 backend 순위는 유지한다.
-    hits = server_recall(
-        cfg,
-        query,
-        max_results=max(8, max_results * 2),
-        operation_timeout=operation_timeout,
-        tags=INJECTABLE_TAGS,
-    )
+    try:
+        hits = server_recall(
+            cfg,
+            query,
+            max_results=max(8, max_results * 2),
+            operation_timeout=operation_timeout,
+            tags=INJECTABLE_TAGS,
+        )
+    except Exception:
+        # 상한 초과·연결 실패에도 대화는 계속된다(fail-open). 다만 조용히 사라지지는 않는다 —
+        # 여기서 예외를 위로 던지면 호출부의 fail-open 이 이 레인을 빈 목록과 구별 못 한다.
+        return [], project_id, {DROP_UNREACHED: 1}
     hits = sorted(
         enumerate(hits),
         key=lambda pair: (
@@ -547,8 +586,7 @@ def project_recall_rows(query: str, *, start: str | None = None, max_results: in
             pair[0],
         ),
     )
-    project_id = _neutralize(str(cfg.get("project_id") or cfg.get("bank") or ""))[:120]
-    filtered, _ = filter_project_hits(root, cfg, [hit for _, hit in hits], max_results=max_results, query=query)
+    filtered, dropped = filter_project_hits(root, cfg, [hit for _, hit in hits], max_results=max_results, query=query)
     rows = [f"{body}{hit_provenance(hit['metadata'])}" for hit in filtered if (body := hit_body(hit))]
     seed_ids = {
         str(hit["metadata"].get("record_id") or "") for hit in filtered if isinstance(hit.get("metadata"), dict)
@@ -557,17 +595,22 @@ def project_recall_rows(query: str, *, start: str | None = None, max_results: in
         f"{_neutralize(content)[:300]} [via {_neutralize(edge)[:120]}; record: {_neutralize(record_id)[:120]}]"
         for record_id, edge, content in _relation_neighbors(root, {rid for rid in seed_ids if rid})
     ]
-    return rows, project_id
+    return rows, project_id, dropped
 
 
 def project_recall_note(query: str, *, start: str | None = None, max_results: int = 5) -> str:
     """현재 프로젝트 backend를 검색한다. 불능·미신뢰·무적중은 빈 문자열로 fail-open.
 
-    이 레인 혼자 쓰는 표면용이다 — 여섯 레인을 같이 넣는 자리는 조립기로 간다."""
+    이 레인 혼자 쓰는 표면용이다 — 여섯 레인을 같이 넣는 자리는 조립기로 간다.
+
+    탈락 집계를 받아 놓고 안 쓰는 것이 의도다. 여기 반환값은 사람이 읽는 안내가 아니라 회수된
+    본문이고, `memory.pattern.gather_evidence` 는 이 문자열을 그대로 LLM 근거로 넣는다 —
+    제외 안내를 섞으면 안내문이 프로젝트 기록 행세를 한다. 그 한 줄은 자동 주입면(`recall_note`)
+    에만 붙는다."""
     try:
         from .memory.assemble import Candidate, Lane, assemble
 
-        rows, project_id = project_recall_rows(query, start=start, max_results=max_results)
+        rows, project_id, _dropped = project_recall_rows(query, start=start, max_results=max_results)
         if not rows:
             return ""
         lane = Lane(
@@ -875,8 +918,8 @@ def recall_candidates(
     project_k: int = 5,
     include_skills: bool = False,
     include_episodes: bool = False,
-) -> tuple[list, str]:
-    """여섯 레인의 후보 전량 + project_id. 레인 하나의 고장이 나머지를 막지 않는다.
+) -> tuple[list, str, dict[str, int]]:
+    """여섯 레인의 후보 전량 + project_id + 프로젝트 레인 탈락 집계. 레인 하나의 고장이 나머지를 막지 않는다.
 
     레인마다 try로 감싸는 것이 의도다: 이 자리의 fail-open은 "메모리가 없어도 대화는
     계속된다"인데, 한 레인의 예외가 통째로 올라오면 나머지 다섯도 같이 죽는다."""
@@ -884,6 +927,7 @@ def recall_candidates(
 
     out: list[Candidate] = []
     project_id = ""
+    dropped: dict[str, int] = {}
 
     def _collect(lane: str, produce) -> None:
         try:
@@ -894,7 +938,7 @@ def recall_candidates(
 
     _collect("personal", lambda: memory.recall_rows(query, k=personal_k))
     try:
-        rows, project_id = project_recall_rows(query, start=start, max_results=project_k)
+        rows, project_id, dropped = project_recall_rows(query, start=start, max_results=project_k)
         out.extend(Candidate("project", body, rank=index) for index, body in enumerate(rows) if body)
     except Exception:
         pass
@@ -905,7 +949,7 @@ def recall_candidates(
         _collect("skills", lambda: learned_skills_rows(query, start=start))
     if include_episodes:
         _collect("episode", lambda: _episode_rows(query, start=start))
-    return out, project_id
+    return out, project_id, dropped
 
 
 def _document_rows(query: str, *, start: str | None = None) -> list[str]:
@@ -951,7 +995,7 @@ def recall_note(
     try:
         from .memory.assemble import render, select
 
-        candidates, project_id = recall_candidates(
+        candidates, project_id, dropped = recall_candidates(
             query,
             start=start,
             personal_k=personal_k,
@@ -959,12 +1003,17 @@ def recall_note(
             include_skills=include_skills,
             include_episodes=include_episodes,
         )
+        # 프로젝트 레인이 한 줄도 못 냈는데 버린 것은 있을 때만 설명한다. 한 건이라도 실렸으면
+        # 침묵이 아니라 정상 회수이고, 버린 것도 없으면 이 자리의 출력은 종전과 바이트가 같다 —
+        # 매 턴 프롬프트에 실리는 글이라 한 줄이 늘 붙으면 그 자체가 결함이다.
+        note = "" if any(item.lane == "project" for item in candidates) else project_drop_note(dropped)
         if not candidates:
-            return ""
+            return note
         lanes = _lanes(project_id)
         chosen = select(candidates, lanes, budget=recall_total_budget())
         if include_skills:
             _record_rendered_skills(chosen, start=start)
-        return render(chosen, lanes)
+        rendered = render(chosen, lanes)
+        return f"{rendered}\n{note}" if note else rendered
     except Exception:
         return ""  # fail-open — 조립 실패가 대화를 막지 않는다
