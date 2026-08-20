@@ -516,15 +516,23 @@ class TestScaffold(unittest.TestCase):
         self.assertIn("MANUAL.md", names)
 
     def test_asgard_side_stays_shareable(self):
-        """보조 자리를 쓰는 사람도 팀 공유가 돼야 한다 — 루트 블록과 자가 무시가 합의해야 한다."""
+        """보조 자리를 쓰는 사람도 팀 공유가 돼야 한다 — 그 경계는 자가 무시 한 파일이 진다.
+
+        루트 블록에 같은 목록을 또 적어도 결과는 안 바뀐다 (더 깊은 .gitignore가 우선한다).
+        바뀌는 것은 읽는 사람 쪽이다 — 두 목록이 어긋나면 어느 줄이 이겼는지 알 수 없다.
+        그래서 재는 것이 둘이다: 자가 무시가 별칭 넷을 다 뚫는가, 루트가 다시 적지 않는가."""
         from asgard.commands.setup import _ASGARD_GITIGNORE, _GITIGNORE_BLOCK
 
         for name in MANUAL_NAMES:
             with self.subTest(name=name):
-                self.assertIn(f"!.asgard/{name}\n", _GITIGNORE_BLOCK)
                 self.assertIn(f"!{name}\n", _ASGARD_GITIGNORE)
-        self.assertIn("!.asgard/manual/**\n", _GITIGNORE_BLOCK)
         self.assertIn("!manual/**\n", _ASGARD_GITIGNORE)
+        redeclared = [
+            line
+            for line in _GITIGNORE_BLOCK.splitlines()
+            if not line.startswith("#") and line.lstrip("!").startswith(".asgard/") and line != "!.asgard/"
+        ]
+        self.assertEqual(redeclared, [], "루트 블록이 `.asgard/` 안쪽 경계를 다시 적었다")
 
     def test_sync_keeps_a_written_manual_in_both_places(self):
         from asgard.commands.sync import _policy
