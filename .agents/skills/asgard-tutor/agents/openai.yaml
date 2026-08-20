@@ -1,0 +1,5 @@
+interface:
+  display_name: "asgard-tutor"
+  short_description: "Conduct Odin's one-on-one tutor session and write his own sentence back into the record — one question per turn, no lect"
+policy:
+  allow_implicit_invocation: false

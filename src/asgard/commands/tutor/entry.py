@@ -9,9 +9,11 @@ from ..health import _project_root
 from .answers import _run_collect
 from .engines import _explanation, _learned, _rationale
 from .lanes import (
+    _placement,
     _run_brief,
     _run_close,
     _run_debt,
+    _run_exam,
     _run_expect,
     _run_explain,
     _run_mission,
@@ -19,6 +21,7 @@ from .lanes import (
     _run_recap,
     _run_settle,
     _run_tip,
+    _run_track,
 )
 from .payload import _payload
 from .report import _REPORT_REL, _write_report
@@ -53,11 +56,19 @@ def run_tutor(
     depth: str = "",
     mission: bool = False,
     quiz: bool = False,
+    track: bool = False,
+    exam: str = "",
 ) -> int:
     """종료 코드는 언제나 0 — 튜터는 규율이지 관문이 아니다(`health`와 같은 등급)."""
     root = _project_root(os.getcwd())
     ui.set_quiet(json_out or quiet)
 
+    if track:
+        return _run_track(root, json_out)
+    # `--exam`은 `--answer`보다 위다 — 같은 옵션이 여기서는 채점 답이고 아래에서는 닫을 표식이라,
+    # 트랙 이름이 있는 쪽을 먼저 고른다. 내려 두면 시험 답이 물음 닫기로 새서 표식을 못 찾고 끝난다.
+    if exam:
+        return _run_exam(root, exam, answer, json_out)
     if mission:
         return _run_mission(root, text or note, json_out)
     if explain:
@@ -134,7 +145,7 @@ def _run_review(
         _learned(root, exp)
 
     if json_out:
-        print(_payload(lesson, rows, back, exp, written, limit, why, quiz))
+        print(_payload(lesson, rows, back, exp, written, limit, why, quiz, track=_placement(root)))
         return 0
     _emit_review(lesson, rows, back, limit, written, why, quiz)
     return 0

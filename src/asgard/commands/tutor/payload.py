@@ -20,6 +20,7 @@ def _payload(
     limit: int = 1,
     why: Any = None,
     quiz: bool = True,
+    track: Any = None,
 ) -> str:
     """훅과 화면이 같은 판정을 쓰도록 조절 결과까지 넣는다 — 판정기가 둘이면 반드시 어긋난다.
 
@@ -53,6 +54,9 @@ def _payload(
             "mode": "quiz" if quiz else "explain",
             # "왜 이렇게 했는가" — 퀘스트 기록에서 온 사실. quiz 모드거나 기록이 없으면 null.
             "rationale": _rationale_dict(why),
+            # 지금 어느 영역까지 갔는가(`tutor_track.place`). 훅이 카드 첫 줄에 단계와 다음 기준을
+            # 적는 자리다. 엔진이 없거나 던지면 null이고, 그러면 훅은 오늘 카드를 종전대로 그린다.
+            "track": track,
         },
         ensure_ascii=False,
         indent=2,

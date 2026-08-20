@@ -623,6 +623,20 @@ class ReportLaneTest(unittest.TestCase):
             self.assertGreaterEqual(len(data["checkpoints"]), len(data["shown_checkpoints"]))
             self.assertLessEqual(report.count("- [ ] **"), 1)
 
+    def test_the_hook_payload_carries_the_track_slot(self):
+        """훅(`hooks/tutor_note.py`)이 카드 첫 줄을 이 칸으로 그린다 — 없으면 그 줄이 죽은 코드가 된다."""
+        with contextlib.ExitStack() as stack:
+            self._repo(stack)
+            data = json.loads(self._run(json_out=True, paths=("m.py",)))
+        self.assertIn("track", data)
+        self.assertIn("tracks", data["track"])
+
+    def test_the_track_slot_is_null_when_the_engine_is_missing(self):
+        with contextlib.ExitStack() as stack:
+            self._repo(stack)
+            stack.enter_context(mock.patch.dict(sys.modules, {"asgard.tutor_track": None}))
+            self.assertIsNone(json.loads(self._run(json_out=True, paths=("m.py",)))["track"])
+
     def test_the_explain_slot_is_null_when_the_engine_is_missing(self):
         """표면이 엔진보다 먼저 배송될 수 있다 — 그때 훅이 받는 값은 예외가 아니라 null이다."""
         with contextlib.ExitStack() as stack:
@@ -683,6 +697,71 @@ class ExplainLaneTest(unittest.TestCase):
             stack.enter_context(_teach_module(_explanation()))
             self._run(mission=True, text="캐시 계층을 걷어낸다")
             self.assertEqual(json.loads(self._run(mission=True, json_out=True))["mission"], "캐시 계층을 걷어낸다")
+
+
+class RealEngineLaneTest(unittest.TestCase):
+    """`--track`과 `--exam`을 **대역 없이** 진짜 `asgard.tutor_track` 위에서 부른다.
+
+    `tests/test_tutor_level.py`가 같은 두 레인을 무는데 거기는 엔진을 대역으로 갈아 끼운다 —
+    화면이 엔진의 결론을 그대로 옮기는지 보는 자리라 그게 맞다. 그러면 아무도 안 보는 자리가
+    하나 남는다: 진짜 엔진이 진짜 `growth.json`을 읽어 화면까지 오는 사슬이다. 대역은 사슬이
+    끊겨도 초록을 낸다. 여기가 그 사슬을 문다.
+    """
+
+    _GROWTH = {
+        "version": 1,
+        "topics": {},
+        "open": {
+            "aaaaaaaa": {
+                "kind": "behavior-removed",
+                "path": "src/asgard/hooks/quest_log.py",
+                "unit": "f",
+                "key": "f",
+                "ask": "q",
+                "asks": 1,
+                "opened": 0.0,
+                "due": 0.0,
+                "stage": 1,
+            }
+        },
+        "closed": [],
+    }
+
+    def _repo(self, stack) -> str:
+        root = stack.enter_context(tempfile.TemporaryDirectory())
+        os.makedirs(os.path.join(root, ".asgard", "tutor"))
+        with open(os.path.join(root, ".asgard", "tutor", "growth.json"), "w", encoding="utf-8") as handle:
+            json.dump(self._GROWTH, handle)
+        stack.enter_context(contextlib.chdir(root))
+        return root
+
+    def _run(self, **kwargs) -> str:
+        from asgard.commands.tutor import run_tutor
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(run_tutor(**kwargs), 0)
+        return out.getvalue()
+
+    def test_the_track_lane_places_a_real_question_and_writes_the_rung(self):
+        """읽기와 쓰기를 한 호출에서 본다 — `place`는 오른 단계를 `track.json`에 적는다."""
+        from asgard import tutor_track
+
+        with contextlib.ExitStack() as stack:
+            root = self._repo(stack)
+            row = json.loads(self._run(track=True, json_out=True))["tracks"][0]
+            self.assertEqual(row["track"], "src/asgard/hooks", "좌표는 물음의 path에서 접어 온다")
+            self.assertEqual(row["rung"], "first")
+            self.assertEqual(row["bar"], tutor_track.BARS["first"], "기준 문장은 엔진 것이다")
+            self.assertTrue(os.path.exists(os.path.join(root, tutor_track.TRACK_REL)))
+
+    def test_the_exam_lane_answers_for_a_real_track_without_inventing_one(self):
+        """깊은 답이 0건이면 낼 시험이 없다. 그때 빈 물음이 나와야 하고 지어내면 안 된다."""
+        with contextlib.ExitStack() as stack:
+            self._repo(stack)
+            data = json.loads(self._run(exam="src/asgard/hooks", json_out=True))
+            self.assertEqual(data["track"], "src/asgard/hooks")
+            self.assertEqual(data["question"], "")
 
 
 class NeverBlocksTest(unittest.TestCase):

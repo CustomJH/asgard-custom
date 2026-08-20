@@ -62,6 +62,12 @@ EXPLAIN_SHOWN = 3
 # 뜨고, 크게 잡으면 짧은 작업에서는 한 번도 안 닿는다. 여덟은 한 번의 작업 단위(파일 서넛을
 # 오가며 고치는 구간)가 끝날 무렵 한 번 닿는 값이다.
 TIP_EVERY = 8
+# 모델에게 넘기는 표식 수. 브리핑 카드가 묶어서 보여 주는 물음 수(`tutor_brief.brief` 의 `cap`)와
+# 같다 — 화면에 없는 표식을 모델이 들고 있으면 오딘이 안 본 물음에 답이 적힌다.
+MAX_MARKS = 3
+# 마무리 안내가 싣는 경로 수. 한 세션이 마흔 곳을 건드려도 마흔 줄을 놓으면 안내가 아니라
+# 목록이 되고, 목록은 읽히지 않는다. 나머지는 수만 한 줄로 적는다.
+MAX_GUIDE_PATHS = 8
 REPORT_REL = os.path.join(".asgard", "tutor", "last-review.md")
 _KIND = {
     "contract-break": "공개 계약 바뀜",
@@ -158,15 +164,29 @@ def _signature(points: list[dict], back: list[dict], told: Sequence[str] = ()) -
     return hashlib.sha256("\n".join(sorted(rows)).encode("utf-8")).hexdigest()[:16]
 
 
+def _latch_path(root: str, sid: str, slot: str) -> str:
+    return os.path.join(root, ".asgard", "state", "tutor-" + slot + sid + ".json")
+
+
+def _read_latch(root: str, sid: str, slot: str = "") -> str:
+    """이 칸에 마지막으로 놓은 지문. 없거나 못 읽으면 빈 문자열 — 아직 안 놓은 것으로 센다.
+
+    쓰지 않고 보기만 하는 자가 따로 있는 이유는 마무리 안내 때문이다. 그 레인은 래치를 **낼 때**
+    적어야 하는데, 낼지 말지는 `asgard tutor --recap` 을 부르고 나서야 안다. `_latched` 로 먼저
+    보면 아직 실을 것이 없던 첫 턴이 그 세션의 한 번을 태워 버린다.
+    """
+    try:
+        with open(_latch_path(root, sid, slot), encoding="utf-8") as handle:
+            return str(json.load(handle).get("signature") or "")
+    except Exception:
+        return ""  # 래치가 없거나 깨졌다 = 아직 안 놓았다 — 못 읽은 것을 "이미 놓았다"로 세면 카드가 통째로 증발한다
+
+
 def _latched(root: str, sid: str, sig: str, slot: str = "") -> bool:
     """이미 이 지문을 놓았으면 True. 기록 실패는 False — 못 세면 한 번 더 보여주는 쪽으로."""
-    path = os.path.join(root, ".asgard", "state", "tutor-" + slot + sid + ".json")
-    try:
-        with open(path, encoding="utf-8") as handle:
-            if json.load(handle).get("signature") == sig:
-                return True
-    except Exception:
-        pass  # 래치가 없거나 깨졌다 = 아직 안 놓았다 — 못 읽은 것을 "이미 놓았다"로 세면 카드가 통째로 증발한다
+    path = _latch_path(root, sid, slot)
+    if _read_latch(root, sid, slot) == sig:
+        return True
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         tmp = "%s.%d.tmp" % (path, os.getpid())
@@ -185,7 +205,9 @@ def _card(lesson: dict, points: list[dict], back: list[dict], told: Sequence[str
     added, removed = int(lesson.get("added") or 0), int(lesson.get("removed") or 0)
     files = len(lesson.get("files") or [])
     head = "⠶ 되짚기 — 이번 턴 %d개 파일 · +%d/-%d행이에요." % (files, added, removed)
-    lines = [head + (" 아래는 **기계가 못 답하는** 것들이에요." if quiz else ""), ""]
+    # 단계 줄이 맨 위에 온다 — 지금 어디에 서 있는지를 안 적으면 물음만 쌓이고 오를 칸이 화면에
+    # 없다. `_rung`은 없는 칸에 빈 목록을 돌려주므로 여기서 다시 판정하지 않는다.
+    lines = [*_rung(lesson.get("track")), head + (" 아래는 **기계가 못 답하는** 것들이에요." if quiz else ""), ""]
     if told:
         # 설명이 물음보다 위에 온다 — 전달된 적 없는 것을 인출부터 시키면 물음은 답이 아니라
         # 침묵을 받는다. 네이티브 `tutor._card`가 같은 자리에 같은 절을 놓는다.
@@ -230,6 +252,51 @@ def _card(lesson: dict, points: list[dict], back: list[dict], told: Sequence[str
     lines.append('  답은 `asgard tutor --answer <표식> "..."` · 오탐이면 `asgard tutor --dismiss <표식>`')
     lines.append("  전체와 '왜 이렇게 했는가' 빈칸: %s  (다시 보기: `asgard tutor --report`)" % report)
     return "\n".join(lines)
+
+
+def _rung(track: object) -> list[str]:
+    """`asgard tutor --json`의 `track` 칸을 카드 한 줄로 — 지금 단계와 다음 단계의 기준.
+
+    칸이 없거나 읽히지 않으면 빈 목록이고, 그러면 카드는 지금까지 그리던 그대로 나간다. 이 칸을
+    만드는 쪽(`asgard.tutor_track.place`)과 읽는 쪽이 다른 자리라, 없는 칸을 오류로 다루면 한쪽이
+    늦게 도착하는 동안 되짚기 카드가 통째로 사라진다. 목록으로 돌려주는 이유는 `_explain`·`_why`와
+    같다 — 부르는 쪽이 "있으면 넣는다"를 다시 판정하지 않는다.
+
+    문장은 `place`가 이미 완성해서 보낸다 — 단계 이름도 기준 문장도 여기서 다시 만들지 않는다.
+    어휘를 훅에 다시 적으면 두 화면이 갈린다.
+    """
+    row = _placed(track)
+    rung = str(row.get("rung") or "")
+    if not rung:
+        return []
+    bar = str(row.get("bar") or "").strip()
+    line = "⠶ 지금 자리 — `%s` 트랙 %s" % (row.get("track") or "?", rung) + (" (%s)" % bar if bar else "")
+    ahead = str(row.get("next_bar") or "").strip()
+    left = str(row.get("remaining") or "").strip()
+    if ahead:
+        line += " · 다음 칸 — %s" % ahead + (": %s" % left if left else "")
+    return [line]
+
+
+def _placed(track: object) -> dict:
+    """`track` 칸에서 화면에 올릴 트랙 한 행. 못 읽으면 빈 사전.
+
+    `place()` 산출이 통째로 와도, 트랙 한 행만 와도 같은 행을 고른다. 통째로 온 경우에는
+    `active`(지금 물음이 열려 있는 트랙)를 먼저 보고, 없으면 정렬된 첫 행을 쓴다 — `place`는
+    단계가 높은 순으로 정렬해 보낸다.
+    """
+    if isinstance(track, dict) and track.get("rung"):
+        return track
+    rows = track.get("tracks") if isinstance(track, dict) else track
+    if not isinstance(rows, list):
+        return {}
+    named = [row for row in rows if isinstance(row, dict) and row.get("rung")]
+    open_now = track.get("active") if isinstance(track, dict) else None
+    active = {str(name) for name in open_now} if isinstance(open_now, list) else set()
+    for row in named:
+        if str(row.get("track") or "") in active:
+            return row
+    return named[0] if named else {}
 
 
 def _why(row: object, limit: int = 4) -> list:
@@ -349,9 +416,10 @@ def _explain(exp: object, limit: int = EXPLAIN_SHOWN, quiz: bool = True) -> list
     return lines
 
 
-def _say(protocol: str, mode: str, text: str) -> None:
+def _say(protocol: str, mode: str, text: str, extra: dict | None = None) -> None:
     """사람에게 보이는 한 줄기 — 필드는 호스트와 이벤트가 함께 정한다. 그 자리에서 안 읽는
-    이름으로 적으면 카드는 조용히 사라진다.
+    이름으로 적으면 카드는 조용히 사라진다. `extra` 는 같은 객체에 함께 넣을 다른 통로의
+    필드다(`_tell_model`) — 통로가 달라도 stdout 객체는 하나여야 한다.
 
     세 레인이 각자 이 리터럴을 적고 있어서 codex 는 한 파일 안에 규약이 둘이었다: Stop 은
     `systemMessage`, brief·tip 은 평문 stdout. 평문 쪽이 틀렸다 — codex 의
@@ -369,7 +437,63 @@ def _say(protocol: str, mode: str, text: str) -> None:
         key = "followup_message" if mode == "note" else "user_message"
     else:
         key = "systemMessage"  # Claude Code·Codex 공통 — 세 이벤트 전부 이 필드를 사람에게 보인다
-    sys.stdout.write(json.dumps({key: text}, ensure_ascii=False) + "\n")
+    _write({key: text, **(extra or {})})
+
+
+def _write(fields: dict) -> None:
+    """한 번 호출에 JSON 객체 **하나**. 두 줄을 쓰면 호스트의 파서가 stdout 전체를 못 읽는다.
+
+    UserPromptSubmit 에서 그 실패는 조용하지 않고 위험하다 — Claude Code 는 JSON 으로 안 읽히는
+    출력을 평문 컨텍스트로 모델에 넣으므로, 사람에게 보내려던 물음 문장이 그대로 모델에게 간다.
+    그래서 사람 통로와 모델 통로의 필드를 같은 객체 하나에 함께 넣는다.
+    """
+    if fields:
+        sys.stdout.write(json.dumps(fields, ensure_ascii=False) + "\n")
+
+
+def _tell_model(protocol: str, text: str) -> dict:
+    """모델 통로가 읽는 필드 — 호스트마다 이름이 다르다. **물음 문장은 절대 안 넣는다.**
+
+    넣지 않는 것이 이 층의 조건이다: 열린 물음을 읽은 모델은 그 물음에 대신 답하고, 그러면
+    되짚기가 막으려던 바로 그 일이 일어난다(`_run_brief` 의 같은 계약). 여기로 가는 것은 표식과
+    받아 적는 방법뿐이라, 모델은 물음이 **열려 있다는 사실**과 오딘의 답을 **어디에 적는지**만
+    알고 무엇을 물었는지는 모른다.
+
+    스키마는 `asgard_hooklib.inject.host_context`·`cursor_context` 와 같다. 그쪽을 부르지 않는
+    이유는 그 둘이 각자 stdout 한 줄을 쓰기 때문이다 — 이 레인은 사람 카드와 한 객체로 나간다.
+    """
+    if not text:
+        return {}
+    if protocol == "cursor":
+        return {"additional_context": text}
+    return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": text}}
+
+
+def _marks(card: str) -> list[str]:
+    """브리핑 카드에 있는 물음 표식(cid) — 여덟 자리 16진수. 카드에서 이것만 꺼낸다.
+
+    표식만 꺼내는 것이 물음 문장을 모델에서 떼어 놓는 방법이다. 엔진에 다시 묻지 않는 이유는
+    같은 판정을 두 번 돌리면 턴 시작이 두 배로 느려지고, 느린 안내는 꺼지는 안내이기 때문이다.
+    """
+    out: list[str] = []
+    seen: set[str] = set()  # 카드가 길어져도 중복 확인은 조회 한 번이다 — 목록을 다시 훑지 않는다
+    for mark in re.findall(r"\[([0-9a-f]{8})\]", card):
+        if mark not in seen:
+            seen.add(mark)
+            out.append(mark)
+    return out[:MAX_MARKS]
+
+
+def _scribe(marks: Sequence[str]) -> str:
+    """모델에게 가는 문장 — 열린 물음의 표식과 오딘의 답을 옮겨 적는 방법. 물음은 안 들어간다."""
+    if not marks:
+        return ""
+    return (
+        "[tutor] 오딘 화면에 열린 물음이 있어요 — 표식 %s. 물음 문장은 여기 안 넣어요.\n"
+        "당신이 답하지 마세요. 오딘이 답하면 그 문장 **그대로** "
+        '`asgard tutor --answer %s --note "<오딘이 한 말>"` 로 옮겨 적으세요. 요약하면 깊이 판정이 '
+        "오딘의 답 대신 당신의 요약을 세게 돼요." % (" · ".join(marks), marks[0])
+    )
 
 
 def _at(step: dict) -> str:
@@ -530,9 +654,16 @@ def _prompt_of(data: dict) -> str:
 def _run_brief(protocol: str, root: str, sid: str, data: dict) -> None:
     """일을 **시작하기 전에**이 자리에 남은 답 없는 물음을 사용자 앞에 놓는다 (UserPromptSubmit).
 
-    사용자에게만 보낸다. 모델에 넣지 않는 이유가 이 층의 핵심이다 — 모델이 열린 물음을 보면
-    그 물음에 **대신 답해** 버리고, 그러면 되짚기가 막으려던 바로 그 일이 일어난다(미미르 auga
-    계약: 물음은 대신 닫아 주는 체크리스트가 아니다).
+    **물음 문장**은 사용자에게만 간다. 모델이 열린 물음을 보면 그 물음에 **대신 답해** 버리고,
+    그러면 되짚기가 막으려던 바로 그 일이 일어난다(미미르 auga 계약: 물음은 대신 닫아 주는
+    체크리스트가 아니다).
+
+    모델에게는 대신 표식과 받아 적는 방법이 간다(`_tell_model`). 오딘과 한 방에 있는 것은
+    에이전트뿐이라, 오딘이 말한 답을 기록으로 옮기는 일은 에이전트가 진다 — 아무도 안 옮기면
+    `--answer` 는 도는데 아무도 안 치는 상태가 되고, 그게 물음 36건에 답 0건이던 형상이다.
+
+    지휘 규약은 카드가 래치에 걸린 턴에도 나간다. 오딘이 답하는 턴은 물음을 본 턴 **다음**이라,
+    카드와 같이 한 번만 보내면 정작 받아 적어야 할 턴에 방법을 모르는 모델이 서 있다.
     """
     exe = shutil.which("asgard")
     if not exe:
@@ -540,9 +671,91 @@ def _run_brief(protocol: str, root: str, sid: str, data: dict) -> None:
     card = _brief(exe, root, _prompt_of(data))
     if not card:
         return
+    told = _tell_model(protocol, _scribe(_marks(card)))
     if _latched(root, sid, hashlib.sha256(card.encode("utf-8")).hexdigest()[:16], "brief-"):
+        _write(told)
         return
-    _say(protocol, "brief", card)
+    _say(protocol, "brief", card, told)
+
+
+def _recap(exe: str, root: str, sid: str) -> str:
+    """`asgard tutor --recap --span session` 의 서사를 그대로 옮긴다 — 훅은 요약기를 안 갖는다.
+
+    열린 물음·가장 오래된 물음·부채 신호를 함께 만드는 자는 `asgard.tutor.narrative.recap`
+    하나다. 같은 것을 여기서 다시 세면 판정이 두 벌이 되고, 두 벌은 반드시 어긋난다(`_brief`·
+    `_lesson` 과 같은 계약). 부르는 모양도 `_brief` 를 그대로 따른다 — 못 부르면 빈 문자열이고,
+    안내는 그 절만 빼고 나간다.
+    """
+    try:
+        result = subprocess.run(
+            [exe, "tutor", "--recap", "--span", "session", "--sid", sid, "--json"],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            cwd=root,
+            encoding="utf-8",
+            errors="replace",
+        )
+        return str(json.loads(result.stdout or "{}").get("recap") or "").strip()
+    except Exception:
+        return ""  # 서사 불능이 안내를 통째로 막지 않는다 — 남은 두 절은 그대로 나간다
+
+
+def _guide(lesson: dict, paths: Sequence[str], back: Sequence[dict], recap: str) -> str:
+    """세션을 닫는 안내 한 장. 물음이 아니라 **보고**라, 오딘이 아무것도 안 쳐도 읽을 것이 남는다.
+
+    이 저장소의 실측이 이 절을 만든 자리다: 튜터가 36번 묻고 답을 0번 받았다. 사람이 한 번
+    쳐야 값이 생기는 층은 0으로 수렴하고, 화면에서는 정상 동작과 구분이 안 된다. 그래서 마지막
+    화면만은 답을 안 해도 값이 남게 둔다 — 표식은 그대로 싣되, 안 치면 그냥 읽은 것으로 끝난다.
+
+    세 절이다: 이번 세션이 바꾼 것(경로와 `_why`), 아직 답 없는 것(`--recap` 서사), 그 물음들의
+    표식과 문장. 경로 목록만 남는 회차는 빈 문자열로 돌려준다 — 파일 이름 여덟 줄은 안내가
+    아니고, 빈 카드는 다음 카드의 신뢰를 깎는다.
+    """
+    why = _why(lesson.get("rationale"))
+    if not (recap or why or back):
+        return ""
+    lines = ["⠶ 마무리 안내 — 이번 세션에 파일 %d개를 고쳤어요." % len(paths)]
+    lines += ["  " + path for path in paths[:MAX_GUIDE_PATHS]]
+    if len(paths) > MAX_GUIDE_PATHS:
+        lines.append("  …외 %d개는 이번 세션 기록에 있어요" % (len(paths) - MAX_GUIDE_PATHS))
+    if why:
+        lines += ["", *why]
+    if recap:
+        lines += ["", recap]
+    if back:
+        lines.append("")
+        for row in back[:MAX_MARKS]:
+            lines.append("  ↩ 아직 답이 없어요 — %s  [%s]" % (_where(row, False), row.get("cid") or "?"))
+            lines.append("    ▸ %s" % row.get("ask"))
+    report = str(lesson.get("report") or "").strip() or REPORT_REL
+    lines.append("")
+    if back:
+        lines.append('  답은 `asgard tutor --answer <표식> "..."` — 지금 아니어도 남아 있어요.')
+    lines.append("  전체: %s  · 다시 보기: `asgard tutor --recap`" % report)
+    return "\n".join(lines)
+
+
+def _run_guide(
+    protocol: str, exe: str, root: str, sid: str, lesson: dict, paths: Sequence[str], back: Sequence[dict]
+) -> None:
+    """카드가 안 나가는 Stop 의 침묵을 세션당 한 번 안내로 바꾼다.
+
+    래치 지문이 세션 표식인 것이 "한 번"의 전부다. 카드 래치(`_signature`)는 내용이 바뀌면 다시
+    열리지만 이 자리는 그러면 안 된다 — 안내는 세션마다 하나이고, 매 턴 끝에 다시 나가는 요약은
+    그 다음 것부터 안 읽힌다.
+
+    모델 통로는 열지 않는다(`_tell_model` 없음). Stop 에서 모델에게 말하는 길은 `decision=block`
+    뿐인데 그것은 턴을 막는 자고, 튜터는 관문이 아니다. 받아 적기는 다음 턴의 brief 레인이 이미
+    한다.
+    """
+    if _read_latch(root, sid, "guide-") == sid:
+        return
+    card = _guide(lesson, paths, back, _recap(exe, root, sid))
+    if not card:
+        return  # 아직 실을 것이 없다 — 래치도 안 태운다. 이 세션의 한 번은 그대로 남는다
+    _latched(root, sid, sid, "guide-")
+    _say(protocol, "note", card)
 
 
 def main() -> None:
@@ -576,9 +789,14 @@ def main() -> None:
         quiz = str(lesson.get("mode") or "quiz") == "quiz"
         told = _explain(lesson.get("explain"), quiz=quiz and not bool(points or back))
         why = _why(lesson.get("rationale")) if not quiz else []
+        # 이 턴에 새로 낼 카드가 없는 두 자리 — 물을 것도 설명할 것도 없거나, 같은 카드를 이미
+        # 놓았다. 여기서 그냥 끝내면 세션이 통째로 침묵으로 닫힌다. 대화가 끝나는 자리도 그 둘 중
+        # 하나라, 세션당 한 번은 침묵 대신 모아 준 안내를 놓는다.
         if not points and not back and not told and not why:
-            sys.exit(0)  # 물을 것도 설명할 것도 없으면 침묵한다 — 빈 카드는 다음 카드의 신뢰를 깎는다
+            _run_guide(protocol, exe, root, sid, lesson, paths, back)
+            sys.exit(0)
         if _latched(root, sid, _signature(points, back, [*told, *why])):
+            _run_guide(protocol, exe, root, sid, lesson, paths, back)
             sys.exit(0)
         _say(protocol, "note", _card(lesson, points, back, told, why))
     except Exception:

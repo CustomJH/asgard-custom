@@ -813,6 +813,119 @@ class RegistryTest(unittest.TestCase):
             skill_registry.install_plugin(source)
 
 
+class TutorSkillTest(unittest.TestCase):
+    """asgard-tutor — 1:1 왕복을 지는 계약이 실제로 배선되고, 실제로 닿는가.
+
+    이 시험이 있는 이유는 실측이다. `.asgard/tutor/growth.json` 이 물음 36건에 답 0건이었고,
+    끊긴 자리는 층이 아니라 **선택**이었다: 튜터 스킬이 어디에도 없어 에이전트가 왕복을 질
+    근거가 0이었다. 그래서 여기서 재는 것은 본문의 문장이 아니라 세 가지다 — 등록됐는가,
+    오딘이 실제로 쓰는 말로 닿는가, 그리고 계약의 뼈대(서기·축자·자문 금지)가 본문에 남아
+    있는가. 셋 중 하나만 빠져도 이 층은 다시 36문 0답으로 돌아간다."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = self.tmp.name
+        self.old_home = os.environ.get("HOME")
+        os.environ["HOME"] = os.path.join(self.root, "home")
+        skill_bank._cache.clear()
+
+    def tearDown(self):
+        if self.old_home is None:
+            os.environ.pop("HOME", None)
+        else:
+            os.environ["HOME"] = self.old_home
+        skill_bank._cache.clear()
+        self.tmp.cleanup()
+
+    def test_catalog_carries_the_skill_and_serves_the_body(self):
+        self.assertIn("asgard-tutor", {row["name"] for row in skill_registry.skills(self.root)})
+        self.assertIn("scribe, not the student", skill_registry.show_skill(self.root, "asgard-tutor") or "")
+
+    def test_the_model_may_discover_it_on_its_own(self):
+        """자동 선택이 이 스킬의 전부다 — 명시 호출 전용이면 왕복은 다시 아무도 안 연다."""
+        from asgard.skill_registry.frontmatter import _implicit
+        from asgard.templates.tutor import TUTOR_SKILL_MD
+
+        self.assertTrue(_implicit(TUTOR_SKILL_MD))
+
+    def test_the_description_says_when_to_load_in_the_words_odin_uses(self):
+        """카드 설명은 호스트가 읽는 유일한 선택 표면이다 — 조건이 없으면 아무도 안 고른다."""
+        from asgard.skill_registry.frontmatter import _description
+        from asgard.templates.tutor import TUTOR_SKILL_MD
+
+        description = _description(TUTOR_SKILL_MD)
+        self.assertIn("Load when", description)
+        for phrase in ("튜터", "시험해줘", "quiz me"):
+            self.assertIn(phrase, description)
+
+    def test_odins_own_phrasing_reaches_the_contract(self):
+        for task in (
+            "튜터랑 1:1로 짚어줘",
+            "이번 변경 나한테 물어봐 줘",
+            "내가 이해했는지 시험해줘",
+            "이 모듈 가르쳐줘",
+            "be my tutor on this module",
+            "quiz me on what just changed",
+            "asgard tutor 로 답을 적어 줘",
+        ):
+            names = [name for name, _ in skill_registry.resolve_skills(self.root, task, "worker")]
+            self.assertIn("asgard-tutor", names, task)
+
+    def test_ordinary_code_work_does_not_pull_the_contract(self):
+        """부정 사례를 먼저 적는다 — 한국어는 낱말 경계가 없어 흔한 낱말 하나가 전부를 끈다.
+
+        아래 셋은 트리거 후보로 실제로 검토했다가 뺀 낱말이 그대로 나오는 문장이다:
+        `짚어`·`1:1`·`질문`. 라틴 쪽은 `tutorial` 이 `tutor` 를 통째로 품는다."""
+        for task in (
+            "이 버그 짚어줘",
+            "확인 대화상자로 물어봐 줘",
+            "criteria 를 1:1로 매핑해 줘",
+            "질문 목록 테이블 스키마를 바꿔 줘",
+            "write a tutorial for the readme",
+            "add a quiz component to the landing page",
+            "회귀 버그 테스트",
+        ):
+            names = [name for name, _ in skill_registry.resolve_skills(self.root, task, "worker")]
+            self.assertNotIn("asgard-tutor", names, task)
+
+    def test_the_judging_seats_never_receive_it(self):
+        """판정자·loki 에게 advisory 를 안 넣는 규율 — 판정 표면에 지시가 섞이면 독립성이 죽는다."""
+        for agent in ("verifier", "loki"):
+            names = [name for name, _ in skill_registry.resolve_skills(self.root, "튜터랑 1:1로 짚어줘", agent)]
+            self.assertNotIn("asgard-tutor", names, agent)
+
+    def test_the_body_carries_the_round_trip_that_closes_the_loop(self):
+        """36문 0답의 정체는 이 두 줄이 어디에도 없었던 것이다."""
+        from asgard.templates.tutor import TUTOR_SKILL_MD
+
+        self.assertIn('asgard tutor --answer <mark> --note "<Odin\'s sentence, unchanged>"', TUTOR_SKILL_MD)
+        self.assertIn("asgard tutor --dismiss <mark>", TUTOR_SKILL_MD)
+
+    def test_the_body_forbids_summarising_and_answering_for_odin(self):
+        """요약은 `_depth` 가 길이로 재기 때문에 남의 글을 오딘의 깊은 답으로 셈한다."""
+        from asgard.templates.tutor import TUTOR_SKILL_MD
+
+        self.assertIn("에이전트는 학생이 아니라 서기다", TUTOR_SKILL_MD)
+        self.assertIn("Do not summarise", TUTOR_SKILL_MD)
+        self.assertIn("## You never answer the tutor's question", TUTOR_SKILL_MD)
+
+    def test_the_resolved_body_drops_the_frontmatter(self):
+        from asgard.templates.tutor import resolve_tutor_skills
+
+        ((name, body),) = resolve_tutor_skills("튜터 붙여 줘")
+        self.assertEqual(name, "asgard-tutor")
+        self.assertTrue(body.startswith("# asgard-tutor"))
+
+    def test_the_adapter_is_generated_into_both_skill_scopes(self):
+        """`.claude/skills/` 어댑터는 손으로 안 적는다 — 등록하면 스캐폴드가 그린다."""
+        from asgard.commands.setup import plan_files
+
+        files, _label = plan_files(False, False, False, os.path.join(self.root, "scaffold"))
+        paths = {path for path, _body in files}
+        for scope in (".claude", ".agents"):
+            self.assertIn(os.path.join(self.root, "scaffold", scope, "skills", "asgard-tutor", "SKILL.md"), paths)
+
+
 class TriggerLaneTest(unittest.TestCase):
     """트리거가 어느 레인을 타는가 — 라틴은 낱말 경계, 한국어는 부분 문자열.
 

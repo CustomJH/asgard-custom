@@ -579,6 +579,7 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
                     "skill_router",
                     "thor",
                     "trinity",
+                    "tutor",
                     "worker",
                 }
             ),

@@ -232,6 +232,12 @@ def tutor(
     quiz: bool = typer.Option(
         False, "--quiz", help="ask instead of explain: put the questions back and wait for --answer"
     ),
+    track: bool = typer.Option(
+        False, "--track", help="where you stand area by area: the rung you are on and the bar for the next one"
+    ),
+    exam: str = typer.Option(
+        "", "--exam", help="sit a track's promotion exam: name the call sites, then grade it with --answer"
+    ),
     sid: str = typer.Option("", "--sid", help="the session this belongs to (hooks pass it; scopes --tip and --recap)"),
     text: str = typer.Option("", "--text", help="the request text --brief matches against"),
     answer: str = typer.Option("", "--answer", help="close a question with your answer (checkpoint mark)"),
@@ -279,6 +285,8 @@ def tutor(
             depth=depth,
             mission=mission,
             quiz=quiz,
+            track=track,
+            exam=exam,
         )
     )
 

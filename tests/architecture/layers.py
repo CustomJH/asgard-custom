@@ -127,6 +127,11 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 # 적용 등급의 tutor 가 그 이름을 재수출해 표면에 넣는다. tutor 를 부르지 않는
                 # 것이 이 자리의 조건이라 `_normalise` 도 여기서 따로 갖는다.
                 "tutor_brief",
+                # tutor_track — 사람이 영역마다 어디까지 왔는가(트랙×단계)와 다음 단계의 기준.
+                # 판정 등급의 tutor_teach 에서 영역 이름을, 계측 등급의 tutor_growth 에서 답한
+                # 기록을 읽으므로 자리는 그 둘보다 위(적용)다. tutor 를 부르지 않는 것이 이 자리의
+                # 조건이다 — 부르면 물음과 단계가 서로를 재게 되고 두 축이 한 축으로 무너진다.
+                "tutor_track",
                 "map_context",
                 "map_graph",
                 # map_lex — 질의 어휘 사전. craft_lex·thor_lex와 같은 자리다: 순수 표이고, 그것을
@@ -324,7 +329,12 @@ SUBTIERS: dict[str, list[tuple[str, frozenset[str]]]] = {
         # code_style_catalog — 판정 등급의 Tool 하나를 얹는다. 언어가 늘어도 판정은 안 바뀐다.
         ("규격 목록", frozenset({"code_style_catalog"})),
         # 결론을 소비한다 — 막고(thor_gate·freyja_gate) 고치고(craft_fix) 되짚는다(tutor).
-        ("적용", frozenset({"craft_fix", "freyja_gate", "thor_gate", "tutor"})),
+        # tutor_track 이 여기 있는 이유는 부등호다: 판정 등급의 tutor_teach 에서 영역 이름을,
+        # 계측 등급의 tutor_growth 에서 답한 기록을 읽어 "이 사람이 어디까지 왔는가"를 낸다.
+        # 판정 등급에 두면 tutor_teach 를 같은 등급에서 부르게 되고, 그건 이 표가 막는 방향이다.
+        # tutor 와 나란히 서지만 서로를 안 부른다 — 물음과 단계가 서로를 재기 시작하면 두 축이
+        # 한 축으로 무너진다.
+        ("적용", frozenset({"craft_fix", "freyja_gate", "thor_gate", "tutor", "tutor_track"})),
         # 적용 결과와 튜터의 결정론적 사실을 읽어 승인형 제안 기록으로 만든다. 자동 적용은 없다.
         ("승인형 제안", frozenset({"review_agent"})),
     ],

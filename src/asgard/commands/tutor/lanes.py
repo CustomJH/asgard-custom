@@ -1,4 +1,4 @@
-"""기본 갈래를 뺀 나머지 명령 갈래 — 성장·부채·서사·팁·예상·설명·향하는 곳·물음 닫기·브리핑.
+"""기본 갈래를 뺀 나머지 명령 갈래 — 성장·트랙·승급 시험·부채·서사·팁·예상·설명·향하는 곳·물음 닫기·브리핑.
 
 부채 · 되짚기 서사 · 도중 팁 · 기대 사전 등록 넷은 같은 자리에서 왔다. 되짚기는 지금까지
 **턴 시작**(brief)과 **턴 끝**(note) 두 시점에만 닿았는데, 사람이 실제로 항복하는 자리는 그
@@ -14,10 +14,11 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
+from typing import Any
 
 from ... import tutor, tutor_growth, ui
 from .engines import _as_dict, _engine, _explanation, _learned
-from .labels import _KIND, _LADDER, _LEVEL_MARK, _SIGNAL_LABEL
+from .labels import _EXAM_BLIND, _KIND, _LADDER, _LEVEL_MARK, _SIGNAL_LABEL, _TRACK_MARK
 from .screen import _emit_explain, _emit_said
 
 
@@ -49,6 +50,139 @@ def _run_progress(root: str, json_out: bool) -> int:
     if data["expired"]:
         ui.step(ui.dim(f"    만료 {data['expired']}건 — 코드가 사라졌거나 끝까지 답이 없던 물음"))
     _emit_said(data)
+    ui.done()
+    return 0
+
+
+def _placement(root: str) -> dict | None:
+    """트랙 배치 하나. 엔진이 없거나 던지면 None — 침묵이지 실패가 아니다(튜터 계약 ②).
+
+    `--track` 화면과 훅이 읽는 `track` 칸이 같은 자리에서 이걸 부른다. 부르는 자리가 둘이어도
+    판정하는 자리는 여기 하나다 — 배치를 두 곳에서 만들면 카드 줄과 화면이 갈린다.
+    """
+    engine = _engine("tutor_track")
+    if engine is None:
+        return None
+    try:
+        return engine.place(root)
+    except Exception:
+        return None
+
+
+def _run_track(root: str, json_out: bool) -> int:
+    """지금 어느 영역까지 갔는가 — 트랙마다 지금 단계, 다음 단계의 기준, 아직 모자란 것.
+
+    `--progress`가 물음의 **종류**를 세는 화면이라면 이쪽은 사람이 **어느 영역까지 갔나**를 놓는다.
+    문장은 전부 `tutor_track.place`가 완성해서 보낸다 — 단계 이름도 기준 문장도 여기서 다시 만들지
+    않는다. 어휘 사본이 둘이면 언젠가 갈리고, 그때 두 화면이 같은 트랙을 다르게 부른다.
+    """
+    placed = _placement(root)
+    if json_out:
+        print(json.dumps(placed, ensure_ascii=False, indent=2))
+        return 0
+    ui.head("tutor · 지금 어디까지 왔나")
+    if placed is None:
+        # 두 사정을 갈라 적는다 — 엔진이 없는 것과 배치가 죽은 것은 다음에 할 일이 다르다
+        # (`_run_explain`과 같은 계약).
+        ui.ok("트랙을 재는 기능이 아직 없어요" if _engine("tutor_track") is None else "이번엔 배치를 못 했어요")
+        ui.done()
+        return 0
+    mission = str(placed.get("mission") or "").strip()
+    if mission:
+        ui.phase(f"향하는 곳 — {mission}")
+    rows = placed.get("tracks") or []
+    if not rows:
+        ui.ok("아직 트랙이 없어요 — 되짚기 물음에 좌표가 붙으면 그때 생겨요")
+    active = {str(name) for name in placed.get("active") or ()}
+    for row in rows:
+        _emit_track(row, str(row.get("track") or "") in active)
+    notes = placed.get("notes") or ()
+    # 못 본 것은 트랙 아래가 아니라 제 절에 놓는다 — 같은 들여쓰기로 이어 붙이면 마지막 트랙의
+    # 사정으로 읽힌다(튜터 계약 ③: 못 본 것이 화면에 있어야 "0건"이 "안 봤다"와 안 겹친다).
+    if notes:
+        ui.phase("이 셈이 못 보는 것")
+    for note in notes:
+        ui.step(ui.dim(f"    {note}"))
+    ui.done()
+    return 0
+
+
+def _emit_track(row: dict, live: bool) -> None:
+    """트랙 한 줄과 그 아래 세 조각. 기준(`next_bar`)을 빼면 사다리가 아니라 점수판이 된다."""
+    ui.step(f"{_TRACK_MARK[int(live)]} {row.get('track') or '?'} — {row.get('rung') or '?'} ({row.get('bar') or ''})")
+    ui.step(ui.dim(f"    물음 {row.get('asked', 0)}건 · 자기 문장으로 답한 것 {row.get('deep', 0)}건"))
+    ahead = str(row.get("next_bar") or "").strip()
+    left = str(row.get("remaining") or "").strip()
+    if ahead:
+        ui.step(ui.dim(f"    다음 칸 — {ahead}"))
+    if left:
+        ui.step(ui.dim(f"    아직 — {left}"))
+
+
+def _run_exam(root: str, track: str, answer: str, json_out: bool) -> int:
+    """승급 시험. 인자 없이 부르면 물음, `--answer`와 같이 부르면 채점.
+
+    여기는 채점하는 유일한 자리이고 그래도 계약 ①과 안 부딪힌다 — 안 채점하기로 한 것은 매일
+    놓이는 카드 물음이고, 이건 오딘이 직접 부르는 별개 표면이다. 결과는 `track.json`에만 남는다.
+    """
+    engine = _engine("tutor_track")
+    if engine is None:
+        if json_out:
+            print(json.dumps({"track": track, "question": ""}, ensure_ascii=False, indent=2))
+        else:
+            ui.head("tutor · 승급 시험")
+            ui.ok("시험을 낼 기능이 아직 없어요")
+            ui.done()
+        return 0
+    if answer:
+        return _emit_grade(engine, root, track, answer, json_out)
+    return _emit_exam(engine, root, track, json_out)
+
+
+def _emit_exam(engine: Any, root: str, track: str, json_out: bool) -> int:
+    question, qualname = engine.pick_exam(root, track)
+    if json_out:
+        print(json.dumps({"track": track, "question": question, "unit": qualname}, ensure_ascii=False, indent=2))
+        return 0
+    ui.head(f"tutor · 승급 시험 — {track}")
+    if not question:
+        ui.ok(
+            "이 트랙에는 아직 낼 시험이 없어요 — 자기 문장으로 답한 자리가 있어야 하고, "
+            f"그 단위를 부르는 자리가 {engine.EXAM_MIN}곳 이상이어야 해요"
+        )
+        ui.done()
+        return 0
+    ui.step(question)
+    ui.step(ui.dim(f'    답: `asgard tutor --exam {track} --answer "경로 하나 경로 둘 ..."`'))
+    ui.done()
+    return 0
+
+
+def _emit_grade(engine: Any, root: str, track: str, answer: str, json_out: bool) -> int:
+    passed, hit, total, missing = engine.grade(root, track, answer)
+    if json_out:
+        print(
+            json.dumps(
+                {"track": track, "passed": passed, "hit": hit, "total": total, "missing": missing},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+    ui.head(f"tutor · 승급 시험 채점 — {track}")
+    if not total:
+        ui.ok("채점할 시험이 없어요 — `asgard tutor --exam <트랙>`으로 먼저 물음을 받으세요")
+        ui.done()
+        return 0
+    (ui.ok if passed else ui.warn)(f"{'통과예요' if passed else '아직이에요'} — 물은 {total}곳 중 {hit}곳")
+    for site in missing:
+        ui.step(ui.dim(f"    못 댄 자리 — {site}"))
+    # 회수를 채우고도 떨어지는 길은 하나뿐이다 — 저장소에 없는 이름을 적은 것. `grade`는 그 목록을
+    # 안 돌려주므로(못 댄 자리만 돌려준다) 통과선을 엔진 상수로 되짚어 사정만 적는다.
+    if not passed and hit * engine.PASS_DEN >= total * engine.PASS_NUM:
+        ui.step(ui.dim("    회수는 채웠는데 저장소에 없는 이름이 섞였어요 — 그건 회수가 아니라 지어낸 자리예요"))
+    ui.step(ui.dim(f"    찾은 자리 전부가 아니라 그중 최대 {engine.EXAM_CAP}곳만 물어요"))
+    ui.step(ui.dim(f"    {_EXAM_BLIND}"))
     ui.done()
     return 0
 

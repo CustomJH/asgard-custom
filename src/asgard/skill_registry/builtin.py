@@ -3,36 +3,17 @@
 from __future__ import annotations
 
 
-def _builtin_plugins() -> dict[str, dict]:
-    """Built-ins are imported lazily; several skill bodies are intentionally large."""
-    from ..templates import BRIDGE_SKILL_MD, SEAL_SKILL_MD, SELFTEST_MD
-    from ..templates.bragi import BRAGI_SKILLS
+def _specialist_plugins() -> dict[str, dict]:
+    """딜리버리 전문가 넷 — 역할 코어 계약 하나에 그 역할 전용 팩이 붙는 같은 모양이다.
+
+    본체 표에서 떼어 둔 이유는 추상 수준이다. 아래 `_builtin_plugins` 의 나머지 항목은 역할을
+    가리지 않는 정책(배차·실행 표면·1:1·문체)인데, 이 넷은 배차받는 좌석 자체를 정의한다."""
     from ..templates.eitri import EITRI_SKILLS
     from ..templates.freyja import FREYJA_SKILLS, freyja_core_skill
-    from ..templates.just import JUST_SKILLS
-    from ..templates.lagom import LAGOM_SKILLS
-    from ..templates.memory import MEMORY_SKILL_MD
     from ..templates.mimir import MIMIR_SKILLS, mimir_core_skill
-    from ..templates.siege import SIEGE_SKILLS
     from ..templates.thor import THOR_SKILLS, eitri_core_skill, thor_core_skill
-    from ..templates.worker import WORKER_SKILLS
 
     return {
-        "asgard-core": {
-            "description": "Asgard bridge, self-test, seal, and memory contracts",
-            "skills": [
-                ("asgard-provider", BRIDGE_SKILL_MD),
-                ("asgard-test", SELFTEST_MD),
-                ("asgard-seal", SEAL_SKILL_MD),
-                ("asgard-memory", MEMORY_SKILL_MD),
-            ],
-        },
-        "worker": {
-            "description": "Common delivery debugging and testing policy",
-            "skills": WORKER_SKILLS,
-            "agents": ("worker", "thor", "thor-lead"),
-            "resolver": "worker",
-        },
         "freyja": {
             "description": "Freyja UI/UX and frontend delivery contract",
             "skills": [("asgard-freyja", freyja_core_skill()), *FREYJA_SKILLS],
@@ -57,6 +38,37 @@ def _builtin_plugins() -> dict[str, dict]:
             "agents": ("mimir",),
             "resolver": "mimir",
         },
+    }
+
+
+def _builtin_plugins() -> dict[str, dict]:
+    """Built-ins are imported lazily; several skill bodies are intentionally large."""
+    from ..templates import BRIDGE_SKILL_MD, SEAL_SKILL_MD, SELFTEST_MD
+    from ..templates.bragi import BRAGI_SKILLS
+    from ..templates.just import JUST_SKILLS
+    from ..templates.lagom import LAGOM_SKILLS
+    from ..templates.memory import MEMORY_SKILL_MD
+    from ..templates.siege import SIEGE_SKILLS
+    from ..templates.tutor import TUTOR_SKILLS
+    from ..templates.worker import WORKER_SKILLS
+
+    return {
+        "asgard-core": {
+            "description": "Asgard bridge, self-test, seal, and memory contracts",
+            "skills": [
+                ("asgard-provider", BRIDGE_SKILL_MD),
+                ("asgard-test", SELFTEST_MD),
+                ("asgard-seal", SEAL_SKILL_MD),
+                ("asgard-memory", MEMORY_SKILL_MD),
+            ],
+        },
+        "worker": {
+            "description": "Common delivery debugging and testing policy",
+            "skills": WORKER_SKILLS,
+            "agents": ("worker", "thor", "thor-lead"),
+            "resolver": "worker",
+        },
+        **_specialist_plugins(),
         # siege — 배차 장부를 모는 계약. 딜리버리 전문가와 달리 표면이 아니라 조율을 진다:
         # Worker 와 Thor 편대장이 배차를 여는 쪽이라 그 둘에만 붙인다.
         "siege": {
@@ -72,6 +84,15 @@ def _builtin_plugins() -> dict[str, dict]:
             "skills": JUST_SKILLS,
             "agents": ("worker", "thor", "thor-lead", "eitri", "freyja"),
             "resolver": "just",
+        },
+        # tutor — 오딘과의 1:1 왕복. 그 방에 오딘과 같이 있는 역할에만 붙는다: 배차된 전문가는
+        # 오딘에게 말을 걸지 않고, 판정자·loki 는 resolve 단계에서 이미 빠진다(advisory 를 판정
+        # 표면에 안 넣는 규율).
+        "tutor": {
+            "description": "Odin's one-on-one tutor session — put one question back, write his own sentence down",
+            "skills": TUTOR_SKILLS,
+            "agents": ("worker",),
+            "resolver": "tutor",
         },
         "lagom": {"description": "Lagom review, debt, and compression modes", "skills": LAGOM_SKILLS},
         "bragi": {"description": "Human-voice audit and rewrite for reports, any language", "skills": BRAGI_SKILLS},
@@ -107,4 +128,8 @@ def _builtin_resolver(name: str):
         from ..templates.just import resolve_just_skills
 
         return resolve_just_skills
+    if name == "tutor":
+        from ..templates.tutor import resolve_tutor_skills
+
+        return resolve_tutor_skills
     return None
