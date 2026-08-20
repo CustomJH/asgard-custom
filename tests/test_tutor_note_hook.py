@@ -645,9 +645,12 @@ class TutorNoteDeployedCopyTest(unittest.TestCase):
     _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     _SOURCE = os.path.join("src", "asgard", "hooks", "tutor_note.py")
     _DEPLOYED = os.path.join("hooks", "tutor-note.py")
-    # 이 훅을 실제로 부르는 호스트 둘. 자리를 세는 대신 이름을 적는다 — 사본 하나가 사라지면 그
+    # 이 훅을 실제로 부르는 호스트들. 자리를 세는 대신 이름을 적는다 — 사본 하나가 사라지면 그
     # 호스트에서 되짚기가 통째로 꺼지는데, 개수만 보면 "원래 하나였다"와 구분이 안 된다.
-    _WIRED = (".claude", ".codex")
+    # 다만 이름이 곧 요구는 아니다: 이 저장소는 루트 .gitignore 가 `.claude` 를 통째로 가려서
+    # 신규 체크아웃에 그 스캐폴드가 없다. 있는 것만 요구하지 않으면 사람 기계에서만 초록인
+    # 시험이 된다 (26-08-20 CI 실측: 로컬 6147건 통과, 같은 커밋이 CI 에서 이 자로 빨갰다).
+    _WIRED = (".claude", ".cursor", ".codex")
 
     def _read(self, rel: str) -> str:
         with open(os.path.join(self._ROOT, rel), encoding="utf-8") as handle:
@@ -659,6 +662,8 @@ class TutorNoteDeployedCopyTest(unittest.TestCase):
         self.assertTrue(found, "배포본을 한 벌도 못 찾았다 — 자리 규약이 바뀌면 이 자가 먼저 빨개진다")
 
         for host in self._WIRED:
+            if not os.path.isdir(os.path.join(self._ROOT, host, "hooks")):
+                continue  # 이 체크아웃이 안 들고 있는 스캐폴드 — 전체 실종은 위 assertTrue 가 잡는다
             self.assertIn(os.path.join(self._ROOT, host, self._DEPLOYED), found, "%s 배포본이 사라졌다" % host)
         for path in found:
             rel = os.path.relpath(path, self._ROOT)
