@@ -8,11 +8,14 @@
 실행: uv run pytest tests/test_project_documents.py
 """
 
+import contextlib
+import io
 import json
 import os
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -280,6 +283,77 @@ class TestRetrieval(Base):
         self.assertEqual(stats["documents"], 1)
         self.assertGreater(stats["chunks"], 1)
         self.assertGreater(stats["bytes"], 0)
+        self.assertEqual(stats["error"], "")
+
+    def test_stats_name_the_index_failure_that_search_swallows(self):
+        """잠긴 인덱스와 "적중 없음"이 화면에서 같아 보이면 안 된다.
+
+        회수 경로(`search`·`sync`)는 매 턴 도는 자리라 불능을 0으로 삼키는 것이 맞다. 진단은
+        반대다 — `stats` 가 사유를 같이 내지 않으면 doctor 행이 고장 난 레인을 "문서 0건"으로 그린다."""
+        import sqlite3
+
+        with mock.patch.object(documents, "_db", side_effect=sqlite3.OperationalError("database is locked")):
+            self.assertEqual(documents.sync(self.root), 0)  # 회수는 그대로 fail-open
+            stats = documents.stats(self.root)
+        self.assertIn("database is locked", stats["error"])
+        self.assertEqual(stats["chunks"], 0)
+
+    def test_two_revisions_of_one_document_do_not_take_both_slots(self):
+        """`save_document` 는 개정판을 지우지 않는다(증거) — 그래서 인덱스에 글자가 같은 조각이 둘 있다.
+
+        주입 칸은 두 개뿐이라, 둘 다 같은 문장이 되면 독자는 두 번째 문서를 통째로 못 본다.
+        26-08-20 감사가 이 저장소에서 실측한 모양이 정확히 그것이다."""
+        os.makedirs(os.path.join(self._tmp.name, "2판"))
+        revised = self._write("2판/계량기-요구사항.md", _spec_text() + "\n## 81.1 새 절\n추가된 절.\n")
+        documents.save_document(self.root, ingest.prepare(revised))
+        hits = documents.search(self.root, "METER-017", k=2)
+        self.assertTrue(hits)
+        self.assertEqual(
+            len({hit["excerpt"] for hit in hits}),
+            len(hits),
+            f"같은 글자가 칸을 둘 다 먹었다: {[h['excerpt'][:40] for h in hits]}",
+        )
+
+    def test_two_sections_of_one_document_still_come_back_together(self):
+        """중복을 접는 열쇠는 이름이 아니라 글자다 — 이름으로 접으면 한 문서에서 한 절밖에 못 읽는다."""
+        hits = documents.search(self.root, "요구사항 절", k=3)
+        self.assertEqual(len(hits), 3)
+        self.assertEqual({hit["name"] for hit in hits}, {"계량기-요구사항.md"})
+
+
+class TestRevisionDuplication(Base):
+    """이 저장소의 로컬 레인이 실제로 들고 있는 모양 — 문서 2건이 한 문서의 두 판이다."""
+
+    def _two_revisions(self) -> None:
+        head = "# 검증 기록\n\n## 이번에 고친 것\n\n" + "주입 상한이 설정으로 나왔다. " * 8
+        os.makedirs(os.path.join(self._tmp.name, "2판"))
+        for rel, text in (("검증-기록.md", head), ("2판/검증-기록.md", head + "\n추가로 고친 자리들. " * 8)):
+            documents.save_document(self.root, ingest.prepare(self._write(rel, text)))
+
+    def test_a_revision_that_only_grew_does_not_repeat_the_same_opening(self):
+        """뒤가 늘어난 판의 발췌는 짧은 판의 발췌를 앞에 그대로 담는다 — 글자가 정확히 같지 않다.
+
+        실측(26-08-20)에서 두 판의 같은 절이 103자와 215자로 나왔고, 짧은 쪽이 긴 쪽의 앞부분이다.
+        정확 비교만 하면 이 저장소의 실제 중복은 하나도 안 걸린다."""
+        self._two_revisions()
+        hits = documents.search(self.root, "주입 상한이 설정으로", k=3)
+        self.assertTrue(hits)
+        for index, first in enumerate(hits):
+            for second in hits[index + 1 :]:
+                same_document = first["name"] == second["name"] and first["heading"] == second["heading"]
+                overlaps = first["excerpt"] in second["excerpt"] or second["excerpt"] in first["excerpt"]
+                self.assertFalse(
+                    same_document and overlaps,
+                    f"한 문서의 두 판이 칸을 둘 다 먹었다: {first['excerpt'][:50]!r}",
+                )
+
+    def test_two_documents_that_share_words_are_both_still_reported(self):
+        """접는 범위는 같은 문서의 같은 절까지다 — 출처가 다르면 글자가 겹쳐도 독자가 알아야 한다."""
+        body = "## 이번에 고친 것\n\n주입 상한이 설정으로 나왔다. 기본 5초, 천장 30초.\n"
+        for rel in ("가-기록.md", "나-기록.md"):
+            documents.save_document(self.root, ingest.prepare(self._write(rel, f"# {rel}\n\n{body}")))
+        names = {hit["name"] for hit in documents.search(self.root, "주입 상한이 설정으로", k=3)}
+        self.assertEqual(names, {"가-기록.md", "나-기록.md"})
 
 
 class TestStaging(Base):
@@ -320,6 +394,72 @@ class TestRecallWiring(Base):
         with mock.patch("asgard.memory_context.find_config", return_value=None):
             note = memory_context.project_document_note("METER-017", start=self.root)
         self.assertIn('scope="project-document"', note)
+
+    def _recall(self, **kwargs) -> tuple[int, str]:
+        from asgard.commands.memory import run_project_recall
+
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            code = run_project_recall("METER-017", **kwargs)
+        return code, buffer.getvalue()
+
+    def _connected(self):
+        """뱅크는 아무것도 안 돌려주고, 문서 레인만 답하는 상태."""
+        return (
+            mock.patch(
+                "asgard.commands.memory.project.find_config",
+                return_value=(self.root, {"server": "http://memory", "bank": "b"}),
+            ),
+            mock.patch("asgard.commands.memory.project.is_backend_trusted", return_value=True),
+            mock.patch(
+                "asgard.commands.memory.project.backend_target",
+                return_value={"engine": "hindsight", "project_id": "p"},
+            ),
+            mock.patch("asgard.memory_bridge.server_recall", return_value=[]),
+            mock.patch("asgard.memory_context.filter_project_hits", return_value=([], {})),
+        )
+
+    def test_project_recall_reports_the_document_lane_in_its_own_section(self):
+        """감사 실측: 같은 질의가 `project-recall` 에서 0건, `documents.search` 로는 2건이었다.
+
+        문서를 넣은 사람이 그게 들어갔는지 확인할 표면이 하나도 없었다는 뜻이다."""
+        path = self._write("계량기-요구사항.md", _spec_text())
+        documents.save_document(self.root, ingest.prepare(path))
+        with contextlib.ExitStack() as stack:
+            for patch in self._connected():
+                stack.enter_context(patch)
+            code, text = self._recall()
+        self.assertEqual(code, 0)
+        self.assertIn("계량기-요구사항.md", text)
+
+    def test_the_json_surface_keeps_documents_apart_from_bank_records(self):
+        """문서는 저장소 정본의 발췌이고 record 는 승인을 지난 것이다 — 한 칸에 섞으면 독자가 못 가른다."""
+        path = self._write("계량기-요구사항.md", _spec_text())
+        documents.save_document(self.root, ingest.prepare(path))
+        with contextlib.ExitStack() as stack:
+            for patch in self._connected():
+                stack.enter_context(patch)
+            code, text = self._recall(json_out=True)
+        self.assertEqual(code, 0)
+        payload = json.loads(text)
+        self.assertEqual(payload["results"], [])
+        self.assertTrue(payload["documents"], "뱅크가 0건일 때도 문서 칸은 답해야 한다")
+        for key in ("name", "heading", "excerpt", "score"):
+            self.assertIn(key, payload["documents"][0])
+
+    def test_an_unconnected_project_still_shows_what_the_repo_holds(self):
+        """정본이 저장소에 있고 인덱스가 로컬이라 이 레인은 backend 연결과 무관하게 돈다.
+
+        연결을 안내하는 종료 코드는 그대로 둔다 — 뱅크가 미연결인 것은 여전히 사실이다."""
+        path = self._write("계량기-요구사항.md", _spec_text())
+        documents.save_document(self.root, ingest.prepare(path))
+        with (
+            contextlib.chdir(self.root),
+            mock.patch("asgard.commands.memory.project.find_config", return_value=None),
+        ):
+            code, text = self._recall()
+        self.assertNotEqual(code, 0)
+        self.assertIn("계량기-요구사항.md", text)
 
     def test_ingest_cli_preview_names_the_lane(self):
         from typer.testing import CliRunner

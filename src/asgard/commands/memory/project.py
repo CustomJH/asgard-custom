@@ -258,6 +258,31 @@ def run_project_rehydrate(
     return _guard(_do)
 
 
+def _document_lane_hits(query: str, found: tuple[str, dict] | None, max_results: int) -> list[dict]:
+    """로컬 문서 레인 적중 — backend 와 별개다. 한 발췌가 220자이므로 최대 5개까지만 든다.
+
+    정본이 저장소에 있고 인덱스가 로컬이라 연결이 없어도, 서버가 죽어 있어도 답한다. 그래서
+    조회는 연결 검사보다 먼저 이것을 손에 든다 — 미연결로 끝나는 실행도 저장소가 들고 있는
+    문서는 말해야 한다. 뿌리를 고르는 법은 주입 경로와 같게 둔다
+    (`memory_context.project_document_note`): 진단이 재는 것과 프롬프트에 실리는 것이 같아야 한다."""
+    from ...project_memory import documents
+
+    return documents.search(found[0] if found else os.path.realpath(os.getcwd()), query, k=min(max_results, 5))
+
+
+def _show_document_lane(hits: list[dict], json_out: bool) -> None:
+    """문서 적중을 뱅크 record 와 갈라 낸다 — `--json` 은 `documents` 칸이 같은 일을 한다.
+
+    절을 따로 세우는 이유는 출처가 다르기 때문이다: record 는 승인 게이트를 지난 기록이고
+    이쪽은 저장소 정본의 발췌라, 한 목록에 섞이면 독자가 무엇을 믿어야 하는지 못 가른다."""
+    if not hits or json_out:
+        return
+    ui.head("문서 레인 — 저장소 정본 발췌 (승인된 record 가 아니에요)")
+    for hit in hits:
+        where = f" · {hit['heading']}" if hit["heading"] else ""
+        print(f"  {hit['name']}{where}: {hit['excerpt']}")
+
+
 def run_project_recall(
     query: str,
     max_results: int = 8,
@@ -269,7 +294,8 @@ def run_project_recall(
 
     MCP 서버는 사용자가 열어야 열리므로 조회가 그쪽에만 있으면 닫힌 세션에서는 2차 메모리를
     아예 못 본다. 두 표면은 같은 `filter_project_hits` 를 쓴다 — 여기서만 무엇을 왜 뺐는지
-    사유별로 같이 낸다 (`--unfiltered` 는 태그 사전 필터 없이 저장소가 무엇을 들고 있는지 본다)."""
+    사유별로 같이 낸다 (`--unfiltered` 는 태그 사전 필터 없이 저장소가 무엇을 들고 있는지 본다).
+    뱅크 record 와 문서 레인은 `_show_document_lane` 이 갈라 낸다 — 출처가 다르기 때문이다."""
     errors.set_json_surface(json_out)
 
     def _do() -> int:
@@ -277,7 +303,9 @@ def run_project_recall(
         from ...memory_context import INJECTABLE_TAGS, drop_note, filter_project_hits, hit_body, hit_provenance
 
         found = find_config(os.getcwd())
+        docs = _document_lane_hits(query, found, max_results)
         if not found:
+            _show_document_lane(docs, json_out)
             raise errors.Unavailable("project memory is not connected — run `asgard memory connect <endpoint>`")
         root, cfg = found
         if not is_backend_trusted(cfg):
@@ -305,6 +333,7 @@ def run_project_recall(
                     "candidates": len(hits),
                     "dropped": dropped,
                     "results": rows,
+                    "documents": docs,
                 }
             )
             return 0
@@ -317,8 +346,9 @@ def run_project_recall(
             ui.step(
                 "저장소에 무엇이 있는지 보려면 --unfiltered, 자격은 scope=project·status=active·confidence=verified 셋이에요"
             )
-            return 0
-        print(ui.dim(f"후보 {len(hits)}건 중 {len(rows)}건{note} — 힌트일 뿐, 다 됐다는 증거는 아니에요"))
+        else:
+            print(ui.dim(f"후보 {len(hits)}건 중 {len(rows)}건{note} — 힌트일 뿐, 다 됐다는 증거는 아니에요"))
+        _show_document_lane(docs, json_out)
         return 0
 
     return _guard(_do)

@@ -290,6 +290,37 @@ def lane_present(root: str) -> bool:
     return os.path.exists(_index_path(root))  # 정본이 지워졌으면 인덱스도 비워야 한다
 
 
+def _sync(root: str) -> int:
+    """`sync` 의 알맹이 — 실패하면 그대로 올린다. 진단(`stats`)이 사유를 읽는 자리다."""
+    if not lane_present(root):
+        return 0
+    digest = _manifest(root)
+    conn = _db(root)
+    try:
+        row = conn.execute("SELECT value FROM meta WHERE key = 'manifest'").fetchone()
+        if row and row[0] == digest:
+            return int(conn.execute("SELECT count(*) FROM doc").fetchone()[0])
+        seq = 0
+        with conn:
+            conn.execute("DELETE FROM doc")
+            for meta, body, path in load_documents(root):
+                name = str(meta.get("name") or os.path.basename(path))
+                for heading, piece in chunk(body):
+                    seq += 1
+                    conn.execute(
+                        "INSERT INTO doc(seq, name, document_id, path, heading, body) VALUES(?,?,?,?,?,?)",
+                        (seq, name, str(meta.get("document_id") or ""), path, heading, piece),
+                    )
+            conn.execute(
+                "INSERT INTO meta(key, value) VALUES('manifest', ?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (digest,),
+            )
+        return seq
+    finally:
+        conn.close()
+
+
 def sync(root: str) -> int:
     """정본 → 인덱스. 지문이 같으면 아무것도 하지 않고, 다르면 통째로 다시 만든다.
 
@@ -297,33 +328,7 @@ def sync(root: str) -> int:
     문서 수는 수십 단위라 전체 재구축이 싸다 — 여기서 아낄 것은 시간이 아니라 정합성이다.
     반환 = 인덱스된 조각 수."""
     try:
-        if not lane_present(root):
-            return 0
-        digest = _manifest(root)
-        conn = _db(root)
-        try:
-            row = conn.execute("SELECT value FROM meta WHERE key = 'manifest'").fetchone()
-            if row and row[0] == digest:
-                return int(conn.execute("SELECT count(*) FROM doc").fetchone()[0])
-            seq = 0
-            with conn:
-                conn.execute("DELETE FROM doc")
-                for meta, body, path in load_documents(root):
-                    name = str(meta.get("name") or os.path.basename(path))
-                    for heading, piece in chunk(body):
-                        seq += 1
-                        conn.execute(
-                            "INSERT INTO doc(seq, name, document_id, path, heading, body) VALUES(?,?,?,?,?,?)",
-                            (seq, name, str(meta.get("document_id") or ""), path, heading, piece),
-                        )
-                conn.execute(
-                    "INSERT INTO meta(key, value) VALUES('manifest', ?) "
-                    "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-                    (digest,),
-                )
-            return seq
-        finally:
-            conn.close()
+        return _sync(root)
     except Exception:
         return 0  # fail-open — 인덱스 불능은 검색이 빈 결과로 감내한다
 
@@ -411,17 +416,33 @@ def search(root: str, text: str, k: int = 3) -> list[dict]:
     _add([(seq, b) for seq, b in fts_order if seq in by_seq])
     _add(scan_order)
     hits: list[dict] = []
-    for seq in sorted(rrf, key=lambda s: (-rrf[s], s))[:k]:
+    kept: dict[tuple[str, str], list[str]] = {}  # (문서 이름, 절 제목) → 이미 낸 발췌들
+    for seq in sorted(rrf, key=lambda s: (-rrf[s], s)):
+        if len(hits) >= k:
+            break
         row = by_seq[seq]
-        hits.append(
-            {
-                "seq": seq,
-                "name": str(row[1]),
-                "heading": str(row[2] or ""),
-                "excerpt": _excerpt(str(row[3]), phrase, words),
-                "score": round(rrf[seq], 4),
-            }
-        )
+        hit = {
+            "seq": seq,
+            "name": str(row[1]),
+            "heading": str(row[2] or ""),
+            "excerpt": _excerpt(str(row[3]), phrase, words),
+            "score": round(rrf[seq], 4),
+        }
+        # 개정판을 지우지 않는 것이 정본의 계약이라(`save_document`), 안 고친 절은 판 수만큼
+        # 인덱스에 남는다. 회수 칸은 두세 개뿐이라 그것들이 서로를 밀어내면 독자는 두 번째
+        # 문서를 통째로 못 읽는다 — 26-08-20 감사가 이 저장소에서 잰 모양이 그것이고, 여기
+        # 문서 2건은 한 문서의 두 판이다.
+        #
+        # 접는 범위는 같은 문서의 같은 절로 한정한다. 이름만으로 접으면 한 문서에서 절 하나만
+        # 남고, 문서가 다르면 글자가 겹쳐도 다른 출처라 독자가 알아야 한다.
+        # 그 안에서는 글자가 정확히 같은 것뿐 아니라 **한쪽이 다른 쪽에 통째로 들어 있는** 것도
+        # 접는다: 뒤가 늘어난 판의 발췌는 짧은 판의 발췌를 앞에 그대로 담고 있어(실측 103자 대
+        # 215자) 정확 비교로는 안 걸리는데, 독자에게는 같은 문장을 두 번 읽히는 것이 같다.
+        group = kept.setdefault((hit["name"], hit["heading"]), [])
+        if any(hit["excerpt"] in other or other in hit["excerpt"] for other in group):
+            continue
+        group.append(hit["excerpt"])
+        hits.append(hit)
     return hits
 
 
@@ -478,14 +499,23 @@ def note(query: str, root: str, k: int = 2) -> str:
 
 
 def stats(root: str) -> dict:
-    """레인 현황 — 문서 수·조각 수·정본 바이트. 읽기 전용."""
+    """레인 현황 — 문서 수·조각 수·정본 바이트, 그리고 인덱스가 못 선 사유(`error`). 읽기 전용.
+
+    `sync`·`search` 는 매 턴 도는 회수 경로라 인덱스 불능을 0과 빈 목록으로 삼킨다. 진단은
+    그 반대여야 한다: 사유를 같이 내지 않으면 잠긴 인덱스와 문서 0건이 화면에서 같은 줄이 되고,
+    이 레인의 소비처는 턴 시작 주입 하나뿐이라 사람이 그 차이를 볼 다른 자리가 없다."""
     documents = load_documents(root)
-    chunks = sync(root)
-    return {
+    out = {
         "documents": len(documents),
-        "chunks": chunks,
+        "chunks": 0,
         "bytes": sum(len(body.encode()) for _meta, body, _path in documents),
+        "error": "",
     }
+    try:
+        out["chunks"] = _sync(root)
+    except Exception as exc:
+        out["error"] = f"{type(exc).__name__}: {exc}"
+    return out
 
 
 __all__ = [
