@@ -11,7 +11,7 @@ from pathlib import Path
 from .. import io_files, ui
 from ..hooks import library_files  # asgard_hooklib/* — the shared substrate, laid next to the hooks
 from ..hooks import script as hook  # hook("git-guard") → the hook's source, scaffolded verbatim
-from ..platform import HOOK_LAUNCHER
+from ..platform import HOOK_LAUNCHER, PREFLIGHT_PS1, PREFLIGHT_SH
 from ..skill_registry import client_skill_bodies, invocable_skill_bodies, skill_catalog
 from ..templates import (
     CC_FOLDERS,
@@ -44,54 +44,52 @@ from ..templates.skill_router import (
     openai_skill_metadata,
 )
 
-# 루트 .gitignore 마커 블록 (AGENTS.md와 같은 idempotent 마커 패턴). 런타임 상태·로컬 설정만
-# 무시한다 — .claude 스캐폴드(훅·에이전트·settings.json)는 커밋해 팀과 공유하는 것이 asgard 사상.
-# .asgard/.gitignore가 이미 자가 무시하지만, 루트에도 명시해 `git status`를 처음부터 깨끗하게.
-# `.asgard/` (디렉토리 패턴)이 아니라 `.asgard/*` + negation 인 이유: 디렉토리째 무시하면 git이
-# 하위로 내려가지 않아 map/과 memory/records/ 재포함이 불가능하다 — 둘 다 팀 공유 자산이다.
+# 루트 .gitignore 마커 블록 (AGENTS.md와 같은 idempotent 마커 패턴). 셋업이 만드는 것 중
+# 커밋하지 않는 것만 적는다 — 스캐폴드(훅·에이전트·settings.json)와 팀 자산(map/·memory/records/)은
+# 커밋해 팀과 공유하는 것이 asgard 사상.
+# `.asgard/` 안쪽 경계는 아래 `_ASGARD_GITIGNORE` 한 파일이 진다. 한동안 루트에도 같은 목록 18줄을
+# 적었는데, 더 깊은 .gitignore가 이기므로 그 18줄은 결과를 한 건도 바꾸지 못했다 (26-08-20 실측:
+# 두 형태의 `git add -A -n`이 같은 파일 목록을 냈다). 같은 경계를 두 파일이 적으면 어느 줄이
+# 이겼는지 읽을 수 없고, 한쪽만 좁혀도 팀 공유가 조용히 깨진다 — 이 저장소가 자기 루트
+# .gitignore에서 같은 이유로 지운 자리다 (434d8787).
+# 남긴 `!.asgard/` 한 줄은 되살리기용이다: git은 무시된 디렉터리 안으로 내려가지 않아, 누가
+# `.asgard/`를 통째로 막아 두면 안쪽 자가 무시 파일은 읽히지도 않는다.
 _GITIGNORE_BEGIN = "# >>> asgard >>>"
 _GITIGNORE_END = "# <<< asgard <<<"
 _GITIGNORE_BLOCK = (
     f"{_GITIGNORE_BEGIN}\n"
-    "# Asgard 런타임 상태·로컬 설정 (스캐폴드 훅·에이전트·settings.json은 커밋 — 팀 공유)\n"
+    "# 커밋하지 않는 것만 적는다 — 스캐폴드와 팀 자산(.asgard/map/·memory/records/)은 커밋한다.\n"
+    "# `.asgard/` 안쪽 경계는 `.asgard/.gitignore`가 정한다 (더 깊은 .gitignore가 이긴다).\n"
+    "# 아래 한 줄은 되살리기용 — 디렉터리째 무시하면 git이 안으로 안 내려가 그 파일도 안 읽힌다.\n"
     "!.asgard/\n"
-    ".asgard/*\n"
-    "!.asgard/map/\n"
-    "!.asgard/map/**\n"
-    "!.asgard/memory/\n"
-    ".asgard/memory/*\n"
-    "!.asgard/memory/records/\n"
-    "!.asgard/memory/records/**\n"
-    # 로컬 레인 문서 정본 — 팀에는 뱅크가 아니라 저장소가 전달한다 (project_memory.documents).
-    # 파생 인덱스(documents.db)는 `.asgard/memory/*`가 그대로 무시한다 — 되살릴 수 있는 것은 안 전달한다.
-    "!.asgard/memory/documents/\n"
-    "!.asgard/memory/documents/**\n"
-    "!.asgard/memory/binding.json\n"
-    "!.asgard/.gitignore\n"
-    "!.asgard/asgard-setting-project.json\n"
-    # 커스텀 매뉴얼 — 오딘이 쓴 프로젝트 규칙. 팀이 공유해야 값이 나온다 (한 사람 머리에만 있는
-    # 규칙은 규칙이 아니다). 별칭 넷을 다 뚫는 건 로더가 넷을 다 인식하기 때문이다.
-    "!.asgard/MANUAL.md\n"
-    "!.asgard/CUSTOM_MANUAL.md\n"
-    "!.asgard/CUSTOM.md\n"
-    "!.asgard/RULES.md\n"
-    "!.asgard/manual/\n"
-    "!.asgard/manual/**\n"
-    ".claude/settings.local.json\n"
+    "# 이 기계에만 있는 로컬 설정.\n"
     ".claude/**/*.local.*\n"
+    # 깔린 훅이 도는 것만으로 나오는 바이트코드. 훅은 `uv run --no-project python`으로 돌고
+    # CPython은 임포트한 모듈의 캐시를 소스 옆 `__pycache__/`에 쓴다. 한동안 호스트별 훅
+    # 디렉터리 세 줄로 좁혀 두었는데(프로젝트 자신의 캐시는 사용자가 정한다는 이유), 그 결과
+    # 검증 명령이 소스 옆에 남긴 캐시가 판정 입력으로 새어 들어갔다 (26-08-20: 41건 중 21건은
+    # 이미 커밋돼 규칙만으로는 안 빠졌다). 저장소 전역 한 줄로 바꾼다.
+    "# 파이썬 바이트코드 — 훅이나 검증 명령이 도는 것만으로 생긴다. 캐시는 시작을 싸게 하니\n"
+    "# 지우지 않고 git에서만 가린다.\n"
+    "__pycache__/\n"
     f"{_GITIGNORE_END}\n"
 )
 
 # .asgard 내부 자가 무시 — 런타임 상태(quest/·config·priors)는 무시하고 지도와 승인 record만 추적.
-# 루트 블록과 합의돼야 한다 (둘 중 하나라도 공유 경로를 막으면 추적 불가 — smoke가 실추적 검증).
+# 여기 한 파일이 `.asgard/` 경계의 정본이다 (루트 블록은 이 목록을 되풀이하지 않는다).
 # asgard-setting-project.json = 팀 공유 설정 (trinity 정책·project-memory backend 선택, 비밀 없음) — 커밋 대상.
-# state/·quest/ 등 런타임은 "*"가 전부 무시한다.
+# state/·quest/ 등 런타임은 "*"가 전부 무시한다. `!map/` 옆의 `!map/**`는 장식이 아니다 — 여기의
+# `*`는 슬래시 없는 패턴이라 깊이를 가리지 않고 `map/PROJECT.md`까지 맞춘다 (실측: `**` 줄을
+# 빼면 map/과 memory/records/의 내용이 통째로 사라진다).
 _ASGARD_GITIGNORE = (
     "*\n!.gitignore\n!map/\n!map/**\n"
     "!memory/\nmemory/*\n!memory/records/\n!memory/records/**\n"
+    # 로컬 레인 문서 정본 — 팀에는 뱅크가 아니라 저장소가 전달한다 (project_memory.documents).
+    # 파생 인덱스(documents.db)는 `memory/*`가 그대로 무시한다 — 되살릴 수 있는 것은 안 전달한다.
     "!memory/documents/\n!memory/documents/**\n!memory/binding.json\n"
     "!asgard-setting-project.json\n"
-    # 커스텀 매뉴얼 — 루트 블록과 합의돼야 추적된다 (둘 중 하나만 막아도 공유 불가).
+    # 커스텀 매뉴얼 — 오딘이 쓴 프로젝트 규칙. 팀이 공유해야 값이 나온다 (한 사람 머리에만 있는
+    # 규칙은 규칙이 아니다). 별칭 넷을 다 뚫는 건 로더가 넷을 다 인식하기 때문이다.
     "!MANUAL.md\n!CUSTOM_MANUAL.md\n!CUSTOM.md\n!RULES.md\n!manual/\n!manual/**\n"
 )
 
@@ -142,6 +140,26 @@ def _refreshed_policy(seed: dict, current: object) -> dict:
     return policy
 
 
+def _memory_configured(section: object) -> bool:
+    """이 project_memory 섹션에 사람이 채운 연결이 있는가 — `_` 주석 키와 enabled 토글은 안 센다.
+
+    실행 시점의 memory_bridge.project_memory_section 과 같은 술어다. 시드가 enabled 한 키를
+    적으므로 그 키까지 세면 갓 스캐폴드된 섹션이 "설정됨"으로 읽히고, 아래 구 memory 섹션
+    승격이 조용히 멈춘다."""
+    return isinstance(section, dict) and any(not str(key).startswith("_") and key != "enabled" for key in section)
+
+
+def _memory_with_toggle(section: object) -> object:
+    """미연결 시드에만 `enabled: false`를 적는다 — 사람이 채운 연결은 sync가 끄지 않는다.
+
+    두 가지를 안 건드린다: 연결 키가 있는 섹션(엔진·뱅크를 적어 둔 저장소는 재스캐폴드로
+    꺼지면 안 된다)과 이미 enabled를 가진 섹션(직접 true로 켠 값도 그대로 둔다). 그래서 같은
+    설정 파일에 sync를 여러 번 돌려도 결과가 같다."""
+    if not isinstance(section, dict) or _memory_configured(section) or "enabled" in section:
+        return section
+    return {"enabled": False, **section}
+
+
 def merge_project_settings(existing: str | None, seeded: str) -> str:
     """재스캐폴드 시 통합 설정(asgard-setting-project.json) 병합 — 사용자 값 보존이 기본.
 
@@ -150,7 +168,8 @@ def merge_project_settings(existing: str | None, seeded: str) -> str:
     시드로 갱신한다 (시드 드리프트 = 4모드 정책 패치 무효화, 26-07-23 sensitive_paths 회귀);
     PROJECT_OWNED_POLICY_KEYS만 예외로 프로젝트 값을 살린다. 프로젝트
     레벨 구 memory 섹션에 실 설정이 있으면 project_memory로 승격한다 (write_config와 같은
-    개명 계약). 파손 JSON은 시드로 재생한다."""
+    개명 계약). 아직 미연결인 project_memory 시드에는 `enabled: false`를 채워 넣는다 — 손잡이가
+    파일에 없으면 무엇을 뒤집어야 켜지는지 읽을 수 없다. 파손 JSON은 시드로 재생한다."""
     import json
 
     seed = json.loads(seeded)
@@ -164,11 +183,10 @@ def merge_project_settings(existing: str | None, seeded: str) -> str:
     merged["trinity_policy"] = _refreshed_policy(seed["trinity_policy"], current.get("trinity_policy"))
     legacy = merged.get("memory")
     if isinstance(legacy, dict) and any(not str(k).startswith("_") for k in legacy):
-        pm = merged.get("project_memory")
-        pm_configured = isinstance(pm, dict) and any(not str(k).startswith("_") for k in pm)
-        if not pm_configured:
+        if not _memory_configured(merged.get("project_memory")):
             merged["project_memory"] = legacy
         merged.pop("memory")
+    merged["project_memory"] = _memory_with_toggle(merged.get("project_memory"))
     return json.dumps(merged, ensure_ascii=False, indent=2) + "\n"
 
 
@@ -319,8 +337,8 @@ def hook_files(hooks_dir: str, client: str = "claude-code") -> list[tuple[str, s
         # 훅이 아니라 훅의 전제. 런처는 배선이 부르는 인터프리터를 그 기계 위에서 고르고,
         # 프리플라이트는 고를 것이 아무것도 없을 때 말한다. 둘 다 파이썬 없이 도는 POSIX sh 다.
         (j(hooks_dir, HOOK_LAUNCHER), hook_launcher_sh()),
-        (j(hooks_dir, "env-setup.sh"), env_setup_sh()),
-        (j(hooks_dir, "env-setup.ps1"), env_setup_ps1()),
+        (j(hooks_dir, PREFLIGHT_SH), env_setup_sh()),
+        (j(hooks_dir, PREFLIGHT_PS1), env_setup_ps1()),
         (j(hooks_dir, "git-guard.py"), hook("git-guard")),
         (j(hooks_dir, "release-guard.py"), hook("release-guard")),  # 외부 부작용 승인 게이트
         (j(hooks_dir, "readonly-guard.py"), hook("readonly-guard")),

@@ -264,26 +264,13 @@ src/asgard/assets/**/node_modules/
 .idea
 
 # >>> asgard >>>
-# Asgard 런타임 상태·로컬 설정 (스캐폴드 훅·에이전트·settings.json은 커밋 — 팀 공유)
+# 커밋하지 않는 것만 적는다 — 스캐폴드와 팀 자산(.asgard/map/·memory/records/)은 커밋한다.
+# `.asgard/` 안쪽 경계는 `.asgard/.gitignore`가 정한다 (더 깊은 .gitignore가 이긴다).
+# 아래 한 줄은 되살리기용 — 디렉터리째 무시하면 git이 안으로 안 내려가 그 파일도 안 읽힌다.
 !.asgard/
-.asgard/*
-!.asgard/map/
-!.asgard/map/**
-!.asgard/memory/
-.asgard/memory/*
-!.asgard/memory/records/
-!.asgard/memory/records/**
-!.asgard/memory/documents/
-!.asgard/memory/documents/**
-!.asgard/memory/binding.json
-!.asgard/.gitignore
-!.asgard/asgard-setting-project.json
-!.asgard/MANUAL.md
-!.asgard/CUSTOM_MANUAL.md
-!.asgard/CUSTOM.md
-!.asgard/RULES.md
-!.asgard/manual/
-!.asgard/manual/**
-.claude/settings.local.json
+# 이 기계에만 있는 로컬 설정.
 .claude/**/*.local.*
+# 파이썬 바이트코드 — 훅이나 검증 명령이 도는 것만으로 생긴다. 캐시는 시작을 싸게 하니
+# 지우지 않고 git에서만 가린다.
+__pycache__/
 # <<< asgard <<<

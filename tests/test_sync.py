@@ -10,6 +10,7 @@
 import json
 import os
 import shutil
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -240,13 +241,76 @@ class TestAgentsMerge(Base):
         self.assertEqual(merge_agents_md(None, new), new)
 
     def test_gitignore_migrates_legacy_whole_asgard_ignore_so_map_is_trackable(self):
-        from asgard.commands.setup import merge_gitignore
+        """디렉터리째 무시하던 구 설치를 제거해야 팀 자산이 다시 추적된다.
+
+        git은 무시된 디렉터리 안으로 내려가지 않으므로, `.asgard/` 한 줄이 남으면 안쪽 자가
+        무시 파일은 읽히지도 않는다. 루트 블록이 `.asgard/` 안쪽 목록을 되풀이하지 않게 된
+        뒤로는 그 한 줄이 전부라, 재는 것도 문자열이 아니라 git이 실제로 담는 파일이다."""
+        from asgard.commands.setup import _ASGARD_GITIGNORE, merge_gitignore
 
         merged = merge_gitignore("cache/\n.asgard\n.asgard/\n")
         self.assertNotIn("\n.asgard\n", "\n" + merged)
         self.assertNotIn("\n.asgard/\n", "\n" + merged)
-        self.assertIn("!.asgard/map/", merged)
-        self.assertIn("!.asgard/memory/records/", merged)
+
+        root = tempfile.mkdtemp(dir=self.root)
+        subprocess.run(["git", "init", "-q", root], check=True, capture_output=True)
+        seeded = {
+            ".gitignore": merged,
+            ".asgard/.gitignore": _ASGARD_GITIGNORE,
+            ".asgard/map/INDEX.md": "map",
+            ".asgard/memory/records/r.md": "record",
+            ".asgard/state/failures.json": "{}",
+        }
+        for rel, body in seeded.items():
+            path = os.path.join(root, *rel.split("/"))
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(body)
+        staged = subprocess.run(
+            ["git", "add", "-A", "--dry-run"], cwd=root, check=True, capture_output=True, text=True
+        ).stdout
+        self.assertIn(".asgard/map/INDEX.md", staged)
+        self.assertIn(".asgard/memory/records/r.md", staged)
+        self.assertNotIn("failures.json", staged)
+
+    def test_gitignore_hides_every_python_bytecode_cache(self):
+        """훅이든 검증 명령이든, 도는 것만으로 워킹 트리가 더러워지지 않는다.
+
+        훅은 `uv run --no-project python`으로 돌고 CPython은 임포트한 모듈의 바이트코드를
+        소스 옆 `__pycache__/`에 쓴다. 캐시가 무시되지 않으면 퀘스트 로그의 changed_files로
+        들어가 판정자가 읽을 diff를 덮는다. 한동안은 호스트별 훅 디렉터리 세 줄로 좁혀
+        두었다 — 프로젝트 자신의 캐시는 사용자가 정한다는 이유였는데, 그 결과 검증 명령이
+        `src/` 옆에 남긴 캐시가 같은 자리로 새어 들어갔다 (26-08-20 실측 41건). 그래서 지금
+        재는 것은 자리를 가리지 않는 무시다 — 스캐폴드 소스는 그대로 보여야 한다.
+
+        문자열 대신 실제 git으로 재는 이유는 어느 깊이까지 맞추느냐가 이 규칙의 전부이기
+        때문이다."""
+        from asgard.commands.setup import merge_gitignore
+
+        root = tempfile.mkdtemp(dir=self.root)
+        subprocess.run(["git", "init", "-q", root], check=True, capture_output=True)
+        with open(os.path.join(root, ".gitignore"), "w", encoding="utf-8") as f:
+            f.write(merge_gitignore(None))
+        hidden = (
+            ".claude/hooks/__pycache__/failure_tracker.cpython-314.pyc",
+            ".claude/hooks/asgard_hooklib/__pycache__/paths.cpython-314.pyc",
+            ".codex/hooks/__pycache__/failure_tracker.cpython-314.pyc",
+            ".cursor/hooks/asgard_hooklib/__pycache__/paths.cpython-314.pyc",
+            "src/app/__pycache__/mod.cpython-314.pyc",
+        )
+        visible = (".claude/hooks/quest-log.py", "src/app/mod.py")
+        for rel in (*hidden, *visible):
+            path = os.path.join(root, *rel.split("/"))
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("x")
+        out = subprocess.run(
+            ["git", "status", "--porcelain", "-uall"], cwd=root, check=True, capture_output=True, text=True
+        ).stdout
+        for rel in hidden:
+            self.assertNotIn(rel, out)
+        for rel in visible:
+            self.assertIn(rel, out)
 
 
 class TestInitOverwrite(Base):
@@ -299,6 +363,43 @@ class TestInitOverwrite(Base):
         self.assertEqual(policy["baseline_checks"], ["uv run pytest -x -q -n auto"])
         self.assertEqual(policy["baseline_timeout"], 600)
         self.assertEqual(policy["sensitive_paths"], DEFAULT_POLICY["sensitive_paths"])
+
+    def test_seed_declares_project_memory_off(self):
+        """새 프로젝트는 프로젝트 메모리가 꺼진 채로 시작한다 — 그 값이 파일에 적혀 있어야 한다."""
+        from asgard.templates import project_settings
+
+        section = json.loads(project_settings())["project_memory"]
+        self.assertIs(section["enabled"], False)
+        self.assertEqual(next(iter(section)), "enabled")  # 섹션 첫 줄 — 사람이 먼저 읽는 자리
+
+    def test_merge_fills_the_off_toggle_into_an_old_seed_and_repeats_the_same(self):
+        """토글이 생기기 전에 만들어진 저장소는 sync 한 번에 값을 얻고, 그 뒤로는 안 바뀐다."""
+        from asgard.commands.setup import merge_project_settings
+        from asgard.templates import project_settings
+
+        current = {"project_memory": {"_comment": "옛 시드", "_example": {"engine": "hindsight"}}}
+        once = merge_project_settings(json.dumps(current), project_settings())
+        self.assertIs(json.loads(once)["project_memory"]["enabled"], False)
+        self.assertEqual(json.loads(once)["project_memory"]["_comment"], "옛 시드")  # 주석은 그대로
+        self.assertEqual(merge_project_settings(once, project_settings()), once)  # 두 번째 sync = 무변화
+
+    def test_merge_never_switches_off_a_configured_project_memory(self):
+        """엔진·뱅크를 적어 둔 저장소는 재스캐폴드로 꺼지지 않는다 — 토글 키를 붙이지도 않는다."""
+        from asgard.commands.setup import merge_project_settings
+        from asgard.templates import project_settings
+
+        connected = {"engine": "hindsight", "endpoint": "http://memory:8888", "project_id": "team-bank"}
+        merged = json.loads(merge_project_settings(json.dumps({"project_memory": connected}), project_settings()))
+        self.assertEqual(merged["project_memory"], connected)
+
+    def test_merge_keeps_a_hand_written_on_toggle(self):
+        """미연결이어도 사람이 true 로 켜 두었으면 sync 가 그것을 false 로 되돌리지 않는다."""
+        from asgard.commands.setup import merge_project_settings
+        from asgard.templates import project_settings
+
+        current = {"project_memory": {"enabled": True, "_comment": "켜 둠"}}
+        merged = json.loads(merge_project_settings(json.dumps(current), project_settings()))
+        self.assertIs(merged["project_memory"]["enabled"], True)
 
     def test_merge_project_settings_promotes_legacy_memory_section(self):
         from asgard.commands.setup import merge_project_settings

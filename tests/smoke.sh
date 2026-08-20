@@ -80,7 +80,10 @@ PROJ="$(mktemp -d)"
 grep -q "@../AGENTS.md" "$PROJ/.claude/CLAUDE.md" || { echo "FAIL: .claude/CLAUDE.md must import ../AGENTS.md"; exit 1; }
 grep -q "ASGARD_OK" "$PROJ/AGENTS.md" || { echo "FAIL: AGENTS.md missing wiring-check marker"; exit 1; }
 grep -q "asgard:identity" "$PROJ/AGENTS.md" && grep -q "Heimdall" "$PROJ/AGENTS.md" || { echo "FAIL: AGENTS.md missing asgard:identity block"; exit 1; }
-grep -q "asgard:law" "$PROJ/AGENTS.md" && grep -q "3회 실패 법칙" "$PROJ/AGENTS.md" || { echo "FAIL: AGENTS.md missing asgard:law block"; exit 1; }
+# 여는 마커와 닫는 마커를 함께 본다 — 블록이 통째로 들어갔는가가 이 단언이 재려던 것이다.
+# 종전에는 본문 한 구절(`3회 실패 법칙`)을 찾았는데, 그 구절이 영어로 바뀌자(canon.py 의
+# `**Three-failure rule**`) 여기서 스크립트가 죽어 아래 단언이 한 줄도 안 돌았다.
+grep -q ">>> asgard:law >>>" "$PROJ/AGENTS.md" && grep -q "<<< asgard:law <<<" "$PROJ/AGENTS.md" || { echo "FAIL: AGENTS.md missing asgard:law block"; exit 1; }
 [ -f "$PROJ/.cursor/rules/000-agents.mdc" ] || { echo "FAIL: .cursor/rules/000-agents.mdc missing"; exit 1; }
 grep -q "alwaysApply: true" "$PROJ/.cursor/rules/000-agents.mdc" || { echo "FAIL: cursor rule must alwaysApply"; exit 1; }
 # universal must ENFORCE, not just bridge prose — every tool's hooks/config present
@@ -126,7 +129,9 @@ PROJ="$(mktemp -d)"
 # Role tool surfaces are explicit least-privilege allowlists, not host defaults.
 grep -q '^tools: Read, Grep, Glob, Bash, Write, Edit, NotebookEdit, Agent$' "$PROJ/.claude/agents/asgard-worker.md" || { echo "FAIL: worker tool allowlist"; exit 1; }
 grep -q '^tools: Read, Grep, Glob, Bash, Agent$' "$PROJ/.claude/agents/asgard-verifier.md" || { echo "FAIL: verifier tool allowlist"; exit 1; }
-grep -q '^tools: Read, Grep, Glob, Bash, Write, Edit, NotebookEdit$' "$PROJ/.claude/agents/asgard-thor.md" || { echo "FAIL: delivery tool allowlist"; exit 1; }
+# 딜리버리 전문가도 Agent 를 든다 — 위임 표가 thor → {mimir, loki, ullr} 을 열어 준 뒤로
+# 자기 배차를 스스로 연다 (subagent_gate.AGENT_TARGETS). 이 줄은 그 전 목록에 멈춰 있었다.
+grep -q '^tools: Read, Grep, Glob, Bash, Write, Edit, NotebookEdit, Agent$' "$PROJ/.claude/agents/asgard-thor.md" || { echo "FAIL: delivery tool allowlist"; exit 1; }
 for _d in commands agents skills hooks rules output-styles; do
   [ -f "$PROJ/.claude/$_d/README.md" ] || { echo "FAIL: --cc missing .claude/$_d/README.md"; exit 1; }
 done
@@ -145,11 +150,22 @@ printf '%s' '{"tool_input":{"command":"docker push repo/img"}}' | "$PY" "$PROJ/.
 printf '%s' '{"tool_input":{"command":"npm run build"}}'    | "$PY" "$PROJ/.claude/hooks/release-guard.py" 2>/dev/null || { echo "FAIL: release-guard must allow npm run build"; exit 1; }
 printf '%s' 'not-json'                                      | "$PY" "$PROJ/.claude/hooks/release-guard.py" 2>/dev/null || { echo "FAIL: release-guard must fail-open"; exit 1; }
 printf '%s' '{"agent_type":"asgard-verifier","tool_input":{"command":"printf hacked > calc.py"}}' | "$PY" "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null && { echo "FAIL: readonly-guard must block shell writes"; exit 1; } || true
-printf '%s' '{"tool_input":{"command":"printf hacked > calc.py"}}' | "$PY" "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null && { echo "FAIL: readonly-guard must block coordinator shell writes"; exit 1; } || true
-printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"calc.py","content":"hacked"}}' | "$PY" "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null && { echo "FAIL: readonly-guard must block coordinator Write"; exit 1; } || true
+# 신원이 없는 호출은 조율자가 전이 함수의 배정을 직접 수행하는 자리(MAIN_WORKER)라 쓰기가 그
+# 역할의 몫이다 — 여기서 막으면 배정을 수행할 손이 없어 교착이 된다
+# (readonly_guard.refusal_reason 의 근거). 퀘스트 없는 쓰기는 write-sentinel 이 적고 Stop 의
+# verifier-gate 가 물리 대조로 잡는다. 위 줄이 보이듯 신원이 있는 읽기 전용 역할은 그대로 막힌다.
+printf '%s' '{"tool_input":{"command":"printf hacked > calc.py"}}' | "$PY" "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null || { echo "FAIL: readonly-guard must allow coordinator shell writes"; exit 1; }
+printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"calc.py","content":"hacked"}}' | "$PY" "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null || { echo "FAIL: readonly-guard must allow coordinator Write"; exit 1; }
+# 조율자에게 열린 것은 작업 대상뿐이다 — 통제 표면은 신원이 없어도 그대로 닫힌다. 위 두 줄이
+# 완화이므로 그 완화가 어디서 멈추는지를 같은 자리에서 잰다.
+printf '%s' '{"tool_name":"Write","tool_input":{"file_path":".claude/settings.json","content":"{}"}}' | "$PY" "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null && { echo "FAIL: coordinator must not rewrite the file that defines work roots"; exit 1; } || true
 printf '%s' '{"agent_type":"asgard-worker","tool_name":"Write","tool_input":{"file_path":"calc.py","content":"ok"}}' | "$PY" "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null || { echo "FAIL: readonly-guard must allow worker Write"; exit 1; }
-printf '%s' '{"agent_type":"asgard-worker","tool_name":"Write","tool_input":{"file_path":".claude/hooks/readonly-guard.py","content":"pass"}}' | "$PY" "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null && { echo "FAIL: worker must not overwrite control hooks"; exit 1; } || true
-printf '%s' '{"agent_type":"asgard-worker","tool_name":"Bash","tool_input":{"command":"printf pass > .claude/hooks/readonly-guard.py"}}' | "$PY" "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null && { echo "FAIL: worker Bash must not overwrite control hooks"; exit 1; } || true
+# 스캐폴드 훅 본문은 통제 표면에서 뺐다 — 거기 쓴 것은 스냅샷 안이라 판정 해시에 묶이고 Odin 이
+# diff 로 본다 (workspace._CONTROL_PATHS 의 주석이 그 결정과 대가를 적어 뒀다). 그래서 이 줄이
+# 지키는 것은 훅 본문이 아니라 작업 뿌리를 정하는 파일이다 — 그 자리가 열리면 나머지 판정이
+# 통째로 무의미해진다.
+printf '%s' '{"agent_type":"asgard-worker","tool_name":"Write","tool_input":{"file_path":".claude/settings.json","content":"{}"}}' | "$PY" "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null && { echo "FAIL: worker must not rewrite the file that defines work roots"; exit 1; } || true
+printf '%s' '{"agent_type":"asgard-worker","tool_name":"Bash","tool_input":{"command":"printf x > .asgard/state/lagom-mode.json"}}' | "$PY" "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null && { echo "FAIL: worker Bash must not write harness state"; exit 1; } || true
 printf '%s' '{"agent_type":"asgard-verifier","tool_input":{"command":"git diff"}}' | "$PY" "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null || { echo "FAIL: readonly-guard must allow inspection"; exit 1; }
 printf '%s' '{"agent_type":"asgard-worker","tool_input":{"command":"printf ok > calc.py"}}' | "$PY" "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null || { echo "FAIL: readonly-guard must allow worker"; exit 1; }
 printf '%s' '{"tool_input":{"file_path":"x/.env","content":"A=1"}}' | "$PY" "$PROJ/.claude/hooks/secret-guard.py" 2>/dev/null && { echo "FAIL: secret-guard must block .env"; exit 1; } || true
@@ -196,7 +212,9 @@ rm -f "$PROJ/.asgard/state/lagom-mode.json" "$PROJ/.asgard/lagom-mode"
 grep -q 'asgard:lagom' "$PROJ/AGENTS.md" || { echo "FAIL: AGENTS.md missing lagom section"; exit 1; }
 [ -f "$PROJ/.claude/skills/asgard-lagom-review/SKILL.md" ] || { echo "FAIL: --cc missing lagom-review skill"; exit 1; }
 [ -f "$PROJ/.claude/skills/asgard-seal/SKILL.md" ] || { echo "FAIL: --cc missing asgard-seal skill"; exit 1; }
-grep -q "Co-Authored-By" "$PROJ/.claude/skills/asgard-seal/SKILL.md" || { echo "FAIL: asgard-seal missing no-footer hard rule"; exit 1; }
+# 스캐폴드 파일은 발견용 어댑터라 규칙 본문을 담지 않는다 — asgard-test 위쪽 검사와 같은 형태로
+# 중앙 정본에서 확인한다. 어댑터에서 찾으면 규칙이 살아 있어도 늘 빨개진다.
+"${ASG[@]}" skills show asgard-seal | grep -q "Co-Authored-By" || { echo "FAIL: asgard-seal missing no-footer hard rule"; exit 1; }
 # shared state at ROOT .asgard/ (tool-neutral, cross-tool continuity), self-ignored via '*'
 [ -f "$PROJ/.asgard/failures-smoke.json" ] || { echo "FAIL: shared state must live in root .asgard/"; exit 1; }
 grep -q '^\*' "$PROJ/.asgard/.gitignore" || { echo "FAIL: .asgard/ must self-ignore with '*'"; exit 1; }
@@ -209,11 +227,12 @@ grep -q '^!memory/records/$' "$PROJ/.asgard/.gitignore" || { echo "FAIL: .asgard
 [ -f "$PROJ/.claude/hooks/map-activate.py" ] && grep -q 'map-activate.py' "$PROJ/.claude/settings.json" \
   || { echo "FAIL: --cc periodic map maintenance missing"; exit 1; }
 grep -q 'asgard:map' "$PROJ/AGENTS.md" || { echo "FAIL: AGENTS.md missing map section"; exit 1; }
-# 루트 .gitignore — 런타임 상태 필터. 생성됨 + asgard 블록 + .asgard/* 무시 + map 재포함
+# 루트 .gitignore — 런타임 상태 필터. `.asgard/` 안쪽 목록은 자가 무시(위 220~222)가 정본이고,
+# 루트는 되살리기 한 줄과 로컬 설정·바이트코드만 진다. 실추적은 바로 아래 git 실행이 잰다.
 [ -f "$PROJ/.gitignore" ] || { echo "FAIL: --cc must create root .gitignore"; exit 1; }
-grep -q '^\.asgard/\*$' "$PROJ/.gitignore" || { echo "FAIL: root .gitignore must ignore .asgard/* (not dir pattern)"; exit 1; }
-grep -q '^!\.asgard/map/$' "$PROJ/.gitignore" || { echo "FAIL: root .gitignore must un-ignore .asgard/map/"; exit 1; }
-grep -q '^!\.asgard/memory/records/$' "$PROJ/.gitignore" || { echo "FAIL: root .gitignore must un-ignore .asgard/memory/records/"; exit 1; }
+grep -q '^!\.asgard/$' "$PROJ/.gitignore" || { echo "FAIL: root .gitignore must keep the .asgard/ revival line"; exit 1; }
+grep -q '^__pycache__/$' "$PROJ/.gitignore" || { echo "FAIL: root .gitignore must ignore __pycache__/ repo-wide"; exit 1; }
+[ "$(grep -c '^\.asgard/' "$PROJ/.gitignore")" = "0" ] || { echo "FAIL: root .gitignore must not re-declare the .asgard/ boundary"; exit 1; }
 grep -q '>>> asgard >>>' "$PROJ/.gitignore" || { echo "FAIL: root .gitignore missing asgard marker block"; exit 1; }
 if command -v git >/dev/null; then
   ( cd "$PROJ" && git init -q . && git add -A >/dev/null 2>&1
