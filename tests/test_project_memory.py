@@ -16,7 +16,7 @@ from unittest import mock
 
 from asgard import memory, memory_context, project_memory
 from asgard.memory_context import PROJECT_RECALL_BUDGET, project_recall_note, recall_note
-from asgard.project_memory import learning
+from asgard.project_memory import ingest, learning
 
 
 class ProjectMemoryBase(unittest.TestCase):
@@ -533,15 +533,106 @@ class TestArtifactDiscovery(ProjectMemoryBase):
         old_document_id = manifest["items"]["docs/architecture.md"]["document_id"]
 
         os.remove(os.path.join(self.root, "docs/architecture.md"))
+        # 삭제 판정은 전수 스캔(force)만 낼 수 있다 — 빈 후보 목록은 "--all 이 아무것도 못 찾았다"일 때만
+        # 전부 지워졌다는 뜻이고, 기본 모드에서는 "바뀐 파일이 없다"는 뜻이다.
         with mock.patch(
             "asgard.project_memory.projection.server_retain_items", return_value={"success": True}
         ) as retain_deleted:
-            deleted = project_memory.sync_artifacts(self.root, cfg, [], source_revision="HEAD=two")
+            deleted = project_memory.sync_artifacts(self.root, cfg, [], source_revision="HEAD=two", force=True)
         self.assertEqual(deleted["deleted_count"], 1)
         tombstone = retain_deleted.call_args.args[1][0]
         self.assertEqual(tombstone["document_id"], old_document_id)
         self.assertEqual(tombstone["metadata"]["status"], "deleted")
         self.assertEqual(project_memory.load_projection_manifest(self.root)["items"], {})
+
+    def test_default_sync_never_tombstones_paths_it_did_not_scan(self):
+        """기본 sync 는 바뀐 파일만 담는다 — 안 본 경로가 묘비가 되면 원격 본문이 사라진다."""
+        for index in range(8):
+            self.write(f"docs/a{index}.md", f"# Architecture {index}\nHindsight projection boundary.\n")
+        cfg = {"server": "http://memory", "bank": "demo"}
+        everything = project_memory.scan_project(self.root, changed_paths=[])
+        self.assertEqual(len(everything), 8)
+        with mock.patch("asgard.project_memory.projection.server_retain_items", return_value={"success": True}):
+            project_memory.sync_artifacts(self.root, cfg, everything, source_revision="HEAD=one", force=True)
+        self.assertEqual(len(project_memory.load_projection_manifest(self.root)["items"]), 8)
+
+        changed = ["docs/a0.md"]
+        self.write(changed[0], "# Architecture 0\nHindsight projection boundary, revised.\n")
+        partial = [
+            candidate
+            for candidate in project_memory.scan_project(self.root, changed_paths=changed)
+            if candidate.path in set(changed)
+        ]
+        self.assertEqual([candidate.path for candidate in partial], changed)
+        with mock.patch(
+            "asgard.project_memory.projection.server_retain_items", return_value={"success": True}
+        ) as retain:
+            result = project_memory.sync_artifacts(self.root, cfg, partial, source_revision="HEAD=two")
+
+        self.assertEqual(result["upserted_count"], 1)
+        self.assertEqual(result["deleted_count"], 0)
+        self.assertEqual(result["renamed_count"], 0)
+        self.assertEqual(result["removed"], [])
+        sent = retain.call_args.args[1]
+        self.assertEqual([item["metadata"]["source"] for item in sent], changed)
+        self.assertEqual([item for item in sent if item["metadata"].get("status") != "active"], [])
+        # 안 본 7건은 manifest 에 그대로 남아야 다음 --all 이 실제 삭제를 묘비로 세울 수 있다.
+        manifest = project_memory.load_projection_manifest(self.root)
+        self.assertEqual(len(manifest["items"]), 8)
+        before = {candidate.path: candidate.content_hash for candidate in everything}
+        self.assertNotEqual(manifest["items"]["docs/a0.md"]["content_hash"], before["docs/a0.md"])
+
+    def test_full_scan_after_default_sync_still_tombstones_a_real_deletion(self):
+        """기본 sync 가 manifest 를 깎아 두면 그다음 --all 이 삭제를 못 본다."""
+        for index in range(3):
+            self.write(f"docs/b{index}.md", f"# Architecture {index}\nHindsight projection boundary.\n")
+        cfg = {"server": "http://memory", "bank": "demo"}
+        everything = project_memory.scan_project(self.root, changed_paths=[])
+        with mock.patch("asgard.project_memory.projection.server_retain_items", return_value={"success": True}):
+            project_memory.sync_artifacts(self.root, cfg, everything, source_revision="HEAD=one", force=True)
+            changed = ["docs/b0.md"]
+            self.write(changed[0], "# Architecture 0\nHindsight projection boundary, revised.\n")
+            partial = [
+                candidate
+                for candidate in project_memory.scan_project(self.root, changed_paths=changed)
+                if candidate.path in set(changed)
+            ]
+            project_memory.sync_artifacts(self.root, cfg, partial, source_revision="HEAD=two")
+
+        os.remove(os.path.join(self.root, "docs/b2.md"))
+        remaining = project_memory.scan_project(self.root, changed_paths=[])
+        with mock.patch(
+            "asgard.project_memory.projection.server_retain_items", return_value={"success": True}
+        ) as retain:
+            result = project_memory.sync_artifacts(self.root, cfg, remaining, source_revision="HEAD=three", force=True)
+        self.assertEqual(result["deleted_count"], 1)
+        tombstones = [item for item in retain.call_args.args[1] if item["metadata"].get("status") == "deleted"]
+        self.assertEqual([item["metadata"]["source"] for item in tombstones], ["docs/b2.md"])
+
+    def test_full_tier_body_over_graph_ceiling_is_sent_as_digest(self):
+        """상한 초과 본문 하나가 서버를 재시작시키면 같은 서버의 다른 뱅크 회수까지 죽는다."""
+        ceiling = ingest.GRAPH_CHAR_CEILING
+        small = "# Compact design\nHindsight projection boundary.\n"
+        huge = "# Oversized design\n" + ("Projection body line with real content.\n" * 900)
+        self.write("docs/small.md", small)
+        self.write("docs/huge.md", huge)
+        self.assertGreater(len(huge), ceiling)
+        by_path = {candidate.path: candidate for candidate in project_memory.scan_project(self.root, changed_paths=[])}
+        self.assertEqual(by_path["docs/huge.md"].tier, "full")
+        self.assertEqual(by_path["docs/small.md"].tier, "full")
+
+        oversized = project_memory.artifact_item(by_path["docs/huge.md"], "demo", "HEAD=one")
+        self.assertLess(len(oversized["content"]), ceiling)
+        self.assertNotIn("Projection body line with real content.", oversized["content"])
+        self.assertIn("Tier: digest", oversized["content"])
+        self.assertEqual(oversized["metadata"]["tier"], "digest")
+        # 낮춰 보내도 머리글 해시는 실제 파일 해시다 — 신선도 판정이 그 값을 본다.
+        self.assertEqual(oversized["metadata"]["content_hash"], by_path["docs/huge.md"].content_hash)
+        self.assertIn(f"Content-SHA256: {by_path['docs/huge.md'].content_hash}", oversized["content"])
+
+        compact = project_memory.artifact_item(by_path["docs/small.md"], "demo", "HEAD=one")
+        self.assertIn(small, compact["content"])
+        self.assertEqual(compact["metadata"]["tier"], "full")
 
     def test_backend_switch_forces_full_projection_bootstrap(self):
         self.write("docs/architecture.md", "# Architecture\nBackend-neutral project memory.\n")
@@ -572,7 +663,7 @@ class TestArtifactDiscovery(ProjectMemoryBase):
         with mock.patch(
             "asgard.project_memory.projection.server_retain_items", return_value={"success": True}
         ) as retain:
-            result = project_memory.sync_artifacts(self.root, cfg, new, source_revision="HEAD=two")
+            result = project_memory.sync_artifacts(self.root, cfg, new, source_revision="HEAD=two", force=True)
         self.assertEqual(result["renamed_count"], 1)
         items = retain.call_args.args[1]
         tombstone = next(item for item in items if item["metadata"].get("status") == "renamed")
@@ -592,7 +683,7 @@ class TestArtifactDiscovery(ProjectMemoryBase):
         with mock.patch(
             "asgard.project_memory.projection.server_retain_items", return_value={"success": True}
         ) as retain:
-            result = project_memory.sync_artifacts(self.root, cfg, new, source_revision="HEAD=two")
+            result = project_memory.sync_artifacts(self.root, cfg, new, source_revision="HEAD=two", force=True)
         self.assertEqual(result["renamed_count"], 0)
         tombstones = [item for item in retain.call_args.args[1] if item["metadata"].get("status") == "deleted"]
         self.assertEqual({item["metadata"]["source"] for item in tombstones}, {"docs/old-a.md", "docs/old-b.md"})
@@ -1310,7 +1401,7 @@ class TestCooperativeRecall(ProjectMemoryBase):
         self.assertIn("src: docs/adr.md", note)
 
     def test_project_recall_injects_the_body_not_the_backend_header(self):
-        """회수 주입은 본문을 싣는다 — backend 검색용 머리글이 예산을 먹으면 안 된다.
+        """회수 주입은 본문을 넣는다 — backend 검색용 머리글이 예산을 먹으면 안 된다.
 
         회귀 정체(26-07-29 실측): 정본 3건 주입 1398자 중 본문은 155자(11%)뿐이었고 두
         문장 모두 단어 중간에서 잘렸다. 나머지는 온톨로지 머리글과 두 번 실린 git 해시였다."""
@@ -1326,7 +1417,7 @@ class TestCooperativeRecall(ProjectMemoryBase):
         self.assertIn("프로젝트 회수 회귀 기록", note)  # 제목은 남는다 — 본문 진입점이다
         for header in ("[ProjectMemory:", "Status: active", "Importance: high", "Confidence: verified"):
             self.assertNotIn(header, note)
-        self.assertNotIn("HEAD=verified", note)  # 모델이 비교할 대상이 없는 해시는 싣지 않는다
+        self.assertNotIn("HEAD=verified", note)  # 모델이 비교할 대상이 없는 해시는 넣지 않는다
 
     def test_recall_query_is_bounded_before_it_reaches_the_backend(self):
         """턴 원문을 통째로 보내면 backend는 요청의 잡음까지 닮은 것을 찾는다."""
@@ -1744,7 +1835,7 @@ class TestProjectSynthesisLane(ProjectMemoryBase):
 
         self.assertIn('scope="synthesis"', note)
         self.assertIn("배포는 태그를 밀어 시작한다", note)
-        self.assertNotIn("로깅은 표준 출력으로", note)  # 안 걸린 구획은 안 싣는다
+        self.assertNotIn("로깅은 표준 출력으로", note)  # 안 걸린 구획은 안 넣는다
         self.assertIn("정본도 완료 증거도 아니다", note)  # 권위 표식 — 정본과 섞이면 안 된다
 
     def test_unrelated_query_injects_nothing(self):
@@ -1777,7 +1868,7 @@ class TestProjectSynthesisLane(ProjectMemoryBase):
             self.assertEqual(memory_context.project_synthesis_note("배포", start=self.root), "")
 
     def test_untrusted_backend_silences_the_lane(self):
-        """신뢰하지 않은 backend의 종합문은 안 싣는다.
+        """신뢰하지 않은 backend의 종합문은 안 넣는다.
 
         이 파일은 clone 만으로 저장소에 실려 올 수 있고, 소유권 필드는 **양쪽 다** 저장소가
         들고 오므로 자기 자신을 통과시킬 수 있다. 못 위조하는 판정은 리포 밖에 있는 신뢰
@@ -1799,7 +1890,7 @@ class TestProjectSynthesisLane(ProjectMemoryBase):
             note = memory_context.project_synthesis_note("배포", start=self.root)
 
         self.assertNotIn("evil.example", note)
-        self.assertIn("배포는 태그를 밀어 시작한다", note)  # 성한 구간은 그대로 실린다
+        self.assertIn("배포는 태그를 밀어 시작한다", note)  # 성한 구간은 그대로 들어간다
 
     def test_missing_copy_is_fail_open(self):
         with self.lane():

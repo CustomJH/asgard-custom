@@ -14,6 +14,7 @@ from typing import Any
 
 from ..memory_bridge import assert_backend_access, backend_target, server_retain_items
 from . import scan
+from .ingest import GRAPH_CHAR_CEILING
 from .records import MAX_ONTOLOGY_VALUE, ONTOLOGY_SCHEMA, ArtifactCandidate
 from .scan import _canonical_repo_path
 
@@ -73,7 +74,15 @@ def artifact_item(
     # digest 계층은 본문을 넣지 않는다 — 머리글만으로도 "이 프로젝트에 무엇이 있는지"는
     # 회수된다. 본문을 다 보내면 backend가 파일마다 LLM 추출을 돌려 비용이 파일 수에 비례한다.
     # 검증은 어느 계층이든 같다: metadata.source의 실제 파일 해시를 본다 (본문 대조가 아니다).
-    body = candidate.content if candidate.tier == "full" else _digest_body(candidate)
+    #
+    # full 후보라도 GRAPH_CHAR_CEILING(8,060자 = 13 units)을 넘으면 digest로 낮춘다. 같은
+    # 서버 한계를 ingest가 이미 재고 있고(ingest.py의 GRAPH_UNIT_CEILING 주석: 초과 시 서버
+    # RestartCount 1→4 실측), 그 한계를 넘긴 문서 하나가 같은 서버의 **다른 뱅크 회수까지**
+    # 죽인다. 머리글의 Content-SHA256은 낮춰 보낼 때도 실제 파일 해시 그대로다 —
+    # memory_context가 그 값으로 신선도를 보므로 계층이 바뀌어도 검증은 성립한다.
+    # 재는 값은 실제로 보내는 payload(머리글+본문)다 — 서버는 content 필드를 통째로 청크한다.
+    tier = candidate.tier if len(header) + len(candidate.content) <= GRAPH_CHAR_CEILING else "digest"
+    body = candidate.content if tier == "full" else _digest_body(candidate)
     return {
         "content": header + body,
         "context": f"asgard project artifact {candidate.kind}",
@@ -104,7 +113,7 @@ def artifact_item(
             "imports": imports,
             "kind": candidate.kind,
             "importance": candidate.importance,
-            "tier": candidate.tier,
+            "tier": tier,
             "scope": "project",
             "status": "active",
             "confidence": "verified",
@@ -294,6 +303,37 @@ def _save_projection_manifest(root: str, data: dict) -> None:
             os.remove(tmp)
 
 
+def _removed_and_renamed(
+    previous: dict,
+    current: dict,
+    *,
+    force: bool,
+) -> tuple[list[str], dict[str, str]]:
+    """manifest에는 있고 이번 스캔에는 없는 경로를 삭제·개명으로 가른다.
+
+    삭제는 전수 스캔만이 정당화한다. force가 거짓이면 candidates는 working tree에서 바뀐 파일만
+    담으므로(commands/memory/project.py의 _project_candidates) previous - current 는 "지워진 것"이
+    아니라 "이번에 안 본 것"이다. 묘비는 update_mode=replace 라 본문을 덮어쓰므로, 안 본 것을
+    지우면 기본 sync 한 번이 원격 본문을 통째로 날린다."""
+    if not force:
+        return [], {}
+    removed_paths = sorted(set(previous) - set(current))
+    new_by_hash: dict[str, list[str]] = {}
+    for path, candidate in current.items():
+        if path not in previous:
+            new_by_hash.setdefault(candidate.content_hash, []).append(path)
+    old_by_hash: dict[str, list[str]] = {}
+    for path in removed_paths:
+        old_by_hash.setdefault(str(previous[path].get("content_hash") or ""), []).append(path)
+    renamed: dict[str, str] = {}
+    for path in removed_paths:
+        content_hash = str(previous[path].get("content_hash") or "")
+        matches = new_by_hash.get(content_hash, [])
+        if len(matches) == 1 and len(old_by_hash.get(content_hash, [])) == 1:
+            renamed[path] = matches[0]
+    return removed_paths, renamed
+
+
 def projection_plan(
     root: str,
     project_id: str,
@@ -320,20 +360,7 @@ def projection_plan(
         or previous.get(path, {}).get("content_hash") != candidate.content_hash
         or previous.get(path, {}).get("structural_hash") != candidate.structural_hash
     ]
-    removed_paths = sorted(set(previous) - set(current))
-    new_by_hash: dict[str, list[str]] = {}
-    for path, candidate in current.items():
-        if path not in previous:
-            new_by_hash.setdefault(candidate.content_hash, []).append(path)
-    old_by_hash: dict[str, list[str]] = {}
-    for path in removed_paths:
-        old_by_hash.setdefault(str(previous[path].get("content_hash") or ""), []).append(path)
-    renamed: dict[str, str] = {}
-    for path in removed_paths:
-        content_hash = str(previous[path].get("content_hash") or "")
-        matches = new_by_hash.get(content_hash, [])
-        if len(matches) == 1 and len(old_by_hash.get(content_hash, [])) == 1:
-            renamed[path] = matches[0]
+    removed_paths, renamed = _removed_and_renamed(previous, current, force=force)
     return {
         "manifest": manifest,
         "target": target_identity,
@@ -440,6 +467,34 @@ def _projection_summary(plan: dict) -> dict:
     }
 
 
+def _manifest_items(
+    plan: dict,
+    candidates: list[ArtifactCandidate],
+    project_uid: str,
+    *,
+    force: bool,
+) -> dict:
+    """publish 성공 뒤 저장할 manifest 항목 — 부분 스캔은 자기가 본 경로만 갱신한다.
+
+    안 본 경로의 항목까지 지우면 manifest가 원격 상태를 더는 못 말하고, 그다음 전수 sync가
+    실제로 지워진 파일을 묘비로 못 세운다. force면 current가 전수라 previous를 이어받지 않는다."""
+    items = {} if force else dict(plan["previous"])
+    items.update(
+        {
+            candidate.path: {
+                "document_id": _artifact_document_id(candidate.path, project_uid),
+                "content_hash": candidate.content_hash,
+                "structural_hash": candidate.structural_hash,
+                "extractor": candidate.extractor,
+                "kind": candidate.kind,
+                "status": "active",
+            }
+            for candidate in candidates
+        }
+    )
+    return items
+
+
 def sync_artifacts(
     root: str,
     cfg: dict,
@@ -506,17 +561,7 @@ def sync_artifacts(
                 "items_count": len(items),
                 "plan_id": actual_plan_id,
             }
-        manifest_items = {
-            candidate.path: {
-                "document_id": _artifact_document_id(candidate.path, project_uid),
-                "content_hash": candidate.content_hash,
-                "structural_hash": candidate.structural_hash,
-                "extractor": candidate.extractor,
-                "kind": candidate.kind,
-                "status": "active",
-            }
-            for candidate in candidate_list
-        }
+        manifest_items = _manifest_items(plan, candidate_list, project_uid, force=force)
         _save_projection_manifest(
             root,
             {
