@@ -37,7 +37,10 @@ Runs in a temp repo — seeding the real repo would trap this session behind its
 ```bash
 set -u
 SRC="$(pwd)"; H="$(ls -d .claude/hooks .cursor/hooks .codex/hooks 2>/dev/null | head -1)"
-T="$(mktemp -d)"; cp "$H/quest-log.py" "$T/ql.py"
+# 훅 하나를 옮기는 것으로는 안 선다 — quest-log.py 도 verifier-gate.py 도 옆에 깔린
+# asgard_hooklib 을 임포트한다. 그 계약이 생긴 뒤에도 여기는 파일 하나만 집고 있었고,
+# 하니스는 ModuleNotFoundError 로 죽었다.
+T="$(mktemp -d)"; cp "$H/quest-log.py" "$T/ql.py"; cp -R "$H/asgard_hooklib" "$T/asgard_hooklib"
 GATE=""; [ -f "$SRC/.claude/hooks/verifier-gate.py" ] && { cp "$SRC/.claude/hooks/verifier-gate.py" "$T/vg.py"; GATE=1; }
 cd "$T" || exit 1
 git init -q && git config user.email t@t && git config user.name t
@@ -45,7 +48,10 @@ echo base > f.txt && git add -A && git commit -qm init
 QL="uv run --no-project python ql.py"; n=0; f=0
 ck(){ n=$((n+1)); if eval "$2" >/dev/null 2>&1; then echo "ok   $1"; else echo "FAIL $1"; f=$((f+1)); fi; }
 W='{"role":"worker","event":"work","changed_files":["f.txt"],"commands":[{"cmd":"true","exit_code":0}]}'
-V='{"role":"verifier","event":"verify","commands":[{"cmd":"test -s f.txt","exit_code":0}]}'
+# 증거가 둘인 이유 — close 는 깊은 변경에 서로 다른 성공 증거 두 건을 요구한다
+# (evidence.evidence_breadth). 한 건만 적으면 PASS 는 서고 close 만 thin-evidence 로 거절돼,
+# 하니스가 재려던 "PASS + 해시 일치로 닫힌다" 가 통째로 빨개진다.
+V='{"role":"verifier","event":"verify","commands":[{"cmd":"test -s f.txt","exit_code":0},{"cmd":"grep -q base f.txt","exit_code":0}]}'
 ck "quest log open/state"          "$QL open q1 --criteria c && $QL state | grep -q q1"
 echo x >> f.txt
 ck "transition: after work → VERIFIER" "echo '$W' | $QL append && $QL next | grep -q VERIF"
