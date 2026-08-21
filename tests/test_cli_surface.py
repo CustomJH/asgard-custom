@@ -478,5 +478,107 @@ class TestTrinityPolicyHasADoor(unittest.TestCase):
         self.assertNotIn("`.asgard/asgard-setting-project.json` → trinity_policy.baseline_checks", source)
 
 
+class TestCliLayerHonoursItsOwnJsonFlag(unittest.TestCase):
+    """`--json` 을 선언해 놓고 무조건 JSON 을 찍는 자리를 잡는다.
+
+    `TestMachineOutputNeedsAFlag` 는 `src/asgard/commands/` 만 훑는다. 그래서 `asgard trinity`
+    의 읽기 경로가 `cli/root.py` 에서 `json_` 을 안 보고 날 JSON 을 찍는 것이 통과했다
+    (26-08-21 실측 — 다른 최상위 명령은 전부 패널을 그리는데 이 하나만 달랐다). 규칙을 두 층에
+    걸쳐 세우지 않으면 같은 결함이 다른 층에서 다시 난다."""
+
+    @staticmethod
+    def _guarded_by_json(function: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+        """이 함수의 모든 `json.dumps` 출력이 `json_` 을 보는 분기 안에 있는가."""
+        guarded: list[ast.AST] = []
+        for node in ast.walk(function):
+            if isinstance(node, ast.If) and "json" in ast.dump(node.test):
+                guarded.extend(ast.walk(node))
+        for node in ast.walk(function):
+            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "print"):
+                continue
+            dumps = [
+                inner
+                for inner in ast.walk(node)
+                if isinstance(inner, ast.Call) and isinstance(inner.func, ast.Attribute) and inner.func.attr == "dumps"
+            ]
+            if dumps and node not in guarded:
+                return False
+        return True
+
+    def test_no_cli_command_prints_json_outside_its_flag(self):
+        offenders = {}
+        for path in sorted(Path("src/asgard/cli").rglob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for function in tree.body:
+                if not isinstance(function, ast.FunctionDef | ast.AsyncFunctionDef):
+                    continue
+                arguments = function.args
+                names = {a.arg for a in [*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs]}
+                if not (names & _JSON_PARAMS):
+                    continue
+                if not self._guarded_by_json(function):
+                    offenders[f"{path.as_posix()}:{function.lineno}"] = function.name
+        self.assertEqual(
+            offenders,
+            {},
+            "`--json` 을 선언해 놓고 분기 밖에서 JSON 을 찍는다 — 맨몸 호출은 사람 표면이어야 한다",
+        )
+
+    def test_trinity_reads_as_a_panel_and_as_json(self):
+        from cli_boundary import run_cli
+
+        plain = run_cli("trinity")
+        self.assertEqual(plain.exit_code, 0, plain.stderr)
+        with self.assertRaises(json.JSONDecodeError, msg="맨몸 호출이 날 JSON 을 찍는다"):
+            json.loads(plain.stdout)
+
+        machine = run_cli("trinity", "--json")
+        self.assertEqual(machine.exit_code, 0, machine.stderr)
+        self.assertIsInstance(json.loads(machine.stdout), dict)
+
+
+class TestResolveAgentVocabularyHasOneHome(unittest.TestCase):
+    """도움말과 검사 목록이 각각 손으로 적혀 있으면 한쪽만 자란다.
+
+    26-08-21 실측: 도움말은 다섯 개(`worker|freyja|thor|eitri|mimir`)를 적고 검사 목록은
+    여덟 개를 받아, 문서에 없는 `thor-lead`·`verifier`·`loki` 가 종료 코드 0 으로 통과했다."""
+
+    @staticmethod
+    def _resolve_help() -> str:
+        """`skills resolve --agent` 이 화면에 적는 문장 — 클릭 트리에서 그대로 꺼낸다."""
+        import typer.main
+
+        from asgard.cli import app
+
+        node = typer.main.get_command(app)
+        for name in ("skills", "resolve"):
+            node = getattr(node, "commands", {})[name]
+        agent = next(p for p in node.params if p.name == "agent")
+        return str(agent.help or "")
+
+    def test_the_help_string_names_every_accepted_agent(self):
+        from asgard.skill_scope import RESOLVE_AGENTS
+
+        help_text = self._resolve_help()
+        for name in RESOLVE_AGENTS:
+            with self.subTest(agent=name):
+                self.assertIn(name, help_text, f"`{name}` 을 받으면서 도움말엔 없다")
+
+    def test_the_help_string_names_nothing_it_refuses(self):
+        from asgard.skill_scope import RESOLVE_AGENTS
+
+        for name in self._resolve_help().split("|"):
+            with self.subTest(agent=name):
+                self.assertIn(name.strip(), RESOLVE_AGENTS, f"도움말이 `{name}` 을 약속하는데 안 받는다")
+
+    def test_a_refused_agent_names_what_it_would_take(self):
+        from cli_boundary import run_cli
+
+        result = run_cli("skills", "resolve", "--agent", "nosuchrole", "check the CLI")
+        self.assertEqual(result.exit_code, 2)
+        self.assertIn("worker", result.stderr)
+        self.assertIn("verifier", result.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

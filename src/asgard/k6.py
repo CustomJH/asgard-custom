@@ -357,11 +357,35 @@ def resolve_image(engine_binary: str = "") -> str:
     return DEFAULT_IMAGE
 
 
+def engine_responds(engine_binary: str, timeout: float = 10.0) -> bool:
+    """이 컨테이너 엔진의 데몬이 지금 대답하는가 — 바이너리가 있다는 것과 다른 사실이다.
+
+    `docker` 가 PATH 에 있어도 데몬이 안 떠 있으면 모든 하위 명령이 실패한다. 그 구분을
+    안 하던 판은 데몬이 죽은 기계에서 도커를 러너로 골라 놓고, 옆에 멀쩡한 네이티브 k6 가
+    있어도 폴백하지 않았다 (26-08-21 실측)."""
+    try:
+        probe = subprocess.run(
+            [engine_binary, "version", "--format", "{{.Server.Version}}"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            check=False,
+        )
+    except OSError, subprocess.SubprocessError:
+        return False
+    return probe.returncode == 0 and bool((probe.stdout or "").strip())
+
+
 def resolve_runner(prefer: str = "") -> Runner | None:
     """컨테이너 우선, 없으면 네이티브 k6. `ASGARD_K6_RUNNER`로 고정할 수 있다.
 
     도커를 먼저 보는 이유는 취향이 아니다 — 이미지가 고정되면 같은 부하 형상이 다른
-    기계에서도 같은 도구로 돌아간다. 네이티브 k6는 판이 사람마다 다르다."""
+    기계에서도 같은 도구로 돌아간다. 네이티브 k6는 판이 사람마다 다르다.
+
+    자동 선택일 때만 데몬 응답을 본다. 사람이 `ASGARD_K6_RUNNER` 로 엔진을 고정했으면 그
+    선택을 지킨다 — 고정은 "이걸로 돌려라"이지 "되는 걸로 알아서 골라라"가 아니다."""
     prefer = (prefer or os.environ.get("ASGARD_K6_RUNNER") or "").strip().lower()
     if prefer == "native":
         binary = shutil.which("k6")
@@ -371,10 +395,19 @@ def resolve_runner(prefer: str = "") -> Runner | None:
         return Runner(prefer, binary, resolve_image(binary)) if binary else None
     for engine in ("docker", "podman"):
         binary = shutil.which(engine)
-        if binary:
+        if binary and engine_responds(binary):
             return Runner(engine, binary, resolve_image(binary))
     binary = shutil.which("k6")
-    return Runner("native", binary) if binary else None
+    if binary:
+        return Runner("native", binary)
+    # 네이티브도 없다. 엔진 바이너리는 있으니 러너 자체는 돌려주되, 데몬이 죽었다는 사실은
+    # `runner_version` 이 빈 문자열로 말한다 — 여기서 None 을 내면 "k6 가 아예 없다"가 되어
+    # doctor 가 굽는 법을 안내할 대상조차 잃는다.
+    for engine in ("docker", "podman"):
+        found = shutil.which(engine)
+        if found:
+            return Runner(engine, found, resolve_image(found))
+    return None
 
 
 def runner_version(runner: Runner, timeout: float = 60.0) -> str:
@@ -389,6 +422,12 @@ def runner_version(runner: Runner, timeout: float = 60.0) -> str:
             argv, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout, check=False
         )
     except OSError, subprocess.SubprocessError:
+        return ""
+    # 종료 코드를 안 보던 판은 실패한 프로브의 stderr 첫 줄을 판 번호로 돌려줬다. 그래서
+    # 도커 데몬이 죽은 기계에서 `Cannot connect to the Docker daemon...` 이 판 문자열이 되고,
+    # 그 문자열이 비어 있지 않다는 이유로 `k6 doctor` 가 ready 를 냈다 (26-08-21 실측).
+    # 같은 값이 report.json 의 `k6_version` 으로 새겨져 기준선 비교 축까지 흐른다.
+    if done.returncode != 0:
         return ""
     line = (done.stdout or done.stderr or "").strip().splitlines()
     return line[0].strip() if line else ""

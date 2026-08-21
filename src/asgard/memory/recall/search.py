@@ -235,7 +235,8 @@ def query(
         if s:
             cand[slug] = (meta, body, matched, s)
 
-    # 시맨틱 스트림 (옵트인 3번째 경로) — 활성 시에만. lexical이 놓친 패러프레이즈/동의어를
+    # 시맨틱 스트림 (3번째 경로) — `memory_semantic.DEFAULT_MODE` 가 `local` 이라 기본 설치에서
+    # 돈다. "옵트인" 이라 적던 주석은 그 기본값이 바뀐 뒤로 코드와 어긋나 있었다. lexical이 놓친 패러프레이즈/동의어를
     # 회수한다. 벡터는 state.db 파생물이고, 비활성이면 이 블록 전체가 건너뛰어져 기존 2경로와
     # 완전히 동일하게 동작한다 (무회귀 계약). 문턱 미만 코사인은 후보로도 넣지 않는다.
     sem_order: list[tuple[str, float]] = []

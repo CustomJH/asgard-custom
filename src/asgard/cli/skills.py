@@ -2,6 +2,7 @@
 
 import typer
 
+from ..skill_scope import RESOLVE_AGENT_HELP
 from ._app import app
 
 # Canonical Tool Kernel — inspect the actual role-scoped surfaces used by the
@@ -59,7 +60,7 @@ def skills_show(
 @skills_app.command("resolve", help="what one role would be told to do, given this task")
 def skills_resolve(
     task: str = typer.Argument(None, help="the task at hand (read from stdin if you leave it out)"),
-    agent: str = typer.Option("worker", "--agent", help="worker|freyja|thor|eitri|mimir"),
+    agent: str = typer.Option("worker", "--agent", help=RESOLVE_AGENT_HELP),
     json_: bool = typer.Option(False, "--json"),
     scope_only: bool = typer.Option(
         False, "--scope-only", help="work shape and specialist match only — no skill bodies (prompt injection)"

@@ -16,12 +16,16 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import os
 import shutil
+import subprocess
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 from asgard import k6, k6_gate, k6_selftest
 
@@ -1005,6 +1009,99 @@ class TestHarnessIntegrityLive(unittest.TestCase):
         self.assertEqual(result.error, "")
         red = [c.name for c in result.checks if not c.ok]
         self.assertFalse(red, f"정합성 검사 실패: {red}")
+
+
+class TestDeadDaemonIsNotReady(unittest.TestCase):
+    """도커 데몬이 죽었을 때 하네스가 무엇이라고 답하는가.
+
+    26-08-21 실측: `runner_version` 이 종료 코드를 안 보고 실패 프로브의 stderr 첫 줄을
+    판 문자열로 돌려줬다. `Cannot connect to the Docker daemon...` 이 비어 있지 않다는
+    이유로 `k6 doctor` 가 `ready pass` 와 종료 코드 0 을 냈다. CI 가 그 명령을 문지기로
+    쓰면 부하를 한 판도 못 도는 기계에서 초록이 난다."""
+
+    @staticmethod
+    def _dead(*_args, **_kwargs):
+        return subprocess.CompletedProcess(
+            args=[],
+            returncode=1,
+            stdout="",
+            stderr="Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?",
+        )
+
+    def test_a_failed_probe_is_not_a_version(self):
+        runner = k6.Runner("docker", "/usr/bin/docker", "grafana/k6:latest")
+        with mock.patch.object(k6.subprocess, "run", side_effect=self._dead):
+            self.assertEqual(k6.runner_version(runner), "")
+
+    def test_a_succeeding_probe_still_reads_stderr(self):
+        """판 번호를 stderr 로 내는 k6 도 있다 — 종료 코드가 0 이면 그대로 읽는다."""
+        runner = k6.Runner("native", "/usr/local/bin/k6")
+
+        def ok(*_args, **_kwargs):
+            return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="k6 v0.49.0\n")
+
+        with mock.patch.object(k6.subprocess, "run", side_effect=ok):
+            self.assertEqual(k6.runner_version(runner), "k6 v0.49.0")
+
+    def test_a_dead_engine_falls_through_to_native(self):
+        """옆에 멀쩡한 k6 가 있는데 죽은 도커를 고르면 부하는 한 판도 안 돈다."""
+        with (
+            mock.patch.object(k6.shutil, "which", side_effect=lambda n: f"/usr/bin/{n}"),
+            mock.patch.object(k6, "engine_responds", return_value=False),
+            mock.patch.dict(os.environ, {}, clear=False),
+        ):
+            os.environ.pop("ASGARD_K6_RUNNER", None)
+            runner = k6.resolve_runner()
+        assert runner is not None
+        self.assertEqual(runner.kind, "native")
+
+    def test_a_live_engine_is_still_preferred(self):
+        with (
+            mock.patch.object(k6.shutil, "which", side_effect=lambda n: f"/usr/bin/{n}"),
+            mock.patch.object(k6, "engine_responds", return_value=True),
+            mock.patch.object(k6, "resolve_image", return_value="grafana/k6:latest"),
+        ):
+            os.environ.pop("ASGARD_K6_RUNNER", None)
+            runner = k6.resolve_runner()
+        assert runner is not None
+        self.assertEqual(runner.kind, "docker")
+
+    def test_an_explicit_preference_is_not_second_guessed(self):
+        """`ASGARD_K6_RUNNER=docker` 는 '이걸로 돌려라'이지 '되는 걸로 골라라'가 아니다."""
+        with (
+            mock.patch.object(k6.shutil, "which", side_effect=lambda n: f"/usr/bin/{n}"),
+            mock.patch.object(k6, "engine_responds", return_value=False),
+            mock.patch.object(k6, "resolve_image", return_value="grafana/k6:latest"),
+        ):
+            runner = k6.resolve_runner("docker")
+        assert runner is not None
+        self.assertEqual(runner.kind, "docker")
+
+    def test_engine_responds_reads_the_exit_code(self):
+        with mock.patch.object(k6.subprocess, "run", side_effect=self._dead):
+            self.assertFalse(k6.engine_responds("/usr/bin/docker"))
+
+        def alive(*_args, **_kwargs):
+            return subprocess.CompletedProcess(args=[], returncode=0, stdout="27.3.1\n", stderr="")
+
+        with mock.patch.object(k6.subprocess, "run", side_effect=alive):
+            self.assertTrue(k6.engine_responds("/usr/bin/docker"))
+
+    def test_doctor_refuses_to_call_a_dead_engine_ready(self):
+        from asgard.commands import k6 as k6_cmd
+
+        runner = k6.Runner("docker", "/usr/bin/docker", "grafana/k6:latest")
+        buf = io.StringIO()
+        with (
+            mock.patch.object(k6, "resolve_runner", return_value=runner),
+            mock.patch.object(k6.subprocess, "run", side_effect=self._dead),
+            redirect_stdout(buf),
+        ):
+            code = k6_cmd.run_k6_doctor(json_=True)
+        state = json.loads(buf.getvalue())
+        self.assertFalse(state["ready"], "데몬이 죽었는데 ready 다")
+        self.assertEqual(state["k6_version"], "", "오류 문장이 판 번호 자리에 실렸다")
+        self.assertEqual(code, 1)
 
 
 if __name__ == "__main__":

@@ -16,11 +16,21 @@ app.add_typer(siege_app, name="siege")
 
 
 @siege_app.callback()
-def siege_default(ctx: typer.Context, json_: bool = typer.Option(False, "--json")) -> None:
+def siege_default(
+    ctx: typer.Context,
+    json_: bool = typer.Option(False, "--json"),
+    limit: int = typer.Option(
+        -1, "--limit", help="how many runs to list (0 = every one; the plain list stops at 20 by default)"
+    ),
+) -> None:
+    # 상한을 안 내주던 판은 장부에 run 이 110개일 때 20개만 보여 주고 잘렸다는 표시도 없었다.
+    # 같은 저장소에서 `siege blocked` 는 전수를 훑으므로, 목록에 없는 run 의 미답 질문이
+    # 나오는 자리가 생겼다 (26-08-21 실측).
     if ctx.invoked_subcommand is None:
         from ..commands.siege import run_runs
 
-        raise typer.Exit(run_runs(json_out=json_))
+        # 상한을 안 적었으면 `run_runs` 가 표면에 맞는 기본값을 고른다 (기계는 전부, 사람은 20).
+        raise typer.Exit(run_runs(json_out=json_, limit=None if limit < 0 else limit))
 
 
 @siege_app.command("show", help="one run in full — its tasks, what each waited on, and every attempt")

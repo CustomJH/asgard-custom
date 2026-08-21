@@ -491,10 +491,10 @@ class TestDoctorParityCheck(unittest.TestCase):
             self.assertIn("craft-gate.py", checks["mode parity (Cursor)"]["detail"])
             self.assertNotIn("mode parity (Codex)", checks)  # 미설치 클라이언트는 진단 대상이 아니다
 
-    def test_a_deployed_copy_that_fell_behind_is_reported(self):
-        """이름과 배선만 보던 판은 판본 드리프트를 통째로 못 봤다.
+    def test_a_deployed_copy_that_differs_is_reported(self):
+        """이름과 배선만 보던 판은 사본 드리프트를 통째로 못 봤다.
 
-        배포된 `quest-log.py` 가 패키지본보다 50줄 뒤처져 같은 저장소에서 네이티브와 Claude
+        배포된 `quest-log.py` 가 패키지본과 50줄 달라 같은 저장소에서 네이티브와 Claude
         Code 가 서로 다른 베이스라인을 검출하고 있었는데, doctor 는 "동일 규율 배선"이라고
         적었다 (26-08-05 감사)."""
         with tempfile.TemporaryDirectory() as root:
@@ -504,8 +504,29 @@ class TestDoctorParityCheck(unittest.TestCase):
             checks = {check["name"]: check for check in _mode_parity_check(root)}
             self.assertFalse(checks["mode parity (CC)"]["ok"])
             self.assertIn("quest-log.py", checks["mode parity (CC)"]["detail"])
-            self.assertIn("판본 뒤처짐", checks["mode parity (CC)"]["detail"])
+            self.assertIn("이 판의 템플릿과 다름", checks["mode parity (CC)"]["detail"])
             self.assertTrue(checks["mode parity (Cursor)"]["ok"], checks["mode parity (Cursor)"]["detail"])
+
+    def test_the_report_does_not_claim_a_direction_it_did_not_measure(self):
+        """내용이 다르다는 것만으로는 어느 쪽이 새 판인지 알 수 없다.
+
+        26-08-21 실측: 0.10.19 설치본이 0.10.22 로 깔린 훅 18개를 보고 "판본 뒤처짐"이라 적고
+        `asgard sync --here` 를 권했다. 그대로 돌렸으면 `quest-log.py` 가 50,737B 에서
+        47,530B 로 줄었고, `.claude` 는 gitignore 뒤라 되돌릴 수도 없었다. 방향은 sync 가
+        남긴 도장으로만 안다."""
+        from asgard.settings import write_scaffold_version
+
+        with tempfile.TemporaryDirectory() as root:
+            self._lay_down(root)
+            with open(os.path.join(root, ".claude", "hooks", "quest-log.py"), "a", encoding="utf-8") as handle:
+                handle.write("\n# 더 새 판이 남긴 줄\n")
+            plain = {c["name"]: c for c in _mode_parity_check(root)}["mode parity (CC)"]
+            self.assertNotIn("뒤처", plain["detail"], "재지 않은 방향을 주장한다")
+
+            write_scaffold_version(root, "999.0.0")  # 배포본이 이 엔진보다 새 판이라고 적힌 경우
+            stamped = {c["name"]: c for c in _mode_parity_check(root)}["mode parity (CC)"]
+        self.assertIn("asgard update", stamped["fix"])
+        self.assertNotIn("asgard sync", stamped["fix"], "새 사본을 옛 템플릿으로 덮으라고 한다")
 
 
 if __name__ == "__main__":

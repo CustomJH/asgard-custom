@@ -202,16 +202,47 @@ def _skill_adapter_check(root: str) -> dict:
     }
 
 
+def _frozen_policy_keys(policy: dict) -> list[str]:
+    """프로젝트가 적어 둔 값 중 코드 기본값과 똑같은 키.
+
+    같은 값이라 지금은 아무 차이도 없지만, 기본값이 움직이는 날 이 프로젝트만 옛 값에 남는다.
+    26-08-21 에 그 일이 났다 — `ticket_runtime.lease_seconds` 기본값을 300 에서 1800 으로
+    올렸는데, 옛 기본값 셋을 통째로 베껴 둔 설정 파일이 그것을 가려 유효값이 300 으로 남았고
+    병렬 단위가 매번 헛되이 만료되는 동작이 고친 뒤에도 재현됐다. 그때 이 저장소의 설정은
+    `trinity_policy` 키 15개 중 12개가 기본값과 글자까지 같았다.
+
+    값이 다른 키는 세지 않는다 — 그것은 이 프로젝트가 고른 것이고, 고른 것을 경고하면 안 된다."""
+    from ...hooks.asgard_hooklib.policy import DEFAULT_POLICY
+
+    return sorted(k for k, v in policy.items() if k in DEFAULT_POLICY and DEFAULT_POLICY[k] == v)
+
+
 def _trinity_policy_check(root: str) -> dict:
     """통합 설정(trinity_policy 섹션)을 본다 — 구 trinity-policy.json 폴백은 load_project가 흡수한다."""
     ok, detail = False, "missing"
+    frozen: list[str] = []
     try:
         from ...settings import load_project
 
-        if isinstance(load_project(root).get("trinity_policy"), dict):
+        policy = load_project(root).get("trinity_policy")
+        if isinstance(policy, dict):
             ok, detail = True, "asgard-setting-project.json (trinity_policy)"
+            frozen = _frozen_policy_keys(policy)
     except Exception:
         detail = "unparseable settings"
+    if frozen:
+        # 안내를 `detail` 에 넣는다. 화면 렌더는 `ok=False` 인 행의 `fix` 만 찍으므로
+        # (`doctor/__init__.py` 의 출력부), 초록으로 남는 이 행에 `fix` 로 적으면 `--json`
+        # 에서만 보이고 터미널에서는 아무도 못 읽는다. 이 행이 초록인 이유는 지금 값이 같아
+        # 동작이 멀쩡하기 때문이다 — 경고가 아니라 안내다.
+        detail += (
+            " · 기본값과 같은 값을 %d개 적어 뒀어요 (%s%s) — 기본값이 바뀌어도 여기엔 안 닿아요. 지우면 따라가요"
+            % (
+                len(frozen),
+                ", ".join(frozen[:4]),
+                " 외" if len(frozen) > 4 else "",
+            )
+        )
     return {"name": "trinity policy", "ok": ok, "detail": detail, "fix": _TRINITY_FIX}
 
 
@@ -236,6 +267,36 @@ def _role_agents_check(root: str) -> dict:
 
 # doctor 의 클라이언트 좌표 → setup 의 클라이언트 이름. 두 표가 같은 것을 다른 이름으로 부른다.
 _SETUP_CLIENT = {".claude": "claude-code", ".cursor": "cursor", ".codex": "codex"}
+
+
+def _engine_is_older(root: str) -> str:
+    """깔린 사본을 쓴 엔진이 지금 도는 엔진보다 새 판이면 그 판 번호, 아니면 빈 문자열.
+
+    깔린 훅과 패키지 템플릿이 다르다는 사실만으로는 어느 쪽이 새 판인지 알 수 없다. 이 검사가
+    그 차이를 무조건 "배포본이 뒤처졌다"로 읽던 판은 되감는 조언을 냈다 — 26-08-21 에 0.10.19
+    설치본이 0.10.22 로 깔린 훅 18개를 보고 `asgard sync --here` 를 권했고, 그대로 돌렸으면
+    `quest-log.py` 가 50,737B 에서 47,530B 로 줄었다. `.claude` 는 gitignore 뒤라 되돌릴 수도
+    없었다. 방향은 `asgard sync` 가 남긴 도장으로만 안다 (`settings.write_scaffold_version`).
+
+    도장이 없으면 빈 문자열이다 — 모르는 것을 아는 척하지 않는다."""
+    from ... import __version__
+    from ...settings import read_scaffold_version, version_tuple
+
+    stamped = read_scaffold_version(root)
+    if not stamped:
+        return ""
+    return stamped if version_tuple(stamped) > version_tuple(__version__) else ""
+
+
+def _drift_fix(root: str, sync_command: str) -> str:
+    """어긋난 사본을 두고 무엇을 하라고 할 것인가 — 방향을 아는 만큼만 말한다."""
+    newer = _engine_is_older(root)
+    if newer:
+        return (
+            f"asgard update — 깔린 사본은 {newer} 가 쓴 것이고 지금 도는 엔진은 그보다 옛 판이에요. "
+            "여기서 sync 를 돌리면 새 사본이 옛 템플릿으로 덮여요"
+        )
+    return sync_command
 
 
 def _hook_copy_gap(path: str, body: str) -> str | None:
@@ -284,18 +345,24 @@ def _stale_hook_files(root: str) -> list[str]:
         for path, body in hook_files(hooks_dir, setup_client):
             gap = _hook_copy_gap(path, body)
             if gap is not None:
-                stale.append("%s/%s%s" % (client.folder, os.path.relpath(path, hooks_dir), gap))
+                # `hooks_dir` 기준 상대 경로에 `hooks/` 를 도로 붙인다. 빼고 조립하면
+                # `.claude/asgard_hooklib/baseline.py` 처럼 **존재하지 않는 경로**를 안내하게 된다.
+                stale.append("%s/hooks/%s%s" % (client.folder, os.path.relpath(path, hooks_dir), gap))
     return stale
 
 
 def _hook_files_check(root: str) -> dict:
-    """깔린 훅 파일이 이 판의 템플릿과 같은가 — 배선이 아니라 내용을 본다."""
+    """깔린 훅 파일이 이 판의 템플릿과 같은가 — 배선이 아니라 내용을 본다.
+
+    "다르다"까지가 이 검사가 아는 전부다. 어느 쪽이 새 판인지는 `_drift_fix` 가 도장으로 가른다."""
     stale = _stale_hook_files(root)
     return {
         "name": "hook files (deployed copies)",
         "ok": not stale,
-        "detail": "current" if not stale else "%d 어긋남: %s" % (len(stale), ", ".join(sorted(stale)[:4])),
-        "fix": "asgard sync — 깔린 훅 사본을 이 판의 템플릿으로 갱신",
+        "detail": (
+            "current" if not stale else "%d개가 이 판의 템플릿과 다름: %s" % (len(stale), ", ".join(sorted(stale)[:4]))
+        ),
+        "fix": _drift_fix(root, "asgard sync — 깔린 훅 사본을 이 판의 템플릿으로 갱신"),
     }
 
 
@@ -648,14 +715,14 @@ def _mode_parity_check(root: str) -> list[dict]:
             if unwired:
                 parts.append("미배선: " + ", ".join(unwired[:6]))
             if stale:
-                parts.append("판본 뒤처짐: " + ", ".join(stale[:6]))
+                parts.append("이 판의 템플릿과 다름: " + ", ".join(stale[:6]))
             detail = " · ".join(parts)
         checks.append(
             {
                 "name": f"mode parity ({client})",
                 "ok": not missing and not unwired and not stale,
                 "detail": detail,
-                "fix": "asgard sync --here — 이 프로젝트의 훅 표를 다시 깐다",
+                "fix": _drift_fix(root, "asgard sync --here — 이 프로젝트의 훅 표를 다시 깐다"),
             }
         )
     return checks
@@ -667,7 +734,8 @@ def _stale_hook_copies(hooks_dir: str) -> list[str]:
     이 검사가 **이름과 배선만** 보던 판은 판본 드리프트를 통째로 못 봤다: 배포된
     `quest-log.py` 가 패키지본보다 50줄 뒤처져 있어 같은 저장소에서 네이티브와 Claude Code 가
     서로 다른 베이스라인을 검출하고 있었는데, doctor 는 "동일 규율 배선"이라고 적었다
-    (26-08-05 감사). 훅은 sync 가 바이트 그대로 복사하므로 내용 비교가 곧 판본 비교다.
+    (26-08-05 감사). 훅은 sync 가 바이트 그대로 복사하므로 내용이 다르면 두 판이 다른 것이다.
+    **어느 쪽이 새 판인지는 여기서 알 수 없다** — 그 방향은 `_engine_is_older` 가 도장으로 가른다.
 
     패키지본을 못 읽으면 아무 말도 하지 않는다 — 추측으로 경고하지 않는다."""
     try:

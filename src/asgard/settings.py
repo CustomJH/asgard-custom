@@ -314,6 +314,53 @@ def ensure_state_dir(root: str) -> str:
     return d
 
 
+# ── 스캐폴드 판 도장 — 깔린 훅이 어느 엔진에서 나왔는가 ──────────────────────────────
+
+SCAFFOLD_STAMP = "scaffold.json"
+
+
+def read_scaffold_version(root: str) -> str:
+    """이 프로젝트의 훅·에이전트 사본을 마지막으로 쓴 엔진 판. 모르면 빈 문자열이다.
+
+    깔린 사본과 패키지 템플릿이 다를 때, 어느 쪽이 새 판인지는 내용만 봐서는 알 수 없다.
+    26-08-21 에 그 자리에서 진단이 되감는 조언을 냈다 — 0.10.19 설치본이 0.10.22 로 깔린
+    훅 18개를 보고 "판본 뒤처짐"이라 적고 `asgard sync --here` 를 권했다. 시키는 대로 하면
+    새 훅이 옛 템플릿으로 덮인다. 그래서 sync 가 자기 판을 여기 남기고 진단이 그것을 읽는다.
+
+    도장이 없으면 아무 방향도 주장하지 않는다 — 도장을 남기기 전에 깔린 프로젝트가 있다."""
+    try:
+        with open(state_path(root, SCAFFOLD_STAMP), encoding="utf-8") as handle:
+            return str(json.load(handle).get("asgard_version") or "")
+    except OSError, ValueError:
+        return ""
+
+
+def write_scaffold_version(root: str, version: str) -> None:
+    """sync·setup 이 스캐폴드를 쓴 뒤 자기 판을 남긴다. 실패는 조용히 넘어간다 —
+    도장은 진단의 힌트이고, 그것 때문에 스캐폴드 갱신이 멈추면 안 된다."""
+    try:
+        ensure_state_dir(root)
+        with open(state_path(root, SCAFFOLD_STAMP), "w", encoding="utf-8") as handle:
+            json.dump({"asgard_version": version}, handle, ensure_ascii=False, indent=2)
+    except OSError:
+        return
+
+
+def version_tuple(version: str) -> tuple[int, ...]:
+    """ "0.10.22" → (0, 10, 22). 숫자가 아닌 마디에서 멈춘다 — 판 비교는 앞마디로 갈린다."""
+    parts: list[int] = []
+    for chunk in version.split("."):
+        digits = ""
+        for ch in chunk:
+            if not ch.isdigit():
+                break
+            digits += ch
+        if not digits:
+            break
+        parts.append(int(digits))
+    return tuple(parts)
+
+
 # ── 마이그레이션 (asgard sync) — 구 파일 → 신 구조, 멱등 ──────────────────────────────
 
 

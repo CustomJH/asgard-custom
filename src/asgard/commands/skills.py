@@ -130,8 +130,10 @@ def run_skills_show(name: str, body_only: bool = True, resource: str | None = No
 
 
 def run_skills_resolve(agent: str, task: str | None, json_out: bool = False, *, scope_only: bool = False) -> int:
-    if agent not in ("worker", "freyja", "thor", "thor-lead", "eitri", "mimir", "verifier", "loki"):
-        print("invalid agent", file=sys.stderr)
+    from ..skill_scope import RESOLVE_AGENTS
+
+    if agent not in RESOLVE_AGENTS:
+        print("invalid agent: " + "|".join(RESOLVE_AGENTS), file=sys.stderr)
         return 2
     task = task if task is not None else sys.stdin.read()
     if not task.strip():

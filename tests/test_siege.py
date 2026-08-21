@@ -68,6 +68,45 @@ class TestRootResolution(SiegeBase):
         self.assertFalse(os.path.exists(os.path.join(self.deep, ".asgard")), "조회가 하위 디렉터리에 장부를 만들었다")
 
 
+class TestListingHidesNothingSilently(SiegeBase):
+    """26-08-21 실측: 장부에 run 이 110개인데 목록이 20개에서 잘렸고, 잘렸다는 표시도 더 보는
+    손잡이도 없었다. 같은 저장소의 `siege blocked` 는 전수를 훑기 때문에, 목록에 없는 run 의
+    미답 질문이 나오는 자리가 생겼다."""
+
+    def _many(self, count: int) -> int:
+        os.chdir(self.root)
+        for i in range(count):
+            orc.run_create(self.root, f"Run {i}", quest_id=f"q-{i}")
+        return count
+
+    def test_json_lists_every_run(self):
+        made = self._many(25)
+        payload = json.loads(self.capture(lambda: siege.run_runs(json_out=True)))
+        self.assertEqual(len(payload), made, "`--json` 이 조용히 잘랐다 — 스킬 문서의 계약은 every run 이다")
+
+    def test_json_stays_an_array(self):
+        """봉투를 씌우면 이미 이 표면을 읽고 있는 쪽이 깨진다."""
+        self._many(3)
+        payload = json.loads(self.capture(lambda: siege.run_runs(json_out=True)))
+        self.assertIsInstance(payload, list)
+
+    def test_a_truncated_plain_list_says_how_many_it_hid(self):
+        self._many(25)
+        text = self.capture(lambda: siege.run_runs(json_out=False, limit=20))
+        self.assertIn("5개를 더 안 보여 줬어요", text)
+        self.assertIn("--limit 0", text)
+
+    def test_a_complete_plain_list_says_nothing_extra(self):
+        self._many(3)
+        text = self.capture(lambda: siege.run_runs(json_out=False, limit=20))
+        self.assertNotIn("더 안 보여 줬어요", text)
+
+    def test_limit_zero_means_every_one(self):
+        made = self._many(25)
+        payload = json.loads(self.capture(lambda: siege.run_runs(json_out=True, limit=0)))
+        self.assertEqual(len(payload), made)
+
+
 class TestReadOnly(SiegeBase):
     def test_an_empty_project_reports_empty_without_creating_a_file(self):
         os.chdir(self.root)

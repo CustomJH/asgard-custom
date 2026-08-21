@@ -160,6 +160,22 @@ def run_map_update(*, dry_run: bool = False, json_out: bool = False, quiet: bool
     return run_setup_map(dry_run=dry_run, json_out=json_out, quiet=quiet)
 
 
+def _graph_drift(root: str) -> bool:
+    """관계 그래프가 코드와 어긋났는가 — 다시 그리지 않고 묻기만 한다.
+
+    아직 안 그린 그래프는 드리프트가 아니다. GRAPH.md 가 없는 것을 결함이라 부르면 지도를
+    처음 그리는 저장소가 영영 빨간불이 된다 (영역 지도의 fog-of-war 와 같은 독법).
+    `scan_graph` 의 쓰기는 전부 `dry_run` 뒤에 있어 이 호출은 아무것도 안 남긴다."""
+    from ..map_graph import scan_graph
+
+    if not os.path.isfile(os.path.join(root, ".asgard", "map", "GRAPH.md")):
+        return False
+    try:
+        return bool(scan_graph(root, dry_run=True).changed)
+    except MapError, OSError, ValueError:
+        return False
+
+
 def run_map_check(*, json_out: bool = False, quiet: bool = False) -> int:
     root = _project_root(os.getcwd())
     ui.set_quiet(quiet or json_out)
@@ -167,7 +183,12 @@ def run_map_check(*, json_out: bool = False, quiet: bool = False) -> int:
         result = check_map(root)
         _, issues = validate_area_maps(root)
         _, _, _, gitignore_changed, _, _, internal_changed = _gitignore_preview(root)
-        ok = result.ok and not issues and not gitignore_changed and not internal_changed
+        # GRAPH.md 도 이 명령이 판정할 대상이다. 안 보던 판은 그래프만 어긋난 트리에서
+        # "project map is current" 를 냈고, 권고인 `map update` 는 그래프를 안 건드리므로
+        # 시키는 대로 해도 드리프트가 화면에서만 사라졌다 (26-08-21 실측). GRAPH.md 는
+        # 추적 파일이고 `map impact`·`map trace` 가 거기서 답을 낸다.
+        graph_changed = _graph_drift(root)
+        ok = result.ok and not issues and not gitignore_changed and not internal_changed and not graph_changed
     except (MapError, OSError) as exc:
         if json_out:
             print(json.dumps({"error": str(exc)}, ensure_ascii=False))
@@ -180,6 +201,7 @@ def run_map_check(*, json_out: bool = False, quiet: bool = False) -> int:
             "ok": ok,
             "gitignore_changed": gitignore_changed,
             "asgard_gitignore_changed": internal_changed,
+            "graph_changed": graph_changed,
             "area_issues": [asdict(issue) for issue in issues],
         }
     )
@@ -200,12 +222,18 @@ def run_map_check(*, json_out: bool = False, quiet: bool = False) -> int:
             ui.step("gitignore: .gitignore is missing the Asgard map rules")
         if internal_changed:
             ui.step("gitignore: .asgard/.gitignore seed is missing")
+        if graph_changed:
+            ui.step("GRAPH.md drift — the relation graph no longer matches the code")
         # 추적 불가는 `map update`로 못 고친다 — 무시 규칙을 제거해야 풀린다. 이유를 안 넣으면
         # 아래 한 줄만 남아 "업데이트하라 → 여전히 빨강"을 무한 반복하게 된다.
         if not result.trackable:
             ui.step("managed map is git-ignored — not shareable; drop the ignore rule or keep the map local by choice")
         if result.added or result.removed or not result.owned or not result.index_current or gitignore_changed:
             ui.step("run: asgard map update")
+        # `map update` 는 그래프를 다시 훑지 않는다. 두 줄을 한 줄로 합치면 그래프 드리프트가
+        # 안 고쳐진 채 초록이 된다 — 고치는 문은 `map scan` 하나다.
+        if graph_changed:
+            ui.step("run: asgard map scan")
     return 0 if ok else 1
 
 

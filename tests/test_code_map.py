@@ -312,6 +312,44 @@ class TestMapCLI(CodeMapBase):
         self.assertEqual(stale.stderr, "")
         self.assertIn("src/lib.rs", json.loads(stale.stdout)["added"])
 
+    def test_a_stale_relation_graph_is_drift(self):
+        """`map check` 가 GRAPH.md 를 안 보던 판은 그래프만 어긋난 트리에 초록을 냈고,
+        권고인 `map update` 는 그래프를 안 건드려서 시키는 대로 해도 안 고쳐졌다 (26-08-21).
+        고치는 문은 `map scan` 하나다."""
+        from cli_boundary import run_cli
+
+        subprocess.run(["git", "init", "-q", self.root], check=True)
+        self.write("pyproject.toml", '[project]\nname = "demo"\n')
+        self.write("src/demo/__init__.py")
+        with mock.patch("asgard.commands.map.os.getcwd", return_value=self.root):
+            self.assertEqual(run_cli("map", "update", "--json").exit_code, 0)
+            self.assertEqual(run_cli("map", "scan", "--json").exit_code, 0)
+            fresh = run_cli("map", "check", "--json")
+            self.assertEqual(fresh.exit_code, 0, fresh.stderr)
+            self.assertFalse(json.loads(fresh.stdout)["graph_changed"])
+
+            # 지도가 못 본 표면을 들인다 — 관리 지도와 그래프가 같이 낡는다.
+            self.write("src/demo/api.py", "import httpx\n\n\ndef fetch():\n    return httpx.get('/x')\n")
+            self.assertEqual(run_cli("map", "update", "--json").exit_code, 0)
+            after_update = run_cli("map", "check", "--json")
+            payload = json.loads(after_update.stdout)
+        self.assertTrue(payload["graph_changed"], "`map update` 뒤에도 그래프는 낡아 있다")
+        self.assertEqual(after_update.exit_code, 1, "그래프가 낡았는데 초록이다")
+
+    def test_a_project_that_never_drew_a_graph_is_not_drift(self):
+        """fog-of-war — 안 그린 것을 결함이라 부르면 새 저장소가 영영 빨간불이 된다."""
+        from cli_boundary import run_cli
+
+        subprocess.run(["git", "init", "-q", self.root], check=True)
+        self.write("pyproject.toml", '[project]\nname = "demo"\n')
+        self.write("src/demo/__init__.py")
+        with mock.patch("asgard.commands.map.os.getcwd", return_value=self.root):
+            self.assertEqual(run_cli("map", "update", "--json").exit_code, 0)
+            check = run_cli("map", "check", "--json")
+        self.assertFalse(os.path.isfile(os.path.join(self.root, ".asgard", "map", "GRAPH.md")))
+        self.assertFalse(json.loads(check.stdout)["graph_changed"])
+        self.assertEqual(check.exit_code, 0, check.stderr)
+
     def test_doctor_reports_managed_map_drift(self):
         from asgard.code_map import refresh_map
         from asgard.commands.doctor import _trinity_checks

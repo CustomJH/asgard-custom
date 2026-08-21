@@ -7,6 +7,7 @@ usage를 읽어 89건 전부 null → 상한이 죽은 코드), 테스트의 첫
 
 from __future__ import annotations
 
+import contextlib
 import io
 import json
 import os
@@ -600,6 +601,96 @@ class TestTheGateNamesAWayThrough(unittest.TestCase):
                 self.assertTrue(named, f"{code} 가 처방을 하나도 안 가리킨다")
                 for key in named:
                     self.assertIn(key, SETTABLE, f"{code} 가 없는 손잡이를 가리킨다")
+
+
+class TestBudgetNamesWhatItMeasured(unittest.TestCase):
+    """어느 세션을 쟀는지가 값과 같이 나와야 한다.
+
+    26-08-21 실측: 병렬 서브에이전트가 도는 트리에서 `asgard budget` 이 mtime 최댓값으로
+    형제 세션을 고르고, 화면 머리에는 "이 세션이 쓴 것"이라고 적었다. opus-5 세션에서 물었는데
+    다른 세션의 100,752 와 `claude-opus-4-8` 이 돌아왔다. 산술은 맞고 대상이 틀렸다."""
+
+    def setUp(self):
+        from asgard import ui
+
+        ui.set_quiet(True)
+        self.addCleanup(ui.set_quiet, False)
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.home = tempfile.TemporaryDirectory()
+        self.addCleanup(self.home.cleanup)
+        from asgard.commands import budget as budget_cmd
+
+        self.budget = budget_cmd
+        self.project_dir = os.path.join(self.home.name, ".claude", "projects", budget_cmd._project_key(self.tmp.name))
+        os.makedirs(self.project_dir, exist_ok=True)
+
+    def _transcript(self, session: str, at: float) -> str:
+        path = os.path.join(self.project_dir, f"{session}.jsonl")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps({"message": {"usage": {"output_tokens": 10}}}) + "\n")
+        os.utime(path, (at, at))
+        return path
+
+    def _run(self, **kwargs) -> dict:
+        buf = io.StringIO()
+        with (
+            mock.patch.dict(os.environ, {"HOME": self.home.name}),
+            mock.patch("asgard.commands.budget._project_root", return_value=self.tmp.name),
+            contextlib.redirect_stdout(buf),
+        ):
+            self.budget.run_budget(json_out=True, **kwargs)
+        return json.loads(buf.getvalue())
+
+    def test_a_named_session_is_the_one_measured(self):
+        self._transcript("mine", at=1000.0)
+        self._transcript("theirs", at=9000.0)
+        payload = self._run(session="mine")
+        self.assertEqual(payload["transcript"], "mine.jsonl", "id 로 지목했는데 다른 것을 쟀다")
+        self.assertTrue(payload["session_named"])
+
+    def test_a_missing_session_is_refused_not_substituted(self):
+        self._transcript("theirs", at=9000.0)
+        with (
+            mock.patch.dict(os.environ, {"HOME": self.home.name}),
+            mock.patch("asgard.commands.budget._project_root", return_value=self.tmp.name),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            code = self.budget.run_budget(session="nosuchsession")
+        self.assertEqual(code, 2, "없는 세션을 다른 것으로 대신 쟀다")
+
+    def test_guessing_by_recency_says_that_siblings_exist(self):
+        self._transcript("theirs", at=9000.0)
+        self._transcript("mine", at=9100.0)
+        payload = self._run()
+        self.assertFalse(payload["session_named"])
+        self.assertEqual(payload["sibling_sessions"], 1, "형제 세션이 있는데 조용하다")
+
+    def test_a_lone_session_has_no_siblings_to_warn_about(self):
+        self._transcript("only", at=9000.0)
+        payload = self._run()
+        self.assertEqual(payload["sibling_sessions"], 0)
+        self.assertEqual(payload["transcript"], "only.jsonl")
+
+    def test_an_old_transcript_is_not_a_sibling(self):
+        self._transcript("ancient", at=1000.0)
+        self._transcript("mine", at=9000.0)
+        payload = self._run()
+        self.assertEqual(payload["sibling_sessions"], 0, "5분 창 밖인데 형제로 셌다")
+
+    def test_the_panel_head_does_not_claim_a_session_it_guessed(self):
+        self._transcript("theirs", at=9000.0)
+        buf = io.StringIO()
+        from asgard import ui
+
+        ui.set_quiet(False)
+        with (
+            mock.patch.dict(os.environ, {"HOME": self.home.name}),
+            mock.patch("asgard.commands.budget._project_root", return_value=self.tmp.name),
+            contextlib.redirect_stdout(buf),
+        ):
+            self.budget.run_budget()
+        self.assertIn("가장 최근 세션", buf.getvalue())
 
 
 class TestBudgetSet(unittest.TestCase):

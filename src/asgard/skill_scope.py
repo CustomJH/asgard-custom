@@ -18,6 +18,12 @@ from __future__ import annotations
 
 import re
 
+# `skills resolve --agent` 이 받는 이름. 정본은 여기 하나다 — CLI 도움말과 검사 목록이 각각
+# 손으로 적혀 있던 판은 도움말이 다섯 개만 적어 두어, 문서에 없는 `thor-lead`·`verifier`·`loki`
+# 가 조용히 통과했다 (26-08-21 실측). 이 모듈은 `re` 만 임포트하므로 CLI 가 시작 비용 없이 읽는다.
+RESOLVE_AGENTS = ("worker", "freyja", "thor", "thor-lead", "eitri", "mimir", "verifier", "loki")
+RESOLVE_AGENT_HELP = "|".join(RESOLVE_AGENTS)
+
 # ── 형상 — 규율의 축. 예산 축(task_class)과 직교한다 ──
 SHAPES = ("direct", "slice", "feature", "expedition")
 

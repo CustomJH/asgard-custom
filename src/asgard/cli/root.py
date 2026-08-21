@@ -120,6 +120,7 @@ def surface(
 @app.command(help="what this session has cost you so far — the total, what makes it up, and which lane spent it")
 def budget(
     transcript: str = typer.Option("", "--transcript", help="read this transcript instead of the newest one"),
+    session: str = typer.Option("", "--session", help="measure this session id instead of guessing by recency"),
     set_: list[str] = typer.Option(
         None,
         "--set",
@@ -133,7 +134,7 @@ def budget(
 
     if set_:
         raise typer.Exit(run_budget_set(list(set_), json_out=json_))
-    raise typer.Exit(run_budget(transcript=transcript, json_out=json_, quiet=quiet))
+    raise typer.Exit(run_budget(transcript=transcript, session=session, json_out=json_, quiet=quiet))
 
 
 @app.command(
@@ -159,7 +160,16 @@ def trinity(
 
         policy = load_project(os.getcwd()).get("trinity_policy")
         current = {k: (policy or {}).get(k) for k in PROJECT_OWNED_POLICY_KEYS} if isinstance(policy, dict) else {}
-        print(json.dumps(current, ensure_ascii=False, indent=2))
+        if json_:
+            print(json.dumps(current, ensure_ascii=False, indent=2))
+            raise typer.Exit(0)
+        # 읽기 경로가 `--json` 을 안 보던 판은 맨몸 호출에도 날 JSON 을 찍었다. 다른 최상위
+        # 명령은 전부 패널을 그리므로, 이 하나만 기계용 출력을 기본으로 내면 사람이 읽는 표면이
+        # 여기서만 다르다. `--set` 쪽은 `run_policy_set` 이 같은 플래그를 이미 지킨다.
+        ui.head("trinity policy")
+        for key in PROJECT_OWNED_POLICY_KEYS:
+            value = current.get(key)
+            ui.step(f"{key}: {'선언 없음 — 기본값' if value in (None, [], '') else value}")
         raise typer.Exit(0)
     raise typer.Exit(run_policy_set(list(set_), json_out=json_))
 

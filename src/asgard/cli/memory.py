@@ -42,7 +42,13 @@ def memory_ingest(
     raise typer.Exit(run_ingest(text, kind, yes, plan_id, json_out, title))
 
 
-@memory_app.command("query", help="search the wiki — plain text search, no model, and every hit is counted")
+# 도움말이 "no model" 이라고 적던 판은 실제 동작과 어긋났다. `memory_semantic.DEFAULT_MODE` 가
+# `local` 이라 기본 설치에서 정적 임베더가 돌고, 그 스트림이 어휘가 못 찾은 후보를 만든다
+# (26-08-21 실측 — 위키에 없는 토큰에 5건이 실려 나왔고 그 후보의 출처가 이 스트림이다).
+@memory_app.command(
+    "query",
+    help="search the wiki — words first, then a local embedder for paraphrases; every hit is counted",
+)
 def memory_query(
     text: str = typer.Argument(...),
     # 같은 개념(결과 개수)이 다른 명령에서는 `--limit`이다 — 긴 이름을 정본으로 두고 `-k`는 단축으로 남긴다.

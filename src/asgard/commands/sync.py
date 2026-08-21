@@ -270,6 +270,14 @@ def sync_project(root: str, cc: bool, cursor: bool, codex: bool, dry_run: bool =
     from ..justfile import sync as sync_justfile
 
     counts["updated" if sync_justfile(root, dry_run=dry_run, create=False).changed else "kept"] += 1
+    # 어느 판이 이 사본들을 썼는지 남긴다. 진단이 깔린 훅과 패키지 템플릿의 차이를 볼 때, 이
+    # 도장이 없으면 어느 쪽이 새 판인지 알 방법이 없어 되감는 조언을 낸다 (settings 의
+    # `read_scaffold_version` 주석에 그 사고가 적혀 있다).
+    if not dry_run:
+        from .. import __version__
+        from ..settings import write_scaffold_version
+
+        write_scaffold_version(root, __version__)
     return counts
 
 

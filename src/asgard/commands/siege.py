@@ -76,11 +76,22 @@ def _dump(payload, json_out: bool) -> None:
         print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
 
 
-def run_runs(json_out: bool = False, limit: int = 20) -> int:
-    """Run 목록 — 최근 것이 위."""
+def run_runs(json_out: bool = False, limit: int | None = None) -> int:
+    """Run 목록 — 최근 것이 위. `limit=0` 이면 전부.
+
+    잘랐다는 사실을 말하지 않던 판은 장부에 run 이 110개일 때 20개만 보여 주고 조용했다.
+    같은 저장소의 `siege blocked` 는 전수를 훑으므로, 목록에 없는 run 의 미답 질문이
+    나오는 자리가 생겼다 (26-08-21 실측).
+
+    `--json` 은 상한을 명시하지 않는 한 전부 낸다 — 이 표면의 독자는 기계이고, 스킬 문서가
+    적어 둔 계약도 "every run" 이다. 사람이 읽는 목록만 최근 20개에서 끊고, 끊었으면 몇 개가
+    더 있는지 말한다. 배열 형상은 그대로다 — 봉투를 씌우면 이미 읽고 있는 쪽이 깨진다."""
     ui.set_quiet(json_out)
     root = _root()
-    rows = orc.run_list(root)[: max(1, limit)]
+    every = orc.run_list(root)
+    if limit is None:  # 표면이 기본값을 정한다 — 기계는 전부, 사람은 최근 20개.
+        limit = 0 if json_out else 20
+    rows = every if limit <= 0 else every[:limit]
     if json_out:
         _dump(rows, True)
         return 0
@@ -96,6 +107,9 @@ def run_runs(json_out: bool = False, limit: int = 20) -> int:
         running = [d["agent"] or d["worker"] for d in orc.live_agents(root, row["id"])]
         if running:
             ui.step(ui.dim(f"    지금 도는 중 — {', '.join(dict.fromkeys(running))}"))
+    hidden = len(every) - len(rows)
+    if hidden:
+        ui.step(ui.dim(f"… {hidden}개를 더 안 보여 줬어요 — 전부 보려면 `asgard siege --limit 0`"))
     return 0
 
 

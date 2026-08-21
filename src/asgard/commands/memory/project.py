@@ -313,12 +313,16 @@ def run_project_recall(
         target = backend_target(cfg)
         hits = server_recall(cfg, query, max_results, tags=None if unfiltered else INJECTABLE_TAGS)
         filtered, dropped = filter_project_hits(root, cfg, hits, max_results=max_results, query=query)
+        # backend 가 돌려준 관련도(`client.py` 의 `score`)를 행에 남긴다. 버리던 판은
+        # 맞는 질의와 무의미한 질의가 같은 기록을 같은 문장으로 내놓아, 읽는 쪽이 "이게 정말
+        # 물음에 닿는 기록인가"를 가릴 근거를 못 가졌다 (26-08-21 실측).
         rows = [
             {
                 "text": body,
                 "record_id": str((hit.get("metadata") or {}).get("record_id") or ""),
                 "kind": str((hit.get("metadata") or {}).get("kind") or ""),
                 "provenance": hit_provenance(hit["metadata"]),
+                "score": _hit_score(hit),
             }
             for hit in filtered
             if (body := hit_body(hit))
@@ -339,7 +343,8 @@ def run_project_recall(
             return 0
         ui.head(f"project memory recall · engine={target['engine']} · project_id={target['project_id']}")
         for row in rows:
-            print(f"  {row['text']}{row['provenance']}")
+            score = "" if row["score"] is None else ui.dim(f"  [{row['score']:.3f}]")
+            print(f"  {row['text']}{row['provenance']}{score}")
         note = drop_note(dropped)
         if not rows:
             ui.warn("주입 자격을 갖춘 기억 없음" + note)
@@ -352,6 +357,15 @@ def run_project_recall(
         return 0
 
     return _guard(_do)
+
+
+def _hit_score(hit: dict) -> float | None:
+    """이 기록이 질의에 얼마나 가까운가. backend 가 값을 안 주면 None — 0.0 으로 적으면
+    "전혀 안 닿는다"는 뜻이 되어, 모른다는 것과 구분이 안 된다."""
+    raw = hit.get("score")
+    if isinstance(raw, bool) or not isinstance(raw, int | float):
+        return None
+    return float(raw)
 
 
 def run_project_retain(

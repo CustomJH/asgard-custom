@@ -127,13 +127,35 @@ def _codebase_map_check(root: str) -> list[dict]:
     except MapError as exc:
         detail = f"unsafe managed map path: {exc}"
         return [_map_row(False, detail, "symlink/junction 제거 후 asgard map update 실행")]
+    # GRAPH.md 는 `map update` 가 안 건드린다. 그래프 드리프트를 이 행이 안 보던 판은 낡은
+    # 노드·간선을 초록으로 통과시켰고, `map impact`·`map trace` 가 거기서 답을 낸다.
+    graph_drift = _graph_drift(root)
+    detail = _map_status_detail(managed, areas, entries, ghosts, unsafe)
+    if graph_drift:
+        detail = f"{detail} · GRAPH.md drift"
     return [
         _map_row(
-            not ghosts and not unsafe and managed.ok,
-            _map_status_detail(managed, areas, entries, ghosts, unsafe),
-            "asgard map update 실행; 수동 영역의 유령 경로는 제거 (.asgard/map/INDEX.md)",
+            not ghosts and not unsafe and managed.ok and not graph_drift,
+            detail,
+            "asgard map scan (관계 그래프) · asgard map update (관리 지도); 수동 영역의 유령 경로는 제거",
         )
     ]
+
+
+def _graph_drift(root: str) -> bool:
+    """관계 그래프가 코드와 어긋났는가 — 다시 그리지 않고 묻기만 한다.
+
+    아직 안 그린 그래프는 드리프트가 아니다. GRAPH.md 가 없는 것을 결함이라 부르면 지도를
+    처음 그리는 저장소가 영영 빨간불이 된다 (영역 지도의 fog-of-war 와 같은 독법).
+    `scan_graph` 의 쓰기는 전부 `dry_run` 뒤에 있어 이 호출은 아무것도 안 남긴다."""
+    from ...map_graph import scan_graph
+
+    if not os.path.isfile(os.path.join(root, ".asgard", "map", "GRAPH.md")):
+        return False
+    try:
+        return bool(scan_graph(root, dry_run=True).changed)
+    except Exception:
+        return False
 
 
 def _map_row(ok: bool, detail: str, fix: str) -> dict:

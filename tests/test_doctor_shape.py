@@ -26,6 +26,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 from asgard.commands import doctor
+from asgard.commands.doctor import wiring
 
 # doctor.py 안에서 70행(craft 예산)을 넘는 함수의 수. 남은 하나는 `_shared_memory_check`(125행).
 # **이 수를 올리려면 근거가 있어야 한다** — 새 긴 함수를 들이는 대신 쪼개는 것이 기본값이다.
@@ -740,6 +741,226 @@ class TestFunctionLengthAnchor(unittest.TestCase):
         """조립기는 목록을 읽는 자리다 — 여기에 판정 로직이 다시 쌓이면 원점이다."""
         long = dict(self._long_functions())
         self.assertNotIn("_trinity_checks", long)
+
+
+class TestScaffoldDriftDirection(unittest.TestCase):
+    """어긋난 훅 사본을 두고 doctor 가 어느 방향을 권하는가.
+
+    26-08-21 에 0.10.19 설치본이 0.10.22 로 깔린 훅 18개를 보고 "판본 뒤처짐"이라 적고
+    `asgard sync --here` 를 권했다. 그대로 돌렸으면 `quest-log.py` 가 50,737B 에서
+    47,530B 로 줄고, `.claude` 는 gitignore 뒤라 되돌릴 수도 없었다. 이 클래스는 그
+    방향이 도장으로만 주장되는지를 잰다."""
+
+    SYNC = "asgard sync --here — 이 프로젝트의 훅 표를 다시 깐다"
+
+    @staticmethod
+    def _stamp(root: str, version: str) -> None:
+        from asgard.settings import write_scaffold_version
+
+        write_scaffold_version(root, version)
+
+    def test_no_stamp_claims_no_direction(self):
+        """도장을 남기기 전에 깔린 프로젝트가 있다 — 모르면 아무 방향도 말하지 않는다."""
+        with tempfile.TemporaryDirectory() as td:
+            self.assertEqual(wiring._drift_fix(td, self.SYNC), self.SYNC)
+
+    def test_a_newer_stamp_sends_you_to_update_not_sync(self):
+        from asgard import __version__
+
+        newer = "%d.0.0" % (int(__version__.split(".")[0]) + 1)
+        with tempfile.TemporaryDirectory() as td:
+            self._stamp(td, newer)
+            fix = wiring._drift_fix(td, self.SYNC)
+        self.assertIn("asgard update", fix)
+        self.assertIn(newer, fix)
+        self.assertNotIn("asgard sync", fix)
+
+    def test_the_engines_own_version_is_not_newer_than_itself(self):
+        from asgard import __version__
+
+        with tempfile.TemporaryDirectory() as td:
+            self._stamp(td, __version__)
+            self.assertEqual(wiring._drift_fix(td, self.SYNC), self.SYNC)
+
+    def test_an_older_stamp_still_sends_you_to_sync(self):
+        with tempfile.TemporaryDirectory() as td:
+            self._stamp(td, "0.0.1")
+            self.assertEqual(wiring._drift_fix(td, self.SYNC), self.SYNC)
+
+    def test_an_unreadable_stamp_is_read_as_no_stamp(self):
+        from asgard.settings import SCAFFOLD_STAMP, ensure_state_dir
+
+        with tempfile.TemporaryDirectory() as td:
+            ensure_state_dir(td)
+            _write(td, os.path.join(".asgard", "state", SCAFFOLD_STAMP), "{not json")
+            self.assertEqual(wiring._drift_fix(td, self.SYNC), self.SYNC)
+
+    def test_both_drift_rows_go_through_the_same_direction(self):
+        """두 행이 같은 사실을 다르게 처방하면 하나는 틀린 것이다."""
+        from asgard import __version__
+
+        newer = "%d.0.0" % (int(__version__.split(".")[0]) + 1)
+        with tempfile.TemporaryDirectory() as td:
+            TestTemplateRegisteredHooksAreWired._install_cc(td)
+            self._stamp(td, newer)
+            rows = {row["name"]: row for row in doctor._trinity_checks(td)}
+            rows.update({row["name"]: row for row in wiring._mode_parity_check(td)})
+        for name in ("hook files (deployed copies)", "mode parity (CC)"):
+            with self.subTest(row=name):
+                self.assertIn(name, rows)
+                self.assertNotIn("판본 뒤처짐", rows[name]["detail"], "측정하지 않은 방향을 주장한다")
+                if not rows[name]["ok"]:
+                    self.assertIn("asgard update", rows[name]["fix"], "새 사본을 옛 템플릿으로 덮으라고 한다")
+
+    def test_version_tuple_orders_by_the_leading_parts(self):
+        from asgard.settings import version_tuple
+
+        self.assertGreater(version_tuple("0.10.22"), version_tuple("0.10.19"))
+        self.assertGreater(version_tuple("0.10.0"), version_tuple("0.9.99"))
+        self.assertEqual(version_tuple("1.2.3rc1"), (1, 2, 3))
+        self.assertEqual(version_tuple("not-a-version"), ())
+
+
+class TestDriftPathsPointAtRealFiles(unittest.TestCase):
+    """안내가 부르는 경로는 열 수 있어야 한다 — `.claude/asgard_hooklib/baseline.py` 는 없다."""
+
+    def test_a_drifted_copy_is_named_by_a_path_that_exists(self):
+        from asgard.commands.setup import hook_files
+
+        with tempfile.TemporaryDirectory() as td:
+            _scaffolded(td)
+            hooks_dir = os.path.join(td, ".claude", "hooks")
+            os.makedirs(hooks_dir, exist_ok=True)
+            for path, body in hook_files(hooks_dir, "claude-code"):
+                _write(td, os.path.relpath(path, td), body)
+            nested = os.path.join(hooks_dir, "asgard_hooklib", "baseline.py")
+            self.assertTrue(os.path.isfile(nested), "중첩 사본이 있어야 이 축을 잰다")
+            _write(td, os.path.relpath(nested, td), "# drifted\n")
+            named = wiring._stale_hook_files(td)
+        self.assertTrue(named, "내용이 다른데 아무것도 안 적혔다")
+        self.assertIn(".claude/hooks/asgard_hooklib/baseline.py", named)
+
+
+class TestSyncStampsItsVersion(unittest.TestCase):
+    """도장을 남기는 쪽이 없으면 방향 판정은 영영 어둡다."""
+
+    def test_a_real_sync_leaves_the_version_it_wrote(self):
+        from asgard import __version__
+        from asgard.commands.sync import sync_project
+        from asgard.settings import read_scaffold_version
+
+        with tempfile.TemporaryDirectory() as td:
+            _scaffolded(td)
+            os.makedirs(os.path.join(td, ".claude"), exist_ok=True)
+            sync_project(td, cc=True, cursor=False, codex=False)
+            self.assertEqual(read_scaffold_version(td), __version__)
+
+    def test_a_dry_run_leaves_nothing_behind(self):
+        from asgard.commands.sync import sync_project
+        from asgard.settings import read_scaffold_version
+
+        with tempfile.TemporaryDirectory() as td:
+            _scaffolded(td)
+            os.makedirs(os.path.join(td, ".claude"), exist_ok=True)
+            sync_project(td, cc=True, cursor=False, codex=False, dry_run=True)
+            self.assertEqual(read_scaffold_version(td), "")
+
+
+class TestFrozenDefaultsAreNamed(unittest.TestCase):
+    """설정 파일이 코드 기본값을 베껴 두면, 기본값이 움직여도 그 프로젝트만 옛 값에 남는다.
+
+    26-08-21 실측: `ticket_runtime.lease_seconds` 기본값을 300 에서 1800 으로 올렸는데
+    유효값이 300 그대로였다. 그 저장소의 설정은 `trinity_policy` 키 15개 중 12개가 기본값과
+    글자까지 같았다 — 고른 것이 아니라 통째로 베낀 것이다. 병합을 한 겹 깊게 해도 이 자리는
+    안 풀린다(적힌 값이 이기는 것이 맞으므로). 그래서 진단이 이름을 대야 한다."""
+
+    def _root_with(self, policy: dict) -> str:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        os.makedirs(os.path.join(tmp.name, ".asgard"), exist_ok=True)
+        with open(os.path.join(tmp.name, ".asgard", "asgard-setting-project.json"), "w", encoding="utf-8") as fh:
+            json.dump({"trinity_policy": policy}, fh)
+        return tmp.name
+
+    def test_a_copied_default_is_named(self):
+        from asgard_hooklib.policy import DEFAULT_POLICY
+
+        root = self._root_with({"ticket_runtime": dict(DEFAULT_POLICY["ticket_runtime"])})
+        row = wiring._trinity_policy_check(root)
+        self.assertIn("ticket_runtime", row["detail"], "베껴 둔 기본값을 이름 대지 않았다")
+        self.assertIn("기본값이 바뀌어도", row["detail"])
+
+    def test_a_chosen_value_is_not_named(self):
+        """고른 값을 경고하면 그 경고는 곧 무시된다."""
+        root = self._root_with({"baseline_timeout": 999})
+        row = wiring._trinity_policy_check(root)
+        self.assertNotIn("baseline_timeout", row["detail"])
+        self.assertNotIn("기본값이 바뀌어도", row["detail"])
+
+    def test_the_count_is_the_number_of_copied_keys(self):
+        from asgard_hooklib.policy import DEFAULT_POLICY
+
+        copied = {k: DEFAULT_POLICY[k] for k in ("quest_retention", "verify_level", "failure_threshold")}
+        row = wiring._trinity_policy_check(self._root_with({**copied, "baseline_timeout": 999}))
+        self.assertIn("3개", row["detail"], row["detail"])
+
+    def test_the_row_stays_green_because_nothing_is_broken_yet(self):
+        """아직 값이 같으므로 동작은 정상이다 — 이 행은 경고가 아니라 안내다."""
+        from asgard_hooklib.policy import DEFAULT_POLICY
+
+        row = wiring._trinity_policy_check(self._root_with({"quest_retention": DEFAULT_POLICY["quest_retention"]}))
+        self.assertTrue(row["ok"])
+
+    def test_the_guidance_sits_in_the_line_people_actually_read(self):
+        """화면 렌더는 `ok=False` 인 행의 `fix` 만 찍는다.
+
+        이 행은 초록으로 남으므로, 무엇을 하면 되는지를 `fix` 에 적으면 `--json` 에서만 보이고
+        터미널에서는 아무도 못 읽는다. 시험이 안 보이는 칸을 재면 그 안내는 없는 것과 같다."""
+        from asgard_hooklib.policy import DEFAULT_POLICY
+
+        row = wiring._trinity_policy_check(self._root_with({"quest_retention": DEFAULT_POLICY["quest_retention"]}))
+        self.assertTrue(row["ok"], "초록이 아니면 이 시험의 전제가 다르다")
+        self.assertIn("지우면", row["detail"], "안내가 화면에 안 나오는 칸에 있다")
+
+    def test_the_renderer_really_hides_the_fix_line_on_a_green_row(self):
+        """위 시험의 전제 자체를 잰다 — 렌더가 바뀌면 여기서 먼저 깨져야 한다.
+
+        처음 판은 `ast.Attribute` 로 `fix` 를 찾았는데 렌더는 `ch["fix"]` 로 읽는다. 그것은
+        `ast.Subscript` 라 매칭이 0건이었고, 빈 제너레이터의 `any()` 는 False 이므로 단언이
+        무조건 통과했다 — 아무것도 안 재는 시험이었다. 그래서 먼저 **몇 개를 찾았는지** 세고,
+        0건이면 그 자체를 실패로 본다."""
+        tree = ast.parse(Path("src/asgard/commands/doctor/__init__.py").read_text(encoding="utf-8"))
+        reads = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Constant) and node.slice.value == "fix"
+        ]
+        self.assertTrue(reads, "렌더에서 fix 를 읽는 자리를 못 찾았다 — 이 시험이 헛돌고 있다")
+        for node in reads:
+            with self.subTest(line=node.lineno):
+                self.assertTrue(
+                    _guarded_by_ok(tree, node),
+                    "fix 가 ok 를 안 보고 찍힌다 — 그렇다면 안내를 fix 에 둬도 되고, 이 시험의 전제가 바뀐 것이다",
+                )
+
+    def test_a_project_with_no_copies_says_nothing_extra(self):
+        row = wiring._trinity_policy_check(self._root_with({"baseline_timeout": 999}))
+        self.assertNotIn("지우면", row["detail"])
+
+
+def _guarded_by_ok(tree: ast.AST, target: ast.AST) -> bool:
+    """이 노드가 `ok` 를 보는 `if` 의 본문 안에 있는가.
+
+    "어떤 `if` 안인가" 만 물으면 `if True:` 도 통과한다 — 그러면 조건이 사라진 렌더를
+    잡지 못한다. 재야 하는 것은 자리가 아니라 **무엇을 보고 감추는가** 다."""
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.If):
+            continue
+        if "ok" not in ast.dump(node.test):
+            continue
+        if any(target is inner for body in (node.body, node.orelse) for stmt in body for inner in ast.walk(stmt)):
+            return True
+    return False
 
 
 if __name__ == "__main__":

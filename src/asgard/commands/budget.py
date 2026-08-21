@@ -1,4 +1,10 @@
-"""asgard budget — 이 세션이 얼마나 썼는지의 사람 표면.
+"""asgard budget — 한 세션이 얼마나 썼는지의 사람 표면.
+
+어느 세션인가는 호출자가 정한다. CLI 는 자기를 부른 세션의 id 를 알 방법이 없으므로,
+`--session`/`--transcript` 를 안 주면 이 프로젝트에서 **가장 최근에 쓰인** 트랜스크립트를
+고르고 화면에 그렇게 적는다. 그 구분을 안 하던 판은 병렬 세션이 도는 트리에서 형제 세션의
+값을 "이 세션이 쓴 것"이라고 적었다 (26-08-21 실측 — opus-5 세션에서 물으니 다른 세션의
+100,752 와 `claude-opus-4-8` 을 답했다).
 
 왜 게이트만으론 부족한가: 상한은 벽이고, 벽은 부딪혀야 알게 된다. 부딪히고 나서야 아는 예산은
 예산이 아니라 사고다. 이 화면의 계약은 **벽에 닿기 전에 보이게 하는 것** 하나다.
@@ -23,21 +29,65 @@ def _project_key(root: str) -> str:
     return os.path.abspath(root).replace(os.sep, "-").replace("_", "-")
 
 
-def latest_transcript(root: str) -> str:
-    """이 프로젝트의 가장 최근 트랜스크립트. 없으면 빈 문자열 — 추측해서 남의 세션을 읽지 않는다."""
+# 형제 세션이 "같은 무렵에 살아 있었다"고 볼 시간 창. 이보다 가까이 쓰인 트랜스크립트가
+# 여럿이면 최근순 고르기는 동전 던지기이므로, 골랐다고 말하지 않고 여럿이라고 말한다.
+SIBLING_WINDOW_SECONDS = 300.0
+
+
+def _transcript_dir(root: str) -> str:
     home = os.environ.get("HOME") or os.path.expanduser("~")
-    base = os.path.join(home, ".claude", "projects", _project_key(root))
-    files = [p for p in glob.glob(os.path.join(base, "*.jsonl")) if os.path.isfile(p)]
+    return os.path.join(home, ".claude", "projects", _project_key(root))
+
+
+def transcript_for_session(root: str, session: str) -> str:
+    """id 로 지목한 트랜스크립트. 없으면 빈 문자열 — 다른 것으로 대신 재지 않는다."""
+    path = os.path.join(_transcript_dir(root), f"{session}.jsonl")
+    return path if os.path.isfile(path) else ""
+
+
+def latest_transcript(root: str) -> str:
+    """이 프로젝트에서 가장 최근에 쓰인 트랜스크립트. 없으면 빈 문자열.
+
+    **이것이 부른 쪽의 세션이라는 보장은 없다.** CLI 에는 자기 세션 id 가 없으므로 최근순으로
+    고를 뿐이고, 병렬 세션이 도는 트리에서는 형제 것을 고른다. 화면이 그 사실을 말해야 한다
+    (`sibling_transcripts` 가 후보 수를 센다)."""
+    files = [p for p in glob.glob(os.path.join(_transcript_dir(root), "*.jsonl")) if os.path.isfile(p)]
     if not files:
         return ""
     return max(files, key=os.path.getmtime)
 
 
-def _payload(ledger: bg.Ledger, limits: dict, spent: float) -> str:
+def sibling_transcripts(root: str, chosen: str) -> int:
+    """고른 것 말고, 같은 무렵에 쓰인 트랜스크립트가 몇 개인가."""
+    if not chosen:
+        return 0
+    try:
+        picked_at = os.path.getmtime(chosen)
+    except OSError:
+        return 0
+    near = 0
+    for path in glob.glob(os.path.join(_transcript_dir(root), "*.jsonl")):
+        if os.path.abspath(path) == os.path.abspath(chosen):
+            continue
+        try:
+            if picked_at - os.path.getmtime(path) <= SIBLING_WINDOW_SECONDS:
+                near += 1
+        except OSError:
+            continue
+    return near
+
+
+def _payload(
+    ledger: bg.Ledger, limits: dict, spent: float, *, transcript: str = "", named: bool = False, siblings: int = 0
+) -> str:
     weights = limits.get("weights") if isinstance(limits.get("weights"), dict) else None
     total = ledger.total()
     return json.dumps(
         {
+            # 무엇을 쟀는가를 값과 같이 낸다 — 숫자만 보면 남의 세션인지 알 수 없다.
+            "transcript": os.path.basename(transcript),
+            "session_named": named,
+            "sibling_sessions": siblings,
             "enforce": limits.get("enforce"),
             "cost_units": round(spent),
             "session_cost_units": limits.get("session_cost_units"),
@@ -169,13 +219,19 @@ def run_budget_set(assignments: list[str], *, json_out: bool = False) -> int:
     return 0
 
 
-def run_budget(*, transcript: str = "", json_out: bool = False, quiet: bool = False) -> int:
+def run_budget(*, transcript: str = "", session: str = "", json_out: bool = False, quiet: bool = False) -> int:
     """종료 코드 = 상한 도달이면 1, 경고면 0. 화면은 막지 않는다 — 막는 것은 훅의 일이다."""
     # 쓰는 쪽(`run_budget_set`)과 같은 자리를 봐야 한다. 하위 폴더에서 부르면 방금 고친 값이
     # 아니라 없는 파일의 기본값이 보인다.
     root = _project_root(os.getcwd())
     ui.set_quiet(json_out or quiet)
-    path = transcript or latest_transcript(root)
+    named = bool(transcript or session)
+    path = transcript or (transcript_for_session(root, session) if session else latest_transcript(root))
+    if session and not path:
+        ui.set_quiet(quiet)
+        ui.fail(f"그 세션의 트랜스크립트가 없어요: {session}")
+        return 2
+    siblings = 0 if named else sibling_transcripts(root, path)
     limits = bg.load_limits(root)
     ledger = bg.read_ledger(path)
     weights = limits.get("weights") if isinstance(limits.get("weights"), dict) else None
@@ -183,15 +239,20 @@ def run_budget(*, transcript: str = "", json_out: bool = False, quiet: bool = Fa
     result = bg.verdict(ledger, limits)
 
     if json_out:
-        print(_payload(ledger, limits, spent))
+        print(_payload(ledger, limits, spent, transcript=path, named=named, siblings=siblings))
         return 1 if result.action == "block" else 0
 
-    ui.head("budget · 이 세션이 쓴 것")
+    ui.head("budget · 이 세션이 쓴 것" if named else "budget · 가장 최근 세션이 쓴 것")
     if not path:
         ui.warn("이 프로젝트의 트랜스크립트를 못 찾았어요 — 잴 세션이 없네요")
         ui.done()
         return 0
     ui.step(ui.dim(f"트랜스크립트 {os.path.basename(path)}"))
+    if siblings:
+        ui.warn(
+            f"같은 무렵에 쓰인 세션이 {siblings}개 더 있어요 — 이 값이 당신 세션의 것이 아닐 수 있어요. "
+            "정확히 재려면 `asgard budget --session <id>`"
+        )
     if ledger.read_error:
         ui.warn(f"일부만 읽었어요 — {ledger.read_error}")
 
