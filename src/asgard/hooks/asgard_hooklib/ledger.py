@@ -177,6 +177,20 @@ EVENT_FIELDS = frozenset(
 )  # fmt: skip
 
 
+# 자유 서술 칸의 상한. 1000자이던 판은 여러 단위를 합친 워커 보고를 문장 중간에서 잘랐고,
+# 잘랐다는 표시가 없어 판정자가 "워커가 거기까지만 적었다"로 읽었다 (26-08-21 실측 — 수정본
+# 다섯이 통째로 사라졌다). 상한 자체는 남긴다: 이 칸은 매 턴 로그 파일에 쌓인다.
+SUBTASK_LIMIT = 8000
+_CLIPPED = "…[잘림]"
+
+
+def _clip(text: str, limit: int) -> str:
+    """상한을 넘으면 자르되, 잘랐다는 사실을 글 안에 남긴다 — 조용한 절단은 거짓 완결이다."""
+    if len(text) <= limit:
+        return text
+    return text[: limit - len(_CLIPPED)] + _CLIPPED
+
+
 def normalize(ev: dict, events: list[dict], qid: str, session: str) -> dict:
     """고정 코어 스키마로 정규화 — 빠진 필드는 중립값, 모르는 stdin 필드는 버린다."""
     base_ref = next((e.get("base_ref") for e in events if e.get("base_ref")), None)
@@ -228,7 +242,7 @@ def normalize(ev: dict, events: list[dict], qid: str, session: str) -> dict:
     if ev.get("ticket_status"):
         full["ticket_status"] = ev["ticket_status"]
     if ev.get("subtask"):
-        full["subtask"] = str(ev["subtask"])[:1000]
+        full["subtask"] = _clip(str(ev["subtask"]), SUBTASK_LIMIT)
     # 돌아온 역할이 목표에 닿았는가 — `failed` 하나만 통과한다. 종료 훅이 이 칸을 읽어 배차를
     # 실패로 접고(`subagent_gate._role_outcome`), 이 칸이 없는 배차는 succeeded 로 접힌다. 모르는
     # 값을 그대로 넣으면 그 오타가 조용히 성공으로 읽히므로, 오타는 쓰는 쪽에 남긴다.

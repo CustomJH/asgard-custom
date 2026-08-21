@@ -99,7 +99,8 @@ DEFAULT_POLICY: dict = {
     # 닫힌 퀘스트 로그 keep-last-N — 세션 상한 정책. 0 = 정리 없음(무한 누적).
     "quest_retention": 30,
     # 병렬 Worker는 기본적으로 독립 clone에서 실행하고 검증된 patch만 canonical root에 병합.
-    "ticket_runtime": {"isolation": True, "lease_seconds": 300, "max_attempts": 3},
+    # lease_seconds 는 워커 한 턴보다 길어야 한다 — 근거는 tickets.DEFAULT_LEASE_SECONDS 주석에.
+    "ticket_runtime": {"isolation": True, "lease_seconds": 1800, "max_attempts": 3},
 }
 
 
@@ -147,6 +148,32 @@ def sensitive_path(path: str, needles) -> bool:
     return False
 
 
+def merge_policy(base: dict, override: dict) -> dict:
+    """선언한 키만 덮는다 — 양쪽이 dict 인 자리는 끝까지 따라 들어간다.
+
+    최상위 `update` 는 dict 값을 통째로 갈아 끼운다. 그래서 프로젝트가 하위 키 하나만 적어도
+    나머지 하위 키는 코드 기본값을 잃고, 나중에 기본값이 움직여도 그 프로젝트에는 안 닿는다.
+    26-08-21 에 그 자리가 드러났다: `lease_seconds` 기본값을 300 에서 1800 으로 올렸는데,
+    옛 기본값 셋을 그대로 베껴 둔 설정 파일이 그것을 통째로 가려 유효값이 300 으로 남았다 —
+    병렬 단위가 매번 헛되이 만료되던 동작이 고친 뒤에도 재현됐다.
+
+    깊이를 한 겹에서 멈춘 판은 같은 사고를 한 층 아래에서 냈다. `roles` 와 `budget_priors` 는
+    두 겹이고(`roles.worker.tier`, `budget_priors.standard.turns`), 소비처가 둘 다 조용한
+    폴백이라 값이 사라져도 화면에서는 정상과 구분이 안 된다 —
+    `agent/heimdall/core/sessions.py` 의 `.get("tier", "standard")` 는 판정자 티어를 한 단계
+    내리고, `agent/heimdall/trinity/__init__.py` 의 `.get("turns", …)` 는 턴 상한을 늘린다.
+
+    리스트는 통째로 바뀐다. 리스트 원소를 짝지을 기준이 없으므로(순서인지 id 인지 값인지),
+    합치는 규칙을 정하는 순간 그것이 새로운 암묵 계약이 된다. 값 하나로 두는 편이 읽기 쉽다."""
+    for key, value in override.items():
+        current = base.get(key)
+        if isinstance(current, dict) and isinstance(value, dict):
+            base[key] = merge_policy(dict(current), value)
+        else:
+            base[key] = value
+    return base
+
+
 def load_policy(root: str) -> dict:
     # 얕은 복사면 중첩 기본값(`ticket_runtime` 등)이 프로세스 전역으로 공유된다 — 한 호출자가
     # `policy["ticket_runtime"]["lease_seconds"]` 를 만지면 그 프로세스의 다음 로드가 그 값을
@@ -158,13 +185,13 @@ def load_policy(root: str) -> dict:
             cfg = json.load(handle)
         pol = cfg.get("trinity_policy") if isinstance(cfg, dict) else None
         if isinstance(pol, dict):
-            p.update(pol)
+            merge_policy(p, pol)
             return p
     except Exception:
         pass
     try:
         with open(os.path.join(root, ".asgard", "trinity-policy.json"), encoding="utf-8") as handle:
-            p.update(json.load(handle))
+            merge_policy(p, json.load(handle))
     except Exception:
         pass  # 정책 파일 없음/깨짐 → 내장 기본값 (fail-open)
     return p

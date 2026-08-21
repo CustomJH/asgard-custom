@@ -24,6 +24,7 @@
 import json
 import os
 import re
+import sqlite3
 import sys
 
 # Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 넣지 못한다 — 인코딩 오류가
@@ -417,6 +418,54 @@ def orphan_writes(root, sid, candidates=None):
     )
 
 
+def _verdict_in_flight(root: str, qid: str) -> bool:
+    """이 퀘스트에 아직 안 끝난 판정자 배차가 있는가 — 배차 장부를 읽기 전용으로 본다.
+
+    `asgard siege` 를 프로세스로 부르지 않는다. 게이트는 사람이 기다리는 자리이고 매 Stop 마다
+    도는데, CLI 기동 값을 거기에 얹으면 모든 쓰기 퀘스트가 그 값을 낸다. 같은 이유로
+    `dispatch_context` 도 stdlib sqlite3 로 직접 읽는다.
+
+    못 읽으면 없다고 답한다 — 장부는 파생 기록이라, 그것 때문에 게이트가 느슨해지면 안 된다."""
+    if not qid:
+        return False
+    path = os.path.join(root, ".asgard", "orchestration.db")
+    if not os.path.exists(path):
+        return False
+    try:
+        conn = sqlite3.connect("file:%s?mode=ro" % path.replace("?", "%3f"), uri=True, timeout=0.5)
+    except Exception:
+        return False
+    try:
+        row = conn.execute(
+            """
+            SELECT 1 FROM dispatches d
+            JOIN tasks t ON d.task_id = t.id
+            JOIN runs r ON t.run_id = r.id
+            WHERE r.quest_id = ? AND d.agent = 'asgard-verifier' AND d.settled_at IS NULL
+            LIMIT 1
+            """,
+            (qid,),
+        ).fetchone()
+    except Exception:
+        return False
+    finally:
+        conn.close()
+    return row is not None
+
+
+def _wave_still_running(events: list[dict]) -> bool:
+    """이 퀘스트에 아직 안 끝난 배정 단위가 있는가.
+
+    `todo` 나 `in_progress` 인 티켓이 하나라도 있으면 파도가 도는 중이다. 그 상태에서는
+    어떤 판정도 이를 수 없다 — 단위가 settle 하기 전에 내린 판정은 안 끝난 일을 판정한 것이다."""
+    from asgard_hooklib.ledger import fold_tickets
+
+    try:
+        return any(t.get("status") in ("todo", "in_progress") for t in fold_tickets(events).values())
+    except Exception:
+        return False
+
+
 def main():
     global _HOST_PROTOCOL
     try:
@@ -484,6 +533,16 @@ def main():
             for i, e in enumerate(events)
             if i > retired_before and e.get("event") == "verify" and e.get("verdict") in ("PASS", "ESCALATE")
         ]
+        if not verdicts and (_wave_still_running(events) or _verdict_in_flight(root, quest_pointer(root, sid))):
+            # 판정할 대상이 아직 없는 턴이다. 두 갈래가 있다 — 배정 단위가 도는 중이거나,
+            # 판정자가 이미 떠서 답이 오는 중이거나. 호스트 모드에서 서브에이전트는 비동기라
+            # 결과가 턴이 끝난 뒤에 오므로, 판정자를 부른 턴은 자기가 부른 판정을 못 기다린다.
+            # 그 턴을 막으면 남는 길이 둘뿐이다: 자기 판정을 자기가 적거나(독립성 위반),
+            # 상한 세 번을 버리거나. 26-08-21 실측으로 이 저장소에 `no-verdict` 차단 148회와
+            # 상한 초과 통과 95회가 쌓여 있었다.
+            # 완료 주장은 이 자리에서 안 새어 나간다 — `close` 는 여전히 판정 없이 거부하고,
+            # 안 끝난 티켓과 열린 배차는 각각 `quest-log.py state` 와 `asgard siege` 에 보인다.
+            sys.exit(0)
         if not verdicts:
             block(root, sid, "no-verdict")
         p = verdicts[-1]

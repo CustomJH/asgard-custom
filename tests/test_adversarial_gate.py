@@ -382,5 +382,107 @@ class TestGateEventMetrics(AdversarialBase):
         self.assertTrue(check["ok"], check)  # 차단은 게이트가 일한 증거 — 경고 아님
 
 
+class TestARunningWaveIsNotACompletionClaim(AdversarialBase):
+    """단위가 아직 도는 턴을 게이트가 막으면, 코디네이터가 자기가 부른 판정자를 못 기다린다.
+
+    26-08-21 실측: 호스트 모드에서 워커 일곱을 비동기로 띄운 턴이 `no-verdict` 로 세 번 막혔다.
+    그 시각 일곱은 전부 정상적으로 돌고 있었고, 판정이 읽을 결과는 아직 없었다. 완료 주장은
+    여기서 안 새어 나간다 — `close` 는 판정 없이 그대로 거부한다."""
+
+    def declare(self, unit: str, status: str = "todo") -> None:
+        body = json.dumps({"role": "thinker", "event": "ticket", "ticket_status": status, "unit": unit})
+        p = self.qlog("append", "q", "--json", body)
+        self.assertEqual(p.returncode, 0, p.stderr)
+
+    def test_a_turn_with_units_still_running_is_not_blocked(self):
+        self.open_quest()
+        self.write("app.py", "x = 1\n")
+        self.declare("u-1")
+        decision, _ = self.gate_decision("wave")
+        self.assertEqual(decision, "allow", "단위가 도는 중인데 판정을 요구했다")
+
+    def test_the_same_turn_is_blocked_once_every_unit_has_settled(self):
+        self.open_quest()
+        self.write("app.py", "x = 1\n")
+        self.declare("u-1")
+        self.assertEqual(self.gate_decision("wave")[0], "allow")
+        # 티켓 전이는 전용 동사로만 간다 — 날 append 는 thinker 의 todo 선언만 받는다.
+        claim = self.qlog("ticket-claim", "q", "--unit", "u-1", "--worker", "w-1")
+        self.assertEqual(claim.returncode, 0, claim.stderr)
+        token = json.loads(claim.stdout)["claim_token"]
+        done = self.qlog("ticket-finish", "q", "--unit", "u-1", "--claim-token", token, "--status", "done")
+        self.assertEqual(done.returncode, 0, done.stderr)
+        decision, _ = self.gate_decision("wave")
+        self.assertEqual(decision, "block", "단위가 다 끝났는데 판정 없이 통과했다")
+
+    def test_a_turn_that_dispatched_a_verifier_is_not_blocked(self):
+        """호스트에서 서브에이전트는 비동기라, 판정자를 부른 턴은 자기가 부른 판정을 못 기다린다.
+
+        그 턴을 막으면 남는 길이 둘뿐이다 — 자기 판정을 자기가 적거나(독립성 위반), 상한
+        세 번을 버리거나. 26-08-21 실측으로 이 저장소에 `no-verdict` 차단 148회와 상한 초과
+        통과 95회가 쌓여 있었다."""
+        self.open_quest()
+        self.write("app.py", "x = 1\n")
+        self.assertEqual(self.gate_decision("dispatched")[0], "block", "배차 전에는 막혀야 한다")
+        self._open_verifier_dispatch("q")
+        decision, _ = self.gate_decision("dispatched")
+        self.assertEqual(decision, "allow", "판정이 오는 중인데 판정을 요구했다")
+
+    def test_a_settled_verifier_dispatch_no_longer_shields_the_turn(self):
+        """돌아온 판정자는 더 가려 주지 않는다 — 그때는 기록할 판정이 실제로 있다."""
+        self.open_quest()
+        self.write("app.py", "x = 1\n")
+        self._open_verifier_dispatch("q", settled=True)
+        decision, _ = self.gate_decision("settled")
+        self.assertEqual(decision, "block")
+
+    def test_another_agents_open_dispatch_does_not_shield_the_turn(self):
+        """판정자가 아닌 배차는 판정을 약속하지 않는다."""
+        self.open_quest()
+        self.write("app.py", "x = 1\n")
+        self._open_verifier_dispatch("q", agent="asgard-worker")
+        decision, _ = self.gate_decision("worker-only")
+        self.assertEqual(decision, "block")
+
+    def _open_verifier_dispatch(self, qid: str, *, agent: str = "asgard-verifier", settled: bool = False) -> None:
+        """배차 장부에 이 퀘스트의 시도 하나를 세운다 — 훅이 배차 때 적는 것과 같은 모양."""
+        import sqlite3
+
+        db = os.path.join(self.root, ".asgard", "orchestration.db")
+        os.makedirs(os.path.dirname(db), exist_ok=True)
+        conn = sqlite3.connect(db)
+        try:
+            conn.executescript(
+                "CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, quest_id TEXT, status TEXT, created_at REAL);"
+                "CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, run_id TEXT);"
+                "CREATE TABLE IF NOT EXISTS dispatches ("
+                "  id TEXT PRIMARY KEY, task_id TEXT, agent TEXT, settled_at REAL);"
+            )
+            conn.execute("INSERT OR REPLACE INTO runs VALUES (?,?,?,?)", ("run_x", qid, "open", 0.0))
+            conn.execute("INSERT OR REPLACE INTO tasks VALUES (?,?)", ("task_x", "run_x"))
+            conn.execute(
+                "INSERT OR REPLACE INTO dispatches VALUES (?,?,?,?)",
+                ("disp_x", "task_x", agent, 1.0 if settled else None),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def test_a_quest_with_no_units_is_unaffected(self):
+        """티켓을 안 쓰는 보통 쓰기 퀘스트는 종전 그대로 막힌다."""
+        self.open_quest()
+        self.write("app.py", "x = 1\n")
+        decision, _ = self.gate_decision("plain")
+        self.assertEqual(decision, "block")
+
+    def test_close_still_refuses_while_the_wave_runs(self):
+        """게이트가 비켜 준다고 완료가 열리는 것은 아니다 — 그 문은 따로 잠겨 있다."""
+        self.open_quest()
+        self.write("app.py", "x = 1\n")
+        self.declare("u-1")
+        self.assertEqual(self.gate_decision("wave")[0], "allow")
+        self.assertNotEqual(self.qlog("close", "q").returncode, 0, "판정 없이 닫혔다")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

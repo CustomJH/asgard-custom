@@ -126,7 +126,7 @@ from asgard_hooklib.summary import (  # noqa: E402
     summarize,
     update_priors,  # noqa: F401
 )
-from asgard_hooklib.tickets import ticket_runtime  # noqa: E402
+from asgard_hooklib.tickets import DEFAULT_LEASE_SECONDS, ticket_runtime  # noqa: E402
 from asgard_hooklib.transition import completion_decision, transition  # noqa: E402
 from asgard_hooklib.tree import (  # noqa: E402
     current_tree_ref,
@@ -256,7 +256,13 @@ def _parser() -> argparse.ArgumentParser:
     ap.add_argument("--unit")
     ap.add_argument("--worker")
     ap.add_argument("--claim-token")
-    ap.add_argument("--lease-seconds", type=int, default=300)
+    ap.add_argument("--lease-seconds", type=int, default=DEFAULT_LEASE_SECONDS)
+    ap.add_argument(
+        "--older-than",
+        type=float,
+        default=None,
+        help="ticket-recover: lease 만료 뒤 이만큼 더 조용했던 것만 회수한다 (초, 기본 300)",
+    )
     ap.add_argument("--max-attempts", type=int, default=3)
     ap.add_argument("--status")
     ap.add_argument("--error")
@@ -845,6 +851,7 @@ def _cmd_ticket(root: str, qid: str, args) -> int:
         max_attempts=args.max_attempts,
         status=args.status,
         error=args.error,
+        older_than=args.older_than,
     )
     print(json.dumps(payload, ensure_ascii=False), file=sys.stdout if rc == 0 else sys.stderr)
     return rc

@@ -17,12 +17,36 @@ from .ledger import fold_tickets, load_events, normalize, quest_lock, write_even
 from .paths import UNREADABLE_RECEIPT
 from .siege import ledger_call
 
+# 워커 한 턴이 이 안에 끝나야 lease 가 의미를 갖는다. 300초이던 판은 실제 구간(486~804초
+# 실측, 티켓 claim 부터 finish 까지)
+# 보다 짧아서, 호스트 모드의 병렬 단위가 매번 한 번씩 헛되이 만료됐다 — 코디네이터는 자기 턴
+# 안에 갇혀 있어 하트비트를 보낼 손이 없다. 정책(`policy.ticket_runtime.lease_seconds`)이
+# 이 값을 덮어쓴다.
+DEFAULT_LEASE_SECONDS = 1800
 
-def _ticket_recover(emit, tickets: dict, now: float, max_attempts: int) -> tuple[int, dict]:
-    """lease 가 끝난 in_progress 를 회수한다 — 재시도 예산이 남았으면 failed, 없으면 blocked."""
+
+# lease 가 끝난 뒤에도 이만큼은 더 기다린다. 만료가 곧 죽음은 아니다 — 호스트 모드에서는
+# 코디네이터가 자기 턴 안에 갇혀 있어 하트비트를 보낼 손이 없고, 그래서 살아 있는 워커의 lease 도
+# 지난다. 26-08-21 실측: 단위 일곱이 전부 만료로 failed 가 됐다가 재청구 뒤 전부 done 이 됐다 —
+# 죽은 단위는 하나도 없었다. 이 유예가 없으면 회수 한 번이 살아 있는 워커를 죽은 것으로 세고,
+# 같은 파일에 워커를 하나 더 올린다.
+RECOVER_GRACE_SECONDS = 300
+
+
+def _ticket_recover(
+    emit, tickets: dict, now: float, max_attempts: int, older_than: float, unit: str | None
+) -> tuple[int, dict]:
+    """lease 가 끝나고 유예까지 지난 in_progress 를 회수한다 — 예산이 남았으면 failed, 없으면 blocked.
+
+    `unit` 을 주면 그 하나만 본다. 안 주면 조건에 맞는 전부다 — 전부를 뒤집는 것이 기본값이라는
+    사실 자체가 위험하므로, 유예가 그 위험의 폭을 정한다."""
     recovered = []
     for ticket in list(tickets.values()):
-        if ticket["status"] != "in_progress" or float(ticket.get("lease_expires_at") or 0) > now:
+        if unit is not None and str(ticket["id"]) != str(unit):
+            continue
+        if ticket["status"] != "in_progress":
+            continue
+        if float(ticket.get("lease_expires_at") or 0) + older_than > now:
             continue
         exhausted = int(ticket.get("attempt") or 0) >= int(ticket.get("max_attempts") or max_attempts)
         next_status = "blocked" if exhausted else "failed"
@@ -251,10 +275,11 @@ def ticket_runtime(
     session: str,
     worker: str | None = None,
     claim_token: str | None = None,
-    lease_seconds: int = 300,
+    lease_seconds: int = DEFAULT_LEASE_SECONDS,
     max_attempts: int = 3,
     status: str | None = None,
     error: str | None = None,
+    older_than: float | None = None,
 ) -> tuple[int, dict]:
     """Ticket claim/lease 상태 전이를 Quest lock 아래에서 검사+기록하고, 배차 장부에 옮긴다."""
     now = time.time()
@@ -271,7 +296,8 @@ def ticket_runtime(
 
         tickets = fold_tickets(events)
         if cmd == "ticket-recover":
-            code, payload = _ticket_recover(emit, tickets, now, max_attempts)
+            grace = RECOVER_GRACE_SECONDS if older_than is None else max(0.0, float(older_than))
+            code, payload = _ticket_recover(emit, tickets, now, max_attempts, grace, unit)
         elif not (ticket := tickets.get(str(unit))):
             return 1, {"error": "unknown ticket", "unit": unit}
         elif cmd == "ticket-claim":

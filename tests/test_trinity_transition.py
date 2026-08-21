@@ -277,7 +277,9 @@ class TestTransition(TrinityBase):
         )
         self.assertNotEqual(expired_finish.returncode, 0)
         self.assertIn("lease expired", expired_finish.stderr)
-        recovered = json.loads(self.qlog("ticket-recover").stdout)
+        # 워커가 확실히 죽었을 때의 회수다 — 유예(`RECOVER_GRACE_SECONDS`)를 0 으로 눌러
+        # 만료 직후를 회수한다. 유예 자체의 계약은 `tests/test_ticket_lease.py` 가 잰다.
+        recovered = json.loads(self.qlog("ticket-recover", "--older-than", "0").stdout)
         self.assertEqual(recovered["recovered"], [{"unit": 1, "status": "failed"}])
         claim = self.qlog("ticket-claim", "--unit", "1", "--worker", "retry-worker", "--max-attempts", "2")
         self.assertEqual(claim.returncode, 0)
