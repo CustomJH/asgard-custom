@@ -1,0 +1,5 @@
+interface:
+  display_name: "learned-vacuous-ast-test-matches-no-nodes"
+  short_description: "vacuous-ast-test-matches-no-nodes — GRAPH.md, policy.py, verifier-gate.py, __init__.cpython-314.pyc 외 5개에서 겪고 고친 자리 (FAI"
+policy:
+  allow_implicit_invocation: false
