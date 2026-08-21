@@ -780,6 +780,45 @@ class TestScaffoldDriftDirection(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as td:
             self._stamp(td, __version__)
+            self.assertNotIn("asgard update", wiring._drift_fix(td, self.SYNC))
+
+    def test_the_same_version_number_does_not_settle_the_direction(self):
+        """번호가 같아도 빌드는 다를 수 있다 — 그러면 sync 를 권하면 안 된다.
+
+        26-08-22 실측: 설치본과 소스가 둘 다 0.10.22 를 답하는데 `verifier_gate.py` 가
+        32,673B 대 36,785B 였다. 태그와 다음 태그 사이의 체크아웃이 늘 그 상태다. 번호만
+        비교하던 판은 그 자리에서 "안 뒤처졌다"로 읽고 `asgard sync --here` 를 다시 권했다 —
+        하루 전에 막으려던 바로 그 되감는 조언이다."""
+        from asgard import __version__
+
+        with tempfile.TemporaryDirectory() as td:
+            self._stamp(td, __version__)
+            fix = wiring._drift_fix(td, self.SYNC)
+        self.assertNotEqual(fix, self.SYNC, "방향을 모르는데 sync 를 권한다")
+        self.assertIn(__version__, fix, "어느 번호가 겹쳤는지를 안 적는다")
+
+    def test_a_stamp_one_release_below_still_sends_you_to_sync(self):
+        """같은 번호만 모르는 것이다 — 바로 아래 판이면 방향은 여전히 도장이 답한다.
+
+        도장을 `0.0.1` 로 두는 형제 시험과 달리 여기는 **붙어 있는** 판을 쓴다. 그래야 판을
+        앞 두 마디까지만 비교하는 판이 `0.10.21` 을 같은 번호로 읽는 자리를 잡는다. 멀리 떨어진
+        도장은 그 오독을 못 본다 — `0.0` 과 `0.10` 은 잘라도 다르기 때문이다.
+
+        도장을 `version_tuple` 로 만들지 않는다. 시험이 자기가 재는 함수로 자기 입력을 만들면
+        그 함수가 깨질 때 입력도 같이 틀어져 시험이 초록으로 남는다. 26-08-22 판정이 그 자리를
+        잡았다 — `version_tuple` 을 자르는 변이에서 도장이 `0.10.21` 이 아니라 `0.9` 가 됐고,
+        표적과 형제가 둘 다 통과했다."""
+        from asgard import __version__
+
+        chunks = __version__.split(".")
+        older = __version__  # 뺄 마디가 없으면 그대로 남아 아래 가드가 터진다
+        for i in range(len(chunks) - 1, -1, -1):
+            if chunks[i].isdigit() and int(chunks[i]):
+                older = ".".join([*chunks[:i], str(int(chunks[i]) - 1), *chunks[i + 1 :]])
+                break
+        self.assertNotEqual(older, __version__, "이 엔진 판에서는 아래 판을 못 만든다 — 시험이 헛돈다")
+        with tempfile.TemporaryDirectory() as td:
+            self._stamp(td, older)
             self.assertEqual(wiring._drift_fix(td, self.SYNC), self.SYNC)
 
     def test_an_older_stamp_still_sends_you_to_sync(self):

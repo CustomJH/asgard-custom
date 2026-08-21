@@ -288,6 +288,28 @@ def _engine_is_older(root: str) -> str:
     return stamped if version_tuple(stamped) > version_tuple(__version__) else ""
 
 
+def _same_version_other_build(root: str) -> str:
+    """깔린 사본을 쓴 엔진과 지금 도는 엔진의 판 번호가 같으면 그 번호, 아니면 빈 문자열.
+
+    판 번호는 릴리스마다 하나인데 빌드는 여럿이다. 태그와 다음 태그 사이의 체크아웃은 릴리스된
+    휠과 같은 번호를 달고 바이트가 앞서 있고, asgard 자신을 만드는 저장소는 늘 그 상태다.
+    26-08-22 실측: 설치본과 소스가 둘 다 0.10.22 를 답하는데 `verifier_gate.py` 가 32,673B 대
+    36,785B 였다. 번호만 비교한 `_engine_is_older` 는 그것을 "안 뒤처졌다"로 읽었고, 진단은
+    다시 `asgard sync` 를 권했다 — 26-08-21 에 막으려던 바로 그 되감는 조언이다.
+
+    번호가 같은데 사본이 다르면 어느 쪽이 새 판인지는 모르는 것이다. 이 함수는 그 "모른다"를
+    이름 붙여 돌려주고, 무엇을 할지는 `_drift_fix` 가 정한다. 왜 다른지는 세지 않는다 —
+    다른 빌드가 깔았을 수도 있고 사람이 사본을 고쳤을 수도 있는데, 진단이 아는 것은 번호가
+    같다는 것과 내용이 다르다는 것 둘뿐이다."""
+    from ... import __version__
+    from ...settings import read_scaffold_version, version_tuple
+
+    stamped = read_scaffold_version(root)
+    if not stamped:
+        return ""
+    return stamped if version_tuple(stamped) == version_tuple(__version__) else ""
+
+
 def _drift_fix(root: str, sync_command: str) -> str:
     """어긋난 사본을 두고 무엇을 하라고 할 것인가 — 방향을 아는 만큼만 말한다."""
     newer = _engine_is_older(root)
@@ -295,6 +317,13 @@ def _drift_fix(root: str, sync_command: str) -> str:
         return (
             f"asgard update — 깔린 사본은 {newer} 가 쓴 것이고 지금 도는 엔진은 그보다 옛 판이에요. "
             "여기서 sync 를 돌리면 새 사본이 옛 템플릿으로 덮여요"
+        )
+    same = _same_version_other_build(root)
+    if same:
+        return (
+            f"깔린 사본을 쓴 엔진도 v{same} 예요 — 판 번호가 같아서 어느 쪽이 새 판인지 알 수 없어요. "
+            "확인한 뒤 새 판을 든 엔진으로 sync 하세요. 지금 도는 엔진으로 돌리면 이 엔진의 "
+            "템플릿이 깔립니다"
         )
     return sync_command
 
