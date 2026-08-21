@@ -12,7 +12,7 @@
 
 - Coverage status: partial · 3 named limits
 - api_route_unresolved [api_call:/api/memory/] — a relative API call did not converge on a route · files 1
-- test_sources_excluded [repository] — 266 test source files are outside the production relation graph · files 266
+- test_sources_excluded [repository] — 267 test source files are outside the production relation graph · files 267
 - unsupported_source_suffix [.rs] — no relation extractor is configured for Rust (.rs) · files 2
 
 ## Commands
@@ -221,7 +221,7 @@
 - `asgard yggdrasil project-sync` — send the code and docs you approved into the project memory store
 - `asgard yggdrasil proposals` — what the agent wants to remember, waiting on your say-so
 - `asgard yggdrasil provider` — which model looks after your personal memory — see it, or change it
-- `asgard yggdrasil query` — search the wiki — plain text search, no model, and every hit is counted
+- `asgard yggdrasil query` — search the wiki — words first, then a local embedder for paraphrases; every hit is counted
 - `asgard yggdrasil recall` — the memory this question would pull in (nothing, if it is off or nothing matches)
 - `asgard yggdrasil reindex` — rebuild index.md and state.db from pages/, which is the real record
 - `asgard yggdrasil remove` — delete a page, and rebuild the index around the gap
@@ -279,6 +279,7 @@
 - `src/asgard/assets/js/memory.js` — calls: /api/memory/?
 - `src/asgard/hooks/dispatch_context.py` — db: conn.execute?
 - `src/asgard/hooks/siege_inbox.py` — db: conn.execute?
+- `src/asgard/hooks/verifier_gate.py` — db: conn.execute?
 
 ## Trace seeds
 
