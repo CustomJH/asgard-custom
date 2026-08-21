@@ -167,8 +167,14 @@ def _load_json(path: str):
         return json.load(handle)
 
 
-def block(root, sid, agent, reason, *, protocol="claude"):
-    """차단 — 단 세션·역할당 MAX_BLOCKS 회. 초과 시 warn+allow (인질극 방지)."""
+def block(root, sid, agent, reason, *, protocol="claude", qid=""):
+    """차단 — 단 세션·역할당 MAX_BLOCKS 회. 초과 시 warn+allow (인질극 방지).
+
+    상한을 넘겨 통과시키는 자리에서 배차 장부도 접는다. 이 경로는 `main` 의 `siege_close` 앞에서
+    프로세스를 끝내므로, 안 접으면 그 시도가 `ready` 로 남아 `siege` 가 영영 "도는 중"이라고
+    말하고 `verifier-gate._verdict_in_flight` 는 그것을 "판정이 오는 중"으로 읽는다. 결과는
+    `failed` 다 — 역할이 자기 이벤트를 안 적고 끝났다는 것이 이 자리가 아는 전부이고, 그것은
+    시도가 목표에 못 닿았다는 뜻이다."""
     path = os.path.join(root, ".asgard", "subgate-" + sid + ".json")
     counts = {}
     try:
@@ -192,6 +198,15 @@ def block(root, sid, agent, reason, *, protocol="claude"):
             "asgard subagent-gate: %s exceeded %d block(s) — allowing (verifier-gate is the final backstop)\n"
             % (agent, MAX_BLOCKS)
         )
+        if qid:
+            siege_close(
+                root,
+                qid,
+                agent,
+                summary="게이트 상한 초과 — 역할 이벤트 없음",
+                heal=heal_ledger(root, qid, agent),
+                outcome="failed",
+            )
         sys.exit(0)
     message = "Asgard subagent-gate: " + reason
     if protocol == "cursor":
@@ -827,6 +842,7 @@ def main():
                 "%s is trying to end quest %s without recording a %s event. A role is only fulfilled by "
                 "logging it — record it, then end: %s" % (agent, qid, want, record_hint(hooks_dir, want)),
                 protocol=protocol,
+                qid=qid,
             )
         last = fresh[-1]
         if want == "verify":
@@ -839,6 +855,7 @@ def main():
                     "Run the verification command directly and re-record the result via append "
                     "(unconditionally-successful commands like true/echo do not count as evidence).",
                     protocol=protocol,
+                    qid=qid,
                 )
         record_agent_stop(root, qid, agent_id, agent, task)
         # 규율을 통과한 뒤에 접는다 — 차단된 역할은 아직 안 끝났고, 접어 두면 이어지는 두 번째

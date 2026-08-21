@@ -26,6 +26,7 @@ import os
 import re
 import sqlite3
 import sys
+import time
 
 # Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 넣지 못한다 — 인코딩 오류가
 # fail-open에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
@@ -418,12 +419,20 @@ def orphan_writes(root, sid, candidates=None):
     )
 
 
-def _verdict_in_flight(root: str, qid: str) -> bool:
-    """이 퀘스트에 아직 안 끝난 판정자 배차가 있는가 — 배차 장부를 읽기 전용으로 본다.
+def _verdict_in_flight(root: str, qid: str, policy: dict) -> bool:
+    """이 퀘스트에 **지금 도는** 판정자 배차가 있는가 — 배차 장부를 읽기 전용으로 본다.
 
     `asgard siege` 를 프로세스로 부르지 않는다. 게이트는 사람이 기다리는 자리이고 매 Stop 마다
     도는데, CLI 기동 값을 거기에 얹으면 모든 쓰기 퀘스트가 그 값을 낸다. 같은 이유로
     `dispatch_context` 도 stdlib sqlite3 로 직접 읽는다.
+
+    고르는 축이 셋인 이유는 `settled_at IS NULL` 하나로는 "판정자를 부른 적 있다"가 답이 되기
+    때문이다. 26-08-21 에 이 저장소 장부에서 안 끝난 판정자 시도 37건을 셌고 가장 오래된 것이
+    15.7일 전이었다 — 그 35개 퀘스트에서는 `no-verdict` 차단이 사실상 꺼져 있었다. 그래서
+    `state='ready'` 로 회수·중지된 시도를 빼고(`orchestration.dispatch.mark` 는 `settled_at` 을
+    안 적으므로 `outcome_unknown` 도 저 조건만으로는 안 걸러진다), 티켓 lease 안에 손댄 것만
+    남긴다. lease 는 시도 하나가 얼마나 오래 살아 있어도 되는가를 이 저장소가 이미 적어 둔
+    값이다 (`ticket_runtime.lease_seconds`, 기본 1800초).
 
     못 읽으면 없다고 답한다 — 장부는 파생 기록이라, 그것 때문에 게이트가 느슨해지면 안 된다."""
     if not qid:
@@ -431,6 +440,9 @@ def _verdict_in_flight(root: str, qid: str) -> bool:
     path = os.path.join(root, ".asgard", "orchestration.db")
     if not os.path.exists(path):
         return False
+    runtime = policy.get("ticket_runtime")
+    lease = (runtime if isinstance(runtime, dict) else {}).get("lease_seconds")
+    lease = float(lease or DEFAULT_POLICY["ticket_runtime"]["lease_seconds"])
     try:
         conn = sqlite3.connect("file:%s?mode=ro" % path.replace("?", "%3f"), uri=True, timeout=0.5)
     except Exception:
@@ -441,10 +453,11 @@ def _verdict_in_flight(root: str, qid: str) -> bool:
             SELECT 1 FROM dispatches d
             JOIN tasks t ON d.task_id = t.id
             JOIN runs r ON t.run_id = r.id
-            WHERE r.quest_id = ? AND d.agent = 'asgard-verifier' AND d.settled_at IS NULL
+            WHERE r.quest_id = ? AND d.agent = 'asgard-verifier'
+              AND d.settled_at IS NULL AND d.state = 'ready' AND d.updated_at >= ?
             LIMIT 1
             """,
-            (qid,),
+            (qid, time.time() - lease),
         ).fetchone()
     except Exception:
         return False
@@ -533,7 +546,7 @@ def main():
             for i, e in enumerate(events)
             if i > retired_before and e.get("event") == "verify" and e.get("verdict") in ("PASS", "ESCALATE")
         ]
-        if not verdicts and (_wave_still_running(events) or _verdict_in_flight(root, quest_pointer(root, sid))):
+        if not verdicts and (_wave_still_running(events) or _verdict_in_flight(root, quest_pointer(root, sid), policy)):
             # 판정할 대상이 아직 없는 턴이다. 두 갈래가 있다 — 배정 단위가 도는 중이거나,
             # 판정자가 이미 떠서 답이 오는 중이거나. 호스트 모드에서 서브에이전트는 비동기라
             # 결과가 턴이 끝난 뒤에 오므로, 판정자를 부른 턴은 자기가 부른 판정을 못 기다린다.

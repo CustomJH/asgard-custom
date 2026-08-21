@@ -3,8 +3,11 @@
 
 import json
 import os
+import shutil
 import subprocess
+import tempfile
 import unittest
+from unittest import mock
 
 from trinity_base import (
     SUBGATE,
@@ -997,6 +1000,58 @@ class TestSubagentGate(TrinityBase):
     def test_subagent_gate_runs_under_host_python3_named_by_shebang(self):
         p = subprocess.run(["python3", SUBGATE], input="not-json", capture_output=True, text=True, cwd=self.root)
         self.assertEqual(p.returncode, 0, p.stderr)
+
+
+class TestBlockCapClosesTheLedger(unittest.TestCase):
+    """상한을 넘겨 통과시키는 종료도 배차 장부에서 접힌다.
+
+    그 경로는 `main` 의 `siege_close` 앞에서 프로세스를 끝낸다. 안 접으면 그 시도가 `ready` 로
+    남고, 26-08-21 에 이 저장소에서 센 안 끝난 판정자 배차 37건과 같은 자리가 된다 — `siege` 는
+    영영 "도는 중"이라 말하고 `verifier-gate` 는 그것을 "판정이 오는 중"으로 읽는다."""
+
+    def setUp(self):
+        from asgard.hooks import subagent_gate as sg
+
+        self.sg = sg
+        self.root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.root, True)
+        os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
+        self.closed = []
+        for name, fake in (
+            ("siege_close", lambda root, qid, agent, **kw: self.closed.append((qid, agent, kw))),
+            ("heal_ledger", lambda *args: True),
+        ):
+            patcher = mock.patch.object(sg, name, fake)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def seed_counter(self, agent, count):
+        with open(os.path.join(self.root, ".asgard", "subgate-s1.json"), "w", encoding="utf-8") as handle:
+            json.dump({agent: count}, handle)
+
+    def call_block(self, agent, qid="q1"):
+        with self.assertRaises(SystemExit) as caught:
+            self.sg.block(self.root, "s1", agent, "reason", qid=qid)
+        return caught.exception.code
+
+    def test_the_turn_that_exceeds_the_cap_settles_its_dispatch(self):
+        self.seed_counter("asgard-verifier", self.sg.MAX_BLOCKS)
+        self.assertEqual(self.call_block("asgard-verifier"), 0)
+        self.assertEqual(len(self.closed), 1, "상한 초과 통과가 장부를 안 접었다")
+        qid, agent, kwargs = self.closed[0]
+        self.assertEqual((qid, agent), ("q1", "asgard-verifier"))
+        self.assertEqual(kwargs["outcome"], "failed", "역할 이벤트 없이 끝난 시도는 목표에 안 닿았다")
+
+    def test_a_block_under_the_cap_leaves_the_dispatch_open(self):
+        """아직 안 끝난 역할이다 — 여기서 접으면 뒤따르는 종료가 접을 것을 못 찾는다."""
+        self.assertEqual(self.call_block("asgard-verifier"), 0)
+        self.assertEqual(self.closed, [])
+
+    def test_without_a_quest_there_is_nothing_to_close(self):
+        """퀘스트가 없으면 이 종료는 장부에 없는 디스패치다 — 없는 것을 접으면 안 된다."""
+        self.seed_counter("asgard-verifier", self.sg.MAX_BLOCKS)
+        self.assertEqual(self.call_block("asgard-verifier", qid=""), 0)
+        self.assertEqual(self.closed, [])
 
 
 if __name__ == "__main__":

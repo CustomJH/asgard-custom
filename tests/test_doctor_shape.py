@@ -943,9 +943,48 @@ class TestFrozenDefaultsAreNamed(unittest.TestCase):
                     "fix 가 ok 를 안 보고 찍힌다 — 그렇다면 안내를 fix 에 둬도 되고, 이 시험의 전제가 바뀐 것이다",
                 )
 
+    @staticmethod
+    def _fix_read(tree: ast.AST) -> ast.AST:
+        """그 코드에서 `...["fix"]` 를 읽는 첨자 노드 — 술어에 넣을 표적."""
+        return next(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Constant) and node.slice.value == "fix"
+        )
+
+    def test_the_guard_predicate_rejects_a_name_that_merely_contains_ok(self):
+        """술어가 재던 것이 참조가 아니라 글자였다 — `"ok" not in ast.dump(...)` 는 부분일치다.
+
+        `if hook:` 의 덤프에는 `Name(id='hook')` 이 들어 있어 `ok` 를 포함한다. 그러면 `ok` 를
+        아예 안 보는 렌더가 이 시험을 통과한다. `doctor/__init__.py` 에서는 아직 재현되지
+        않지만(그 자리를 가리는 `if` 가 하나뿐), 통과시키는 모양이 있다는 것 자체가 구멍이다."""
+        tree = ast.parse("if hook:\n    print(ch['fix'])\n")
+        self.assertFalse(_guarded_by_ok(tree, self._fix_read(tree)))
+
+    def test_the_guard_predicate_still_matches_the_real_guard(self):
+        """조인 술어가 진짜 가드까지 놓치면 반대쪽으로 헛돈다 — 두 방향을 같이 잰다."""
+        tree = ast.parse("if not ch['ok']:\n    print(ch['fix'])\n")
+        self.assertTrue(_guarded_by_ok(tree, self._fix_read(tree)))
+
     def test_a_project_with_no_copies_says_nothing_extra(self):
         row = wiring._trinity_policy_check(self._root_with({"baseline_timeout": 999}))
         self.assertNotIn("지우면", row["detail"])
+
+
+def _reads_ok(test: ast.AST) -> bool:
+    """이 조건식이 `ok` 라는 이름·속성·문자열 키를 실제로 읽는가.
+
+    `ast.dump(...)` 문자열에 `ok` 가 들어 있는지로 물으면 글자 부분일치라 `hook`·`token`·
+    `lookup` 같은 이름이 우연히 통과한다. 재야 하는 것은 글자가 아니라 참조라, 노드를 걸어
+    이름이 정확히 `ok` 인 자리만 센다."""
+    for node in ast.walk(test):
+        if isinstance(node, ast.Name) and node.id == "ok":
+            return True
+        if isinstance(node, ast.Attribute) and node.attr == "ok":
+            return True
+        if isinstance(node, ast.Constant) and node.value == "ok":
+            return True
+    return False
 
 
 def _guarded_by_ok(tree: ast.AST, target: ast.AST) -> bool:
@@ -956,7 +995,7 @@ def _guarded_by_ok(tree: ast.AST, target: ast.AST) -> bool:
     for node in ast.walk(tree):
         if not isinstance(node, ast.If):
             continue
-        if "ok" not in ast.dump(node.test):
+        if not _reads_ok(node.test):
             continue
         if any(target is inner for body in (node.body, node.orelse) for stmt in body for inner in ast.walk(stmt)):
             return True

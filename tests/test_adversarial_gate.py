@@ -18,6 +18,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 SRC = os.path.join(os.path.dirname(__file__), "..", "src", "asgard", "hooks")
@@ -444,8 +445,20 @@ class TestARunningWaveIsNotACompletionClaim(AdversarialBase):
         decision, _ = self.gate_decision("worker-only")
         self.assertEqual(decision, "block")
 
-    def _open_verifier_dispatch(self, qid: str, *, agent: str = "asgard-verifier", settled: bool = False) -> None:
-        """배차 장부에 이 퀘스트의 시도 하나를 세운다 — 훅이 배차 때 적는 것과 같은 모양."""
+    def _open_verifier_dispatch(
+        self,
+        qid: str,
+        *,
+        agent: str = "asgard-verifier",
+        settled: bool = False,
+        state: str = "ready",
+        age_seconds: float = 0.0,
+    ) -> None:
+        """배차 장부에 이 퀘스트의 시도 하나를 세운다 — 훅이 배차 때 적는 것과 같은 모양.
+
+        `state` 와 `updated_at` 은 장식이 아니다. 게이트는 그 둘로 "지금 도는 시도"를 가르므로,
+        칸이 없으면 조회가 통째로 실패하고 훅의 fail-open 이 그것을 "배차 없음"으로 삼킨다 —
+        시험은 빨개지지만 이유는 안 보인다. 실제 스키마는 `orchestration/store.py` 가 정본이다."""
         import sqlite3
 
         db = os.path.join(self.root, ".asgard", "orchestration.db")
@@ -456,17 +469,38 @@ class TestARunningWaveIsNotACompletionClaim(AdversarialBase):
                 "CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, quest_id TEXT, status TEXT, created_at REAL);"
                 "CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, run_id TEXT);"
                 "CREATE TABLE IF NOT EXISTS dispatches ("
-                "  id TEXT PRIMARY KEY, task_id TEXT, agent TEXT, settled_at REAL);"
+                "  id TEXT PRIMARY KEY, task_id TEXT, agent TEXT, state TEXT,"
+                "  updated_at REAL, settled_at REAL);"
             )
             conn.execute("INSERT OR REPLACE INTO runs VALUES (?,?,?,?)", ("run_x", qid, "open", 0.0))
             conn.execute("INSERT OR REPLACE INTO tasks VALUES (?,?)", ("task_x", "run_x"))
             conn.execute(
-                "INSERT OR REPLACE INTO dispatches VALUES (?,?,?,?)",
-                ("disp_x", "task_x", agent, 1.0 if settled else None),
+                "INSERT OR REPLACE INTO dispatches VALUES (?,?,?,?,?,?)",
+                ("disp_x", "task_x", agent, state, time.time() - age_seconds, 1.0 if settled else None),
             )
             conn.commit()
         finally:
             conn.close()
+
+    def test_a_dispatch_older_than_the_lease_no_longer_shields_the_turn(self):
+        """한 번 부른 판정자로 영원히 가릴 수 없다 — 이것이 이 우회의 실물 형태였다.
+
+        26-08-21 실측: 이 저장소 장부에 안 끝난 판정자 시도가 37건 있었고 가장 오래된 것이
+        15.7일 전이었다. 술어가 `settled_at IS NULL` 만 봐서, 그 35개 퀘스트에서는 "15일 전에
+        판정자를 부른 적 있다"가 "판정이 지금 오는 중"으로 읽혔다."""
+        self.open_quest()
+        self.write("app.py", "x = 1\n")
+        self._open_verifier_dispatch("q", age_seconds=86400)
+        decision, _ = self.gate_decision("stale-dispatch")
+        self.assertEqual(decision, "block")
+
+    def test_a_reclaimed_dispatch_no_longer_shields_the_turn(self):
+        """회수된 시도는 `settled_at` 이 비어 있어도 도는 중이 아니다 (`dispatch.mark`)."""
+        self.open_quest()
+        self.write("app.py", "x = 1\n")
+        self._open_verifier_dispatch("q", state="outcome_unknown")
+        decision, _ = self.gate_decision("reclaimed-dispatch")
+        self.assertEqual(decision, "block")
 
     def test_a_quest_with_no_units_is_unaffected(self):
         """티켓을 안 쓰는 보통 쓰기 퀘스트는 종전 그대로 막힌다."""

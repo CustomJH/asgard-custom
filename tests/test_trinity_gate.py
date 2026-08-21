@@ -5,8 +5,10 @@ import hashlib
 import inspect
 import json
 import os
+import shutil
 import subprocess
 import tempfile
+import time
 import unittest
 
 from trinity_base import (
@@ -661,6 +663,64 @@ class TestAdversarialSuite(unittest.TestCase):
         p = subprocess.run(["bash", script], capture_output=True, text=True, timeout=120)
         self.assertEqual(p.returncode, 0, f"적대 벡터 실패:\n{p.stdout}\n{p.stderr}")
         self.assertIn("FAIL=0", p.stdout)
+
+
+class TestVerdictInFlightIsNarrow(unittest.TestCase):
+    """`_verdict_in_flight` 가 "판정이 오는 중"으로 세는 범위.
+
+    26-08-21 실측: 이 저장소 배차 장부에 안 끝난 판정자 시도가 37건 있었고 가장 오래된 것이
+    15.7일 전이었다. 술어가 `settled_at IS NULL` 하나만 봐서 그 35개 퀘스트에서는 게이트의
+    `no-verdict` 차단이 사실상 꺼져 있었다 — 15일 전에 판정자를 한 번 부른 적 있다는 사실이
+    "판정이 지금 날아오는 중"으로 읽혔기 때문이다."""
+
+    def setUp(self):
+        from asgard import orchestration as orc
+
+        self.orc = orc
+        self.root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.quest = "q-in-flight"
+        self.dispatch = orc.note_agent(self.root, self.quest, "asgard-verifier")["id"]
+
+    def flight(self, lease=1800):
+        from asgard.hooks import verifier_gate as vg
+
+        return vg._verdict_in_flight(self.root, self.quest, {"ticket_runtime": {"lease_seconds": lease}})
+
+    def age(self, seconds):
+        """그 시도를 손댄 지 `seconds` 초 지난 것으로 만든다 — 시계를 못 돌리니 기록을 민다."""
+        with self.orc.store.connect(self.root, write=True) as conn:
+            conn.execute(
+                "UPDATE dispatches SET updated_at = ? WHERE id = ?",
+                (time.time() - seconds, self.dispatch),
+            )
+
+    def test_a_dispatch_opened_just_now_counts(self):
+        self.assertTrue(self.flight())
+
+    def test_a_dispatch_older_than_the_lease_does_not(self):
+        self.age(1801)
+        self.assertFalse(self.flight())
+
+    def test_the_lease_comes_from_policy_not_a_constant(self):
+        """정책이 lease 를 줄이면 그만큼 빨리 식어야 한다 — 상수로 박으면 이 시험이 빨개진다."""
+        self.age(600)
+        self.assertTrue(self.flight(lease=1800))
+        self.assertFalse(self.flight(lease=300))
+
+    def test_a_reclaimed_dispatch_does_not_count(self):
+        """`dispatch.mark` 는 `settled_at` 을 안 적는다 — 회수된 시도는 상태로만 구별된다."""
+        self.orc.dispatch_mark(self.root, self.dispatch, "outcome_unknown")
+        self.assertFalse(self.flight())
+
+    def test_a_settled_dispatch_does_not_count(self):
+        self.orc.dispatch_settle(self.root, self.dispatch, "succeeded")
+        self.assertFalse(self.flight())
+
+    def test_another_quests_dispatch_does_not_count(self):
+        from asgard.hooks import verifier_gate as vg
+
+        self.assertFalse(vg._verdict_in_flight(self.root, "some-other-quest", {}))
 
 
 if __name__ == "__main__":
