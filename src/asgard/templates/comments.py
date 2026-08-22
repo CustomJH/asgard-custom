@@ -64,6 +64,12 @@ This is where correct-but-unreadable comments come from, and it is the rule most
   candidate exists in the sentence. When two things could be doing the verb, name the one that is.
 - **Cut what is true of the project rather than of this code.** If the sentence would survive
   unchanged in a different file, it belongs in a document, not here.
+- **Break the line where the sentence breaks.** A comment line ends at a clause boundary, not at the
+  column where you ran out of room: `형제는` on one line and `` `runners._JVM_SKIP_FLAGS` 다`` on the
+  next makes the reader carry a dangling subject across the break. Move the whole phrase down and
+  let the lines come out uneven. When you edit one sentence, leave the line breaks of the sentences
+  around it alone — re-flowing the paragraph rewrites lines nobody touched, and the diff then claims
+  a change that was never made.
 
 ### When you rewrite a comment
 
@@ -150,7 +156,9 @@ close, no rhetorical question, no second person. In Korean, drop the subject onl
 candidate exists. Grammar follows the Bragi contract.
 
 **When you rewrite a comment, only the register changes** — every measurement, date, issue id, path,
-and threshold survives verbatim, and a rewrite that loses one is a defect, not a style choice.
+and threshold survives verbatim, and a rewrite that loses one is a defect, not a style choice. Line
+breaks belong to the comment too: end a line at a clause boundary rather than at the column you ran
+out of, and leave the breaks of the sentences you did not edit where they are.
 Docstrings start with the contract (what it does or returns, one sentence), then only what a caller
 needs; design rationale goes in the module docstring.
 
