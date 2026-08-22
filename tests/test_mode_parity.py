@@ -110,6 +110,37 @@ class TestScaffoldParity(unittest.TestCase):
             for name in _PARITY_HOOKS:
                 self.assertIn(f"/workspace/{folder}/hooks/{name}", files, f"{folder} 에 {name} 없음")
 
+    def test_the_deployed_hook_copies_match_the_source(self):
+        """이 저장소에 깔린 훅 사본이 소스와 갈라지면 여기서 빨개진다.
+
+        `.claude/hooks/` 의 파일들은 `src/asgard/hooks/` 의 사본이고, 이 저장소에서 도는 세션이
+        실제로 읽는 것은 소스가 아니라 그 사본이다. 소스만 고치면 고친 코드는 안 돌고, 그 사실은
+        다음 세션에 가서야 드러난다 (26-08-22: 훅 두 개를 손으로 옮겨 심고서야 발화했다).
+        `asgard doctor` 의 "hook files (deployed copies)" 행은 이미 재고 있지만 사후에 말할 뿐,
+        스위트를 세우지 않아서 갈라진 채로 커밋이 지나간다.
+
+        견주는 기준은 배포 계약 함수(`hook_files`) 자신이다. 여기서 이름 규칙을 다시 적으면
+        그 규칙이 또 하나의 갈라질 사본이 된다 — 이 파일이 막으려는 바로 그 형태다.
+
+        깨끗한 체크아웃에는 `.claude/` 가 없다(gitignore). 견줄 대상이 없으면 건너뛴다.
+        """
+        repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        hooks_dir = os.path.join(repo, ".claude", "hooks")
+        if not os.path.isdir(hooks_dir):
+            self.skipTest(".claude/ 는 gitignore 라 깨끗한 체크아웃에는 배포 사본이 없어요")
+        stale = []
+        for path, content in hook_files(hooks_dir, "claude-code"):
+            rel = os.path.relpath(path, repo)
+            try:
+                with open(path, encoding="utf-8") as handle:
+                    on_disk = handle.read()
+            except OSError:
+                stale.append(rel + " (배포 안 됨)")
+                continue
+            if on_disk != content:
+                stale.append(rel)
+        self.assertEqual(stale, [], "배포 사본이 소스와 갈라졌어요 — `asgard sync` 로 맞추세요")
+
     def test_every_client_config_wires_every_discipline(self):
         configs = {
             "claude-code": cc_settings(),
