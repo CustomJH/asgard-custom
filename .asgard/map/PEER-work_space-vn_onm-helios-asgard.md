@@ -11,7 +11,7 @@
 - Evidence scan: 4 files; 0 landmarks
 - Declared work root of the session repository — paths below open as written from `./`.
 - The relation graph (`asgard map impact` / `trace`) covers the session repository only.
-- Source revision: source-stat-sha256:8a331e8d4a972dccd9276d00874f8df61f787a9eb4715d657406467015c62846
+- Source revision: source-stat-sha256:7977fd3a0711ed003faaf964b613415b623264f0b2166f33d394341921bbc08d
 
 ## Landmarks
 
