@@ -110,7 +110,8 @@
   "paths": {
     "additional_roots": [
       "../satellite-pilot",
-      "~/develop/work_space/vn_onm/helios-asgard"
+      "~/develop/work_space/vn_onm/helios-asgard",
+      "../asgard-custom-test"
     ]
   }
 }
