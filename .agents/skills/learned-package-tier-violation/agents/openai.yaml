@@ -1,5 +1,0 @@
-interface:
-  display_name: "learned-package-tier-violation"
-  short_description: "package-tier-violation — destructive.cpython-314.pyc, transcript.cpython-314.pyc, __init__.cpython-314.pyc, contracts.cp"
-policy:
-  allow_implicit_invocation: false

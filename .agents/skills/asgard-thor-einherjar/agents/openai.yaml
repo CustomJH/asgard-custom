@@ -1,5 +1,0 @@
-interface:
-  display_name: "asgard-thor-einherjar"
-  short_description: "Thor's einherjar squad — team-scale backend work orchestration. Load before tasks needing a large multi-surface change ("
-policy:
-  allow_implicit_invocation: false

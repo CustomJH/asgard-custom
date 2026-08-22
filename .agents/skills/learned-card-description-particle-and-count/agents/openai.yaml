@@ -1,5 +1,0 @@
-interface:
-  display_name: "learned-card-description-particle-and-count"
-  short_description: "card-description-particle-and-count — evolution.py, skill_registry.py, test_evolution.py, test_skill_registry.py에서 겪고 고친"
-policy:
-  allow_implicit_invocation: false

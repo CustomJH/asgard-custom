@@ -29,14 +29,20 @@ class InvocationSyntaxTest(unittest.TestCase):
         router = "Codex takes `$name`"
         sources = [
             ("agents_md", agents_md("demo"), guide),
-            ("AGENTS.md", (REPO / "AGENTS.md").read_text(encoding="utf-8"), guide),
             ("router (explicit)", ROUTER_SKILL_MD, router),
             ("router (managed)", MANAGED_ROUTER_SKILL_MD, router),
         ]
-        # `.claude/` is gitignored here, so a clean checkout has no scaffolded copy to compare.
-        scaffolded = REPO / ".claude/skills/asgard-skills/SKILL.md"
-        if scaffolded.exists():
-            sources.append((".claude router", scaffolded.read_text(encoding="utf-8"), router))
+        # The copies this repository scaffolded are compared only when they are on disk: the root
+        # AGENTS.md and .claude/ are both gitignored here, so a clean checkout has neither. When
+        # they are present they must still agree, because a fix that lands only in the template
+        # leaves every already-initialised project reading the old sentence.
+        for label, rel, expected in (
+            ("AGENTS.md", "AGENTS.md", guide),
+            (".claude router", ".claude/skills/asgard-skills/SKILL.md", router),
+        ):
+            copy = REPO / rel
+            if copy.exists():
+                sources.append((label, copy.read_text(encoding="utf-8"), expected))
         return sources
 
     def test_no_host_agnostic_slash_offer(self):

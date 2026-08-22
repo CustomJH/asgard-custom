@@ -1,5 +1,0 @@
-interface:
-  display_name: "learned-stale-lane-file-chip-lock"
-  short_description: "stale-lane-file-chip-lock — agent-activate.cpython-314.pyc, charter-activate.cpython-314.pyc, lagom-activate.cpython-314"
-policy:
-  allow_implicit_invocation: false

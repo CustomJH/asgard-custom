@@ -1,5 +1,0 @@
-interface:
-  display_name: "learned-injection-misstates-change-coverage"
-  short_description: "injection-misstates-change-coverage — asgard-worker.md, destructive.cpython-314.pyc, transcript.cpython-314.pyc, PEER-sa"
-policy:
-  allow_implicit_invocation: false

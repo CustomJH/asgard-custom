@@ -238,6 +238,23 @@ workspace/
 .claude/settings.local.json
 .claude/**/*.local.*
 
+# 교차도구 스캐폴드 — 이 저장소는 Claude Code 로 개발하므로 Codex·Cursor 배선은 커밋하지
+# 않는다. `asgard sync` 는 디렉터리가 있는지로 클라이언트를 고르므로(commands/sync.py:286-288),
+# 여기서 지운 뒤에는 다시 만들지 않는다. `.agents/` 는 cursor·codex 중 하나가 켜졌을 때만
+# 쓰이므로 같이 멈춘다(commands/setup.py:490).
+#
+# 이 줄은 `!src/asgard/assets/**` 보다 **앞에** 있어야 한다. 벤더링 스킬 팩 안에도 같은 이름의
+# 디렉터리가 있어서(`.codex/agents` 미러 26개 — tests/test_freyja1_vault.py), 뒤에 두면
+# 블랭킷 규칙이 패키지 콘텐츠를 삼킨다. 이 파일이 이미 두 번 당한 자리다.
+.codex/
+.agents/
+
+# 뿌리 AGENTS.md 는 `asgard sync` 가 템플릿에서 다시 쓰는 산출물이다(commands/setup.py:412).
+# 디스크에는 남는다 — Claude 쪽 브리지 파일이 이 파일을 한 줄로 참조하므로, 없으면 세션이
+# 캐논을 못 읽는다. git 에서만 뺀다. MANUAL.md 는 오딘이 직접 쓴 규칙이라 산출물이 아니고,
+# 이력을 남겨야 해서 계속 추적한다.
+AGENTS.md
+
 # .asgard 규칙은 이 파일에 적지 않는다 — 여기는 아스가르드 원천을 만드는 저장소이지
 # `asgard setup` 이 설정으로 배선해 주는 소비 프로젝트가 아니다. 커밋 경계(팀 자산은 Git 에,
 # 이 기계의 런타임은 밖에)는 `.asgard/.gitignore` 한 파일이 진다. 여기에도 같은 규칙을 적으면

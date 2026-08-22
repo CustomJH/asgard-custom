@@ -1,5 +1,0 @@
-interface:
-  display_name: "learned-gate-blocks-own-change"
-  short_description: "gate-blocks-own-change — agent-activate.cpython-314.pyc, charter-activate.cpython-314.pyc, lagom-activate.cpython-314.py"
-policy:
-  allow_implicit_invocation: false

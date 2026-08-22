@@ -1,5 +1,0 @@
-interface:
-  display_name: "learned-verify-contract-names-missing-test-file"
-  short_description: "verify-contract-names-missing-test-file — destructive.cpython-314.pyc, transcript.cpython-314.pyc, __init__.cpython-314."
-policy:
-  allow_implicit_invocation: false

@@ -1,5 +1,0 @@
-interface:
-  display_name: "merge-resolution"
-  short_description: "Resolve an in-progress merge or rebase conflict hunk by hunk, by intent rather than by text. Use when conflict markers a"
-policy:
-  allow_implicit_invocation: false

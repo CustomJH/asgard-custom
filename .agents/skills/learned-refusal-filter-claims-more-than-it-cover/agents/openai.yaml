@@ -1,5 +1,0 @@
-interface:
-  display_name: "learned-refusal-filter-claims-more-than-it-cover"
-  short_description: "refusal-filter-claims-more-than-it-covers — failure-tracker.py, memory-activate.py, settings.json, GRAPH.md 외 6개에서 겪고 고친"
-policy:
-  allow_implicit_invocation: false

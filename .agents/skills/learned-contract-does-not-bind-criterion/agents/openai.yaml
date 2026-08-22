@@ -1,5 +1,0 @@
-interface:
-  display_name: "learned-contract-does-not-bind-criterion"
-  short_description: "contract-does-not-bind-criterion — .gitignore, SKILL.md, openai.yaml, GRAPH.md 외 1개에서 겪고 고친 자리 (FAIL 2회 뒤 PASS)"
-policy:
-  allow_implicit_invocation: false

@@ -8,7 +8,7 @@
 
 - Project root: `./`
 - Languages by observed source files: Python (787), JavaScript (12), Rust (2)
-- Evidence scan: 1042 files; 51 landmarks
+- Evidence scan: 1041 files; 51 landmarks
 
 ## Landmarks
 
@@ -73,7 +73,6 @@
 
 ## Documents
 
-- `AGENTS.md` — doc: asgard-custom — Agent Guide · sections: Asgard — Identity (Worldview); Asgard — Canon (Common Laws); Asgard — Trinity Loop (Heimdall Orchestration); Asgard — Codebase Map (.asgard/map/); Asgard — Lagom (Minimalism Contract); Asgard — Bragi (Human Voice)
 - `MANUAL.md` — doc: MANUAL · sections: 오딘에게 보고하는 말투; API; Database; Naming
 - `README.md` — doc: Asgard · sections: Install; Local or isolated execution; Tool Kernel; Skill and Plugin Registry; Documents (Sága); Project Map
 - `docker/README.md` — doc: 컨테이너 하나 = 에이전트 하나 · sections: 먼저 — 이 폴더에 이미지가 둘 있고, 서로 다른 것이에요; 가르는 것은 두 줄이에요; 1. 호스트의 에이전트를 그대로 컨테이너에 (_asgard start_); 2. 컨테이너 전용 에이전트 여럿 (compose); 자격증명은 기본으로 안 넘어가요; 알아둘 것
@@ -113,6 +112,7 @@
 - `benchmarks/project-memory/REPORT.md` — doc: 2차(프로젝트) 메모리 회수 벤치 · sections: 레인 1 · 로컬 문서 레인 hit@k (실측 26-08-01); 레인 2 · 관계 1홉 확장은 회수를 **올린다** (깎지 않는다); 레인 3 · 동언어 렉시컬 기권 정밀도; 제품 코드를 고쳐야만 잴 수 있는 것 (안 고쳤다)
 - `benchmarks/roundtable/REPORT.md` — doc: 원탁 대조 벤치 — 좌석 여럿이 모델 하나보다 결함을 더 짚는가 (2026-08-14) · sections: 결과 — 중립 좌석으로 돌린 24짝; 첫 회차는 무효다 — 좌석이 답을 알고 있었다; 이 벤치가 찾아낸 제품 결함 둘; 기능 점검 — 실물로 확인한 것; 어떻게 쟀나; 이 벤치를 만들며 잡힌 것
 - `benchmarks/shortcut-recall/REPORT.md` — doc: 숏컷 벤치 — recall 주입 on/off A/B (26-07-16, 36런) · sections: 질문; 방법 (harness.py); 결과 (results-36runs.jsonl — 런당 1행 append, 원본 그대로); 판정기 주의 (jsonl 의 _success_ 필드를 그대로 믿지 말 것); 한계
+- `benchmarks/skill-uptake/REPORT.md` — doc: 스킬 도달 실측 — 배차가 새 스킬에 닿는가 (2026-08-13) · sections: 결과; 돌리는 법; 이 실측이 찾아낸 것; 이 벤치가 못 재는 것
 
 ## Public surfaces
 

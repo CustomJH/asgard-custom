@@ -1,5 +1,0 @@
-interface:
-  display_name: "learned-unverified-absolute-claim-in-shipped-gui"
-  short_description: "unverified-absolute-claim-in-shipped-guide — agent-activate.cpython-314.pyc, charter-activate.cpython-314.pyc, lagom-act"
-policy:
-  allow_implicit_invocation: false

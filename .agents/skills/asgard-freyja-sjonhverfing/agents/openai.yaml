@@ -1,5 +1,0 @@
-interface:
-  display_name: "asgard-freyja-sjonhverfing"
-  short_description: "Freyja's depth-on-a-plane technique layer — Sjónhverfing (시욘흐베르핑, 눈속임). Use for pseudo-3D on 2D surfaces: perspective an"
-policy:
-  allow_implicit_invocation: false

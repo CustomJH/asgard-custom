@@ -1,5 +1,0 @@
-interface:
-  display_name: "lost"
-  short_description: "Stop. That last message did not land — pitch it again."
-policy:
-  allow_implicit_invocation: false

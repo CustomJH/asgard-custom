@@ -1,5 +1,0 @@
-interface:
-  display_name: "asgard-lagom-review"
-  short_description: "Review recent changes (diff) along both lagom axes — flag deletable code, over-abstraction, unnecessary dependencies, an"
-policy:
-  allow_implicit_invocation: false

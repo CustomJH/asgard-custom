@@ -1,5 +1,0 @@
-interface:
-  display_name: "asgard-memory"
-  short_description: "The two usage contracts of Yggdrasil (Asgard's memory system) — personal memory is a local wiki; shared project knowledg"
-policy:
-  allow_implicit_invocation: false

@@ -1,5 +1,0 @@
-interface:
-  display_name: "expedition"
-  short_description: "Map a decision-heavy effort that cannot fit in one agent session."
-policy:
-  allow_implicit_invocation: false

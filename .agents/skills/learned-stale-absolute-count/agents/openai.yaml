@@ -1,5 +1,0 @@
-interface:
-  display_name: "learned-stale-absolute-count"
-  short_description: "stale-absolute-count — asgard-eitri.md, asgard-freyja.md, asgard-mimir.md, asgard-thor-lead.md 외 6개에서 겪고 고친 자리 (FAIL 4회 "
-policy:
-  allow_implicit_invocation: false

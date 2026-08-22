@@ -1,5 +1,0 @@
-interface:
-  display_name: "domain-modeling"
-  short_description: "Build shared domain language and durable decisions. Use when terms are overloaded, boundaries are unclear, or a costly a"
-policy:
-  allow_implicit_invocation: false

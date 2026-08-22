@@ -1,5 +1,0 @@
-interface:
-  display_name: "asgard-thor-megingjord"
-  short_description: "Thor's belt of strength Megingjörð — deep guidance on runtime infrastructure, scaling, and observability. Load before wo"
-policy:
-  allow_implicit_invocation: false

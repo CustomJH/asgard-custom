@@ -1,5 +1,0 @@
-interface:
-  display_name: "council"
-  short_description: "Convene a war council that clarifies a plan or design, one round of decisions at a time."
-policy:
-  allow_implicit_invocation: false

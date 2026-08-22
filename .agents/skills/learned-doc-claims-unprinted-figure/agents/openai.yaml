@@ -1,5 +1,0 @@
-interface:
-  display_name: "learned-doc-claims-unprinted-figure"
-  short_description: "doc-claims-unprinted-figure — agent-activate.cpython-314.pyc, charter-activate.cpython-314.pyc, lagom-activate.cpython-3"
-policy:
-  allow_implicit_invocation: false

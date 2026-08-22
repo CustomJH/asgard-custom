@@ -1,5 +1,0 @@
-interface:
-  display_name: "learned-readonly-lane-arbitrary-exec"
-  short_description: "readonly-lane-arbitrary-exec — asgard-ullr.md, agent-activate.cpython-314.pyc, charter-activate.cpython-314.pyc, lagom-a"
-policy:
-  allow_implicit_invocation: false

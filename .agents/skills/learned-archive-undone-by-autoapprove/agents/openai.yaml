@@ -1,5 +1,0 @@
-interface:
-  display_name: "learned-archive-undone-by-autoapprove"
-  short_description: "archive-undone-by-autoapprove — asgard-eitri.md, asgard-freyja.md, asgard-mimir.md, asgard-thor-lead.md 외 6개에서 겪고 고친 자리 "
-policy:
-  allow_implicit_invocation: false

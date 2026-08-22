@@ -1,5 +1,0 @@
-interface:
-  display_name: "learned-report-number-mismatch"
-  short_description: "report-number-mismatch — destructive.cpython-314.pyc, transcript.cpython-314.pyc, GRAPH.md, PEER-satellite-pilot.md 외 5개"
-policy:
-  allow_implicit_invocation: false

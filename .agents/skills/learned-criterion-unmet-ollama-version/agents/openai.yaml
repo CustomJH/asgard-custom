@@ -1,5 +1,0 @@
-interface:
-  display_name: "learned-criterion-unmet-ollama-version"
-  short_description: "criterion-unmet-ollama-version — agent-activate.cpython-314.pyc, charter-activate.cpython-314.pyc, lagom-activate.cpytho"
-policy:
-  allow_implicit_invocation: false

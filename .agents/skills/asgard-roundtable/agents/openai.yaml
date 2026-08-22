@@ -1,5 +1,0 @@
-interface:
-  display_name: "asgard-roundtable"
-  short_description: "Convene a round table — sit several models at one agenda, have them argue it over rounds, and read the positions back. L"
-policy:
-  allow_implicit_invocation: false

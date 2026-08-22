@@ -1,5 +1,0 @@
-interface:
-  display_name: "asgard-lagom-debt"
-  short_description: "Scan the codebase for `lagom:` simplification markers and report items that hit their ceiling or need an upgrade."
-policy:
-  allow_implicit_invocation: false

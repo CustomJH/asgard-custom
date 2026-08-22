@@ -1,5 +1,0 @@
-interface:
-  display_name: "asgard-thor-clean-hexagonal"
-  short_description: "토르의 선택형 Clean Architecture·Hexagonal(Ports and Adapters) 적용 스킬. 사용자가 Clean Architecture, Hexagonal 또는 Ports and Adapters"
-policy:
-  allow_implicit_invocation: false

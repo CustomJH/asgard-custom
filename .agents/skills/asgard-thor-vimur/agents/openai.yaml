@@ -1,5 +1,0 @@
-interface:
-  display_name: "asgard-thor-vimur"
-  short_description: "The river Vimur that rose against Thor — wire protocols that fail silently. Framing, checksums, addressing, timing, and "
-policy:
-  allow_implicit_invocation: false
