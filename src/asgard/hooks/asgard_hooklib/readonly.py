@@ -27,7 +27,10 @@ READONLY_BASH_HINT = (
     "--noEmit — including via uv|poetry|pipenv run, with value-less flags such as --no-project/--isolated/"
     "--frozen/--locked/--offline in between), python -m pytest|unittest|compileall|py_compile, "
     "python -c '<one-line smoke with no writes>', node --check <file>, node [--test] <tests/ script>, "
-    "npm|pnpm|yarn test|lint|check, tests/ scripts. "
+    "npm|pnpm|yarn test|lint|check, tests/ scripts, "
+    "JVM runners (./gradlew|./mvnw|gradle|mvn) with verification tasks only — test*, check*, "
+    "*Check, detekt, lint, verify — and only value-less flags such as --console=plain/--offline/-q; "
+    "build, publish, spotlessApply and ktlintFormat stay closed. "
     "`asgard siege` — reading it (show/inbox/blocked/gates/ready/waves/watch) and speaking about "
     "your own attempt on it (ask/escalate/heartbeat, and `done` only in its self-naming form: "
     "`asgard siege done --quest <quest> --agent <you> --outcome failed` — a positional dispatch id "
@@ -108,6 +111,84 @@ _AWK_WRITE = re.compile(r">|\bsystem\s*\(|\bclose\s*\(|\bgetline\b|\bENVIRON\b|\
 
 
 _VERIFY = {"pytest", "mypy", "pyright", "ty"}
+
+
+# JVM 러너 — Gradle·Maven 저장소에서 판정자가 무엇이든 실행할 수 있는 유일한 통로다. 이 레인이
+# 없는 동안 그런 저장소의 판정은 정적 읽기로 후퇴했다: 테스트도 스타일 검사도 전부 래퍼를
+# 지나므로, 배달물이 멀쩡해도 "실행 증거 없음" 으로만 끝난다 (node 레인을 연 26-07-26 helios 와
+# 같은 자리, 다른 런타임). 임의 프로젝트 코드를 도는 노출은 이미 열린 `pytest`·`npm test` 와
+# 같은 등급이다 — 셋 다 저장소 안 파일이 무엇을 도는지 정한다.
+#
+# 형제 판정인 `runners.jvm_behavior_check` 와 묻는 것이 다르다. 그쪽은 "이 명령이 행동을
+# 재는가"(베이스라인 증거 자격)를 묻고, 여기는 "읽기 전용 역할이 이걸 해도 되는가"를 묻는다.
+# 그래서 여기는 검증 태스크를 더 넓게 받고(스타일 검사도 판정 재료다) 플래그는 더 좁게 받는다.
+_JVM_WRAPPERS = {"gradlew", "gradlew.bat", "mvnw", "mvnw.cmd"}
+
+
+_JVM_ON_PATH = {"gradle", "mvn"}
+
+
+# 값을 안 받는 표시 플래그만 연다. 값을 받는 플래그는 하나도 안 연다 — `--init-script`·`-b`·
+# `-p`·`-f` 는 러너가 읽을 빌드 스크립트를 **가리키는** 자리다. 위험한 플래그를 세어 막는
+# 방법으로 이 저장소는 이미 세 번 샜으므로(`_GIT_READ` 주석의 `-u`·`--exec=`·`ext::`),
+# 세는 대신 안 여는 쪽을 고른다.
+_JVM_FLAGS = {
+    "--console=plain", "--offline", "--no-daemon", "--stacktrace", "--info",
+    "-q", "--quiet", "-B", "--batch-mode", "--no-build-cache", "--rerun-tasks",
+}  # fmt: skip
+
+
+# 검증 태스크로 인정하는 이름. Gradle 은 태스크 이름이 자유라 접두사·접미사로 보고
+# (`testDebugUnitTest`·`:app:test`·`checkstyleMain`·`spotlessCheck`), Maven 골은
+# `checkstyle:check` 처럼 콜론을 쓴다 — 양쪽 다 마지막 마디만 읽는다.
+#
+# **고치는 짝은 안 연다.** `spotlessApply`·`ktlintFormat` 은 소스를 다시 쓰므로 읽기 전용
+# 역할의 명령이 아니다. `check` 로 끝나는 이름만 받는 것이 그 짝을 가르는 자리다.
+_JVM_VERIFY_EXACT = {
+    "detekt", "lint", "verify", "integration-test",
+    "pmdmain", "pmdtest", "spotbugsmain", "spotbugstest",
+}  # fmt: skip
+
+
+# 러너 이름에 허용하는 글자 — 셸이 나중에 펴는 것(`$HOME/x/gradlew`·`~/x/gradlew`)을 여기서
+# 막는다. `os.path.isabs("$HOME/…")` 는 False 라 절대경로 검사만으로는 안 걸린다.
+_JVM_RUNNER_NAME = re.compile(r"^[A-Za-z0-9._/-]+$")
+
+
+def _jvm_verify_task(token: str) -> bool:
+    """이 낱말이 검증 태스크인가 — 산출물을 만들거나 소스를 고치는 태스크는 아니다."""
+    task = token.split(":")[-1].lower()
+    return task.startswith(("test", "check")) or task.endswith("check") or task in _JVM_VERIFY_EXACT
+
+
+def _safe_jvm(head: str, tokens: list[str]) -> bool:
+    """Gradle·Maven 호출 하나 — 래퍼는 저장소 안 상대 경로만, 태스크는 검증 태스크만.
+
+    래퍼(`./gradlew`)는 저장소 안 파일이라 신원이 경로로 정해진다. 절대 경로와 `..` 는 저장소
+    밖 스크립트로 새는 길이라 안 받는다. `gradle`·`mvn` 은 PATH 실행자라 반대로 경로가 붙으면
+    안 받는다 — 붙은 경로가 가리키는 것은 PATH 의 그것이 아니다.
+
+    태스크가 하나도 없으면 거절한다. 인자 없는 `gradle` 은 기본 태스크를 도는데 그것이
+    무엇인지는 빌드 스크립트가 정하므로, 이 판정이 읽는 글에 안 적혀 있다.
+    """
+    if not _JVM_RUNNER_NAME.match(head):
+        return False
+    base = os.path.basename(head)
+    if base in _JVM_WRAPPERS:
+        if os.path.isabs(head) or ".." in os.path.normpath(head).split("/"):
+            return False
+    elif "/" in head:
+        return False
+    tasks = 0
+    for token in tokens[1:]:
+        if token.startswith("-"):
+            if token not in _JVM_FLAGS:
+                return False
+            continue
+        if not _jvm_verify_task(token):
+            return False
+        tasks += 1
+    return tasks > 0
 
 
 # `ls-remote` 는 여기 넣으면 안 된다. 이름은 읽기지만 **원격 전송로를 여는** 유일한 후보라,
@@ -360,6 +441,8 @@ def _safe_segment(segment: str, roots: tuple[str, ...] = (), caller: str = "") -
         )
     if program == "go":
         return len(tokens) >= 2 and tokens[1] in {"test", "vet"}
+    if program in _JVM_WRAPPERS or program in _JVM_ON_PATH:
+        return _safe_jvm(tokens[0].replace("\\", "/"), tokens)
     if program == "node":
         # Python 레인과 대칭인 검증 통로. 이게 없으면 JS/TS 저장소에서 판정자가 **아무것도 실행할
         # 수 없어**, 배달물이 아무리 멀쩡해도 "실행 증거 없음 = FAIL" 로만 끝난다 (26-07-26 helios

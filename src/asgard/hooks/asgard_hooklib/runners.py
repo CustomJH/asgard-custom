@@ -235,7 +235,8 @@ def rejected_checks(policy: dict) -> list[str]:
 
 
 def detect_checks(root: str, policy: dict) -> list[str]:
-    """정책 baseline_checks 우선. 없으면 보수적 자동 감지 — pytest만.
+    """정책 baseline_checks 우선. 없으면 보수적 자동 감지 — pytest 를 먼저 보고, 없으면
+    node(`_detect_node_checks`), 그다음 JVM(`_detect_jvm_checks`) 순으로 내려간다.
     lagom: lint 류 자동 감지 안함 — 기존 위반 false-red가 게이트 인질이 된다. 명시 설정으로만.
     uv 프로젝트(uv.lock)는 `uv run pytest`로 — PATH pytest는 venv 밖이라 수집 실패(2/3/4→skip)로
     게이트가 조용히 무력화되고, pytest가 .venv 안에만 있으면 아예 미감지된다. uv의 spawn 실패는
@@ -383,9 +384,9 @@ def _detect_node_checks(root: str) -> list[str]:
 def gate_first_checks_available(root: str, policy: dict) -> bool:
     """Only behavior test runners may replace an LLM Verifier; lint/compile/artifact checks may not.
 
-    JVM 러너는 자동 감지가 못 내놓는다 (`detect_checks` 는 pytest 와 npm 계열만 본다). 그래도
-    여기서 세는 이유는 사람이 `baseline_checks` 에 적은 것도 이 함수를 지나기 때문이다 —
-    안 세면 Gradle·Maven 저장소는 설정을 해도 레인이 안 선다. 그 판정은 안전 표와 같은
+    JVM 러너는 자동 감지(`_detect_jvm_checks`)로도 들어오고 사람이 `baseline_checks` 에 적어서도
+    들어온다. 두 길이 모두 이 함수를 지나므로, 여기서 안 세면 Gradle·Maven 저장소는 감지가 되든
+    설정을 하든 레인이 안 선다. 그 판정은 안전 표와 같은
     `jvm_behavior_check` 가 낸다 (두 자리가 갈리면 설정은 통과했는데 레인은 안 서는 상태가 된다)."""
     behavior = (
         ["npm", "test"],

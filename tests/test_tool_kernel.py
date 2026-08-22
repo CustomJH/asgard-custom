@@ -208,6 +208,42 @@ class TestRegistry(unittest.TestCase):
             other = os.path.join(tempfile.gettempdir(), "not-a-unit-ws", "a.check.mjs")
             self.assertFalse(is_readonly_bash_safe(f"node --test {other}", root))
 
+    def test_readonly_jvm_lane(self):
+        """JVM 저장소에서 판정자가 실행할 수 있는 것 — 검증 태스크만, 저장소 안 래퍼로만.
+
+        이 레인이 없는 동안 Gradle·Maven 저장소의 판정은 아무것도 못 돌렸다: 테스트도 스타일
+        검사도 전부 래퍼를 지나므로 판정이 정적 읽기로 후퇴한다 (node 레인을 열기 전의 helios 와
+        같은 자리). 여기서 잡는 것은 "어떤 태스크가 되는가" 가 아니라 가르는 축 둘이다 —
+        태스크가 재기만 하는가, 그리고 러너가 이 저장소 안 파일인가.
+        """
+        # 재는 태스크는 열린다 — 이름이 자유로운 gradle 태스크와 콜론을 쓰는 maven 골 양쪽.
+        self.assertTrue(is_readonly_bash_safe("./gradlew test"))
+        self.assertTrue(is_readonly_bash_safe("./gradlew :app:testDebugUnitTest"))
+        self.assertTrue(is_readonly_bash_safe("./gradlew checkstyleMain spotlessCheck --console=plain"))
+        self.assertTrue(is_readonly_bash_safe("helios-be/gradlew test"))  # 모듈마다 래퍼를 두는 모노레포
+        self.assertTrue(is_readonly_bash_safe("mvn -q checkstyle:check"))
+
+        # 고치거나 만들어 내는 태스크는 안 열린다 — 여기가 `spotlessCheck` 와 갈리는 자리다.
+        self.assertFalse(is_readonly_bash_safe("./gradlew spotlessApply"))
+        self.assertFalse(is_readonly_bash_safe("./gradlew ktlintFormat"))
+        self.assertFalse(is_readonly_bash_safe("./gradlew build"))
+        self.assertFalse(is_readonly_bash_safe("./gradlew publish"))
+        # 태스크가 없으면 무엇이 도는지는 빌드 스크립트가 정한다 — 판정이 읽는 글에 안 적혀 있다.
+        self.assertFalse(is_readonly_bash_safe("./gradlew"))
+
+        # 래퍼 신원은 경로로 정해진다. 저장소 밖을 가리키는 세 표기가 전부 막혀야 한다.
+        self.assertFalse(is_readonly_bash_safe("/opt/evil/gradlew test"))
+        self.assertFalse(is_readonly_bash_safe("../outside/gradlew test"))
+        self.assertFalse(is_readonly_bash_safe("$HOME/x/gradlew test"))  # 셸이 펴는 이름
+        self.assertFalse(is_readonly_bash_safe("/usr/local/bin/gradle test"))  # PATH 실행자에 붙은 경로
+
+        # 값을 받는 플래그는 러너가 읽을 스크립트를 가리키는 자리라 하나도 안 연다. 값이 저장소
+        # 안이라 앞단 경로 검사가 안 잡는 `=` 표기까지 여기서 막혀야 플래그 표가 실제로 구속한다.
+        self.assertFalse(is_readonly_bash_safe("./gradlew test --init-script=init.gradle"))
+        self.assertFalse(is_readonly_bash_safe("./gradlew test -Dorg.gradle.java.home=jdk"))
+        self.assertFalse(is_readonly_bash_safe("./gradlew test --init-script /tmp/x.gradle"))
+        self.assertFalse(is_readonly_bash_safe("./gradlew test -p ../other"))
+
     def test_readonly_python_smoke_lane(self):
         # Verifier 계약("대표 함수 호출 스모크")의 실행 통로 — 쓰기 없는 python -c는 허용,
         # 쓰기·프로세스·네트워크 API는 fail-closed (26-07-21: 차단 변형 재시도로 턴 소진 봉합)
