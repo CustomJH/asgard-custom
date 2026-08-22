@@ -238,10 +238,12 @@ workspace/
 .claude/settings.local.json
 .claude/**/*.local.*
 
-# 교차도구 스캐폴드 — 이 저장소는 Claude Code 로 개발하므로 Codex·Cursor 배선은 커밋하지
-# 않는다. `asgard sync` 는 디렉터리가 있는지로 클라이언트를 고르므로(commands/sync.py:286-288),
-# 여기서 지운 뒤에는 다시 만들지 않는다. `.agents/` 는 cursor·codex 중 하나가 켜졌을 때만
-# 쓰이므로 같이 멈춘다(commands/setup.py:490).
+# 교차도구 스캐폴드 — 이 저장소는 Claude Code 로 개발하므로 Codex·Cursor 배선은 커밋하지 않는다.
+# 이 규칙이 하는 일은 다시 생기는 것을 git 밖에 두는 것이지, 생성을 막는 것이 아니다:
+# 디렉터리를 지워도 `asgard sync` 가 다시 만든다. 어느 클라이언트를 쓸지는 등록부에 적힌
+# 플래그가 정하고(`registry.load`), 디렉터리가 있는지 보는 `commands/sync.py:_detect_flags` 는
+# 등록되지 않은 프로젝트를 처음 넣을 때만 쓰인다. 이 저장소의 등록부 항목은 `codex: True` 라
+# 26-08-22 에 지운 `.codex/` 가 그날 sync 에서 그대로 되살아났다.
 #
 # 이 줄은 `!src/asgard/assets/**` 보다 **앞에** 있어야 한다. 벤더링 스킬 팩 안에도 같은 이름의
 # 디렉터리가 있어서(`.codex/agents` 미러 26개 — tests/test_freyja1_vault.py), 뒤에 두면
