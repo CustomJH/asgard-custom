@@ -659,7 +659,13 @@ class TutorNoteDeployedCopyTest(unittest.TestCase):
     def test_every_deployed_copy_is_the_package_source(self) -> None:
         source = self._read(self._SOURCE)
         found = sorted(glob.glob(os.path.join(self._ROOT, ".*", self._DEPLOYED)))
-        self.assertTrue(found, "배포본을 한 벌도 못 찾았다 — 자리 규약이 바뀌면 이 자가 먼저 빨개진다")
+        if not found:
+            # 26-08-22 부터 이 저장소는 `.claude`·`.cursor`·`.codex` 를 전부 gitignore 한다 —
+            # Claude Code 로만 개발하므로 교차도구 배선을 커밋하지 않는다. 그래서 깨끗한
+            # 체크아웃에는 견줄 배포본이 한 벌도 없고, 그 상태는 "자리 규약이 바뀌었다" 와
+            # 구분되지 않는다. 배포 계약 자체는 `tests/test_mode_parity.py` 의
+            # `test_the_deployed_hook_copies_match_the_source` 가 `hook_files` 를 기준으로 잰다.
+            self.skipTest("배포본이 gitignore 라 깨끗한 체크아웃에는 견줄 사본이 없어요")
 
         for host in self._WIRED:
             if not os.path.isdir(os.path.join(self._ROOT, host, "hooks")):
