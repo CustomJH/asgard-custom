@@ -222,6 +222,11 @@ class TestRegistry(unittest.TestCase):
         self.assertTrue(is_readonly_bash_safe("./gradlew checkstyleMain spotlessCheck --console=plain"))
         self.assertTrue(is_readonly_bash_safe("helios-be/gradlew test"))  # 모듈마다 래퍼를 두는 모노레포
         self.assertTrue(is_readonly_bash_safe("mvn -q checkstyle:check"))
+        # 필터와 제외는 검증 태스크를 남긴 채로 좁힐 뿐, 빌드 스크립트를 가리키지 않는다.
+        self.assertTrue(is_readonly_bash_safe("./gradlew test --tests FooTest"))
+        self.assertTrue(is_readonly_bash_safe("./gradlew test --tests=FooTest"))
+        self.assertTrue(is_readonly_bash_safe("./gradlew test -x integTest"))
+        self.assertTrue(is_readonly_bash_safe("mvn -q -Dtest=FooTest test"))
 
         # 고치거나 만들어 내는 태스크는 안 열린다 — 여기가 `spotlessCheck` 와 갈리는 자리다.
         self.assertFalse(is_readonly_bash_safe("./gradlew spotlessApply"))
@@ -243,6 +248,64 @@ class TestRegistry(unittest.TestCase):
         self.assertFalse(is_readonly_bash_safe("./gradlew test -Dorg.gradle.java.home=jdk"))
         self.assertFalse(is_readonly_bash_safe("./gradlew test --init-script /tmp/x.gradle"))
         self.assertFalse(is_readonly_bash_safe("./gradlew test -p ../other"))
+        # 테스트를 끄는 인자 · 제외만 있고 도는 태스크가 없는 형태는 검증이 아니다.
+        self.assertFalse(is_readonly_bash_safe("mvn -DskipTests test"))
+        self.assertFalse(is_readonly_bash_safe("./gradlew -x test"))
+        self.assertFalse(is_readonly_bash_safe("./gradlew test -x test"))
+
+    def test_readonly_just_and_package_verification_lanes(self):
+        """판정자가 언어별 검증 러너를 못 돌리면 배달물은 늘 정적 읽기로만 끝난다.
+
+        여는 축은 이미 있는 `pytest`·`npm test`·`./gradlew test` 와 같은 등급이다. 닫는 축은
+        산출물을 만들거나 소스를 고치거나 임의 스크립트를 도는 짝이다 — `npm test` 를 열면서
+        `npm run build` 까지 열면 안 되는 것과 같다.
+        """
+        for command in (
+            "just test",
+            "just check",
+            "just lint",
+            "just fmt-check",
+            "just typecheck",
+            "just --list",
+            "just --quiet test",
+            "npm run test",
+            "npm run test:unit",
+            "pnpm run lint",
+            "yarn run check",
+            "bun test",
+            "bun run test",
+            "deno test",
+            "deno lint",
+            "deno check src/main.ts",
+            "deno fmt --check",
+            "dotnet test",
+            "dotnet format --verify-no-changes",
+        ):
+            with self.subTest(allow=command):
+                self.assertTrue(is_readonly_bash_safe(command), command)
+        for command in (
+            "just",
+            "just build",
+            "just publish",
+            "just --fmt",
+            "just -f /tmp/evil.justfile test",
+            "npm run build",
+            "npm run lint:fix",
+            "pnpm run start",
+            "yarn run deploy",
+            "bun build src/index.ts",
+            "bun run build",
+            "deno run src/main.ts",
+            "deno compile src/main.ts",
+            "deno fmt src/main.ts",
+            "dotnet build",
+            "dotnet publish",
+            "dotnet run",
+            "npx vitest run",
+            "npx jest",
+        ):
+            with self.subTest(refuse=command):
+                self.assertFalse(is_readonly_bash_safe(command), command)
 
     def test_readonly_python_smoke_lane(self):
         # Verifier 계약("대표 함수 호출 스모크")의 실행 통로 — 쓰기 없는 python -c는 허용,

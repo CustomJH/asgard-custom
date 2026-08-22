@@ -27,9 +27,12 @@ READONLY_BASH_HINT = (
     "--noEmit — including via uv|poetry|pipenv run, with value-less flags such as --no-project/--isolated/"
     "--frozen/--locked/--offline in between), python -m pytest|unittest|compileall|py_compile, "
     "python -c '<one-line smoke with no writes>', node --check <file>, node [--test] <tests/ script>, "
-    "npm|pnpm|yarn test|lint|check, tests/ scripts, "
+    "npm|pnpm|yarn test|lint|check (including `run` of those / `test:*` scripts), "
+    "just test|check|lint|verify|fmt-check|typecheck (and `just --list`), "
+    "bun test, deno test|lint|check, deno fmt --check, dotnet test, tests/ scripts, "
     "JVM runners (./gradlew|./mvnw|gradle|mvn) with verification tasks only — test*, check*, "
-    "*Check, detekt, lint, verify — and only value-less flags such as --console=plain/--offline/-q; "
+    "*Check, detekt, lint, verify — value-less flags such as --console=plain/--offline/-q, "
+    "plus --tests filters and -x exclusions when a verify task remains; "
     "build, publish, spotlessApply and ktlintFormat stay closed. "
     "`asgard siege` — reading it (show/inbox/blocked/gates/ready/waves/watch) and speaking about "
     "your own attempt on it (ask/escalate/heartbeat, and `done` only in its self-naming form: "
@@ -128,14 +131,30 @@ _JVM_WRAPPERS = {"gradlew", "gradlew.bat", "mvnw", "mvnw.cmd"}
 _JVM_ON_PATH = {"gradle", "mvn"}
 
 
-# 값을 안 받는 표시 플래그만 연다. 값을 받는 플래그는 하나도 안 연다 — `--init-script`·`-b`·
-# `-p`·`-f` 는 러너가 읽을 빌드 스크립트를 **가리키는** 자리다. 위험한 플래그를 세어 막는
-# 방법으로 이 저장소는 이미 세 번 샜으므로(`_GIT_READ` 주석의 `-u`·`--exec=`·`ext::`),
-# 세는 대신 안 여는 쪽을 고른다.
+# 값을 안 받는 표시 플래그. 값을 받는 플래그 가운데 빌드 스크립트를 가리키는 것(`--init-script`·
+# `-b`·`-p`·`-f`)은 안 연다 — 위험한 플래그를 세어 막는 방법으로 이 저장소는 이미 세 번
+# 샜으므로(`_GIT_READ` 주석의 `-u`·`--exec=`·`ext::`), 세는 대신 안 여는 쪽을 고른다.
+# `--tests`·`-x` 는 예외다: 도는 태스크를 좁힐 뿐 러너가 읽을 파일을 바꾸지 않는다.
 _JVM_FLAGS = {
     "--console=plain", "--offline", "--no-daemon", "--stacktrace", "--info",
-    "-q", "--quiet", "-B", "--batch-mode", "--no-build-cache", "--rerun-tasks",
+    "--continue", "-q", "--quiet", "-B", "--batch-mode", "--no-build-cache", "--rerun-tasks",
 }  # fmt: skip
+
+
+# 다음 토큰(또는 `=값`)이 태스크가 아닌 플래그. `--tests` 는 클래스·메서드 필터, `-x` 는
+# 제외할 태스크 이름이다. 둘 다 빌드 스크립트 경로가 아니다.
+_JVM_VALUE_FLAGS = {"--tests", "-x", "--exclude-task"}
+
+
+# 테스트를 끄는 Maven 속성. 앞의 것을 안 보면 `mvn -DskipTests test` 가 읽기 레인으로
+# 통과해 단언이 한 번도 안 도는데 exit 0 이 판정 증거가 된다. 형제는
+# `runners._JVM_SKIP_FLAGS` 다.
+_JVM_SKIP_PREFIXES = ("-dskiptests", "-dmaven.test.skip", "-dskipitests")
+
+
+# Maven 이 한 클래스만 도는 표기. `-D` 전체를 열면 `-Dexec.executable=` 이 새므로
+# 테스트 필터 접두사만 받는다.
+_MVN_TEST_FILTER_PREFIXES = ("-dtest=", "-dit.test=")
 
 
 # 검증 태스크로 인정하는 이름. Gradle 은 태스크 이름이 자유라 접두사·접미사로 보고
@@ -169,7 +188,8 @@ def _safe_jvm(head: str, tokens: list[str]) -> bool:
     안 받는다 — 붙은 경로가 가리키는 것은 PATH 의 그것이 아니다.
 
     태스크가 하나도 없으면 거절한다. 인자 없는 `gradle` 은 기본 태스크를 도는데 그것이
-    무엇인지는 빌드 스크립트가 정하므로, 이 판정이 읽는 글에 안 적혀 있다.
+    무엇인지는 빌드 스크립트가 정하므로, 이 판정이 읽는 글에 안 적혀 있다. `-x test` 로
+    검증 태스크를 전부 빼는 형태도 같은 이유로 거절한다.
     """
     if not _JVM_RUNNER_NAME.match(head):
         return False
@@ -179,16 +199,39 @@ def _safe_jvm(head: str, tokens: list[str]) -> bool:
             return False
     elif "/" in head:
         return False
-    tasks = 0
+    pending = ""
+    tasks: list[str] = []
+    excluded: set[str] = set()
     for token in tokens[1:]:
+        if pending:
+            if pending in {"-x", "--exclude-task"}:
+                excluded.add(token.split(":")[-1].lower())
+            pending = ""
+            continue
         if token.startswith("-"):
+            lower = token.lower()
+            if lower.startswith(_JVM_SKIP_PREFIXES):
+                return False
+            name, sep, value = token.partition("=")
+            if name in _JVM_VALUE_FLAGS:
+                if name in {"-x", "--exclude-task"}:
+                    if sep:
+                        excluded.add(value.split(":")[-1].lower())
+                    else:
+                        pending = name
+                elif not sep:
+                    pending = name
+                continue
+            if lower.startswith(_MVN_TEST_FILTER_PREFIXES):
+                continue
             if token not in _JVM_FLAGS:
                 return False
             continue
-        if not _jvm_verify_task(token):
-            return False
-        tasks += 1
-    return tasks > 0
+        tasks.append(token)
+    if pending:
+        return False
+    remaining = [task for task in tasks if task.split(":")[-1].lower() not in excluded]
+    return bool(remaining) and all(_jvm_verify_task(task) for task in remaining)
 
 
 # `ls-remote` 는 여기 넣으면 안 된다. 이름은 읽기지만 **원격 전송로를 여는** 유일한 후보라,
@@ -370,6 +413,63 @@ _COMMAND_HEADERS = {"while", "until", "if", "elif"}  # 뒤에 오는 것이 명�
 _WORDLIST_HEADERS = {"for", "select"}  # 뒤에 오는 것은 낱말 목록이다
 
 
+# package.json 스크립트와 `just` 레시피 가운데 검증으로 인정하는 이름. `run build`·`just
+# publish` 는 산출물을 만들므로 여기 없다. `test:` 접두사는 `test:unit` 같은 이름 공간이고,
+# `lint:fix` 는 소스를 고치므로 접두사로 열지 않는다.
+_PKG_VERIFY = {"test", "lint", "check"}
+
+
+_JUST_VERIFY = {"test", "check", "lint", "verify", "fmt-check", "typecheck"}
+
+
+# `just` 자신의 값을 안 받는 플래그. `-f`·`--justfile`·`--working-directory` 는 저장소 밖
+# 레시피로 새는 길이라 안 연다. `--fmt` 는 Justfile 을 다시 쓰므로 안 연다.
+_JUST_FLAGS = {
+    "--list",
+    "-l",
+    "--summary",
+    "-q",
+    "--quiet",
+    "-n",
+    "--dry-run",
+    "--unsorted",
+    "--color",
+}
+
+
+_JUST_LIST_FLAGS = {"--list", "-l", "--summary"}
+
+
+def _pkg_verify_script(name: str) -> bool:
+    """package.json 스크립트가 검증용인가 — `run build` 는 산출물을 만든다."""
+    return name in _PKG_VERIFY or name.startswith("test:")
+
+
+def _just_verify_recipe(name: str) -> bool:
+    """Just 레시피가 검증용인가 — `just publish` 는 산출물을 올린다."""
+    return name in _JUST_VERIFY or name.startswith("test-")
+
+
+def _safe_just(tokens: list[str]) -> bool:
+    """`just` 하나 — 검증 레시피이거나 레시피 목록 조회.
+
+    인자 없는 `just` 는 기본 레시피를 도는데 그것이 무엇인지는 Justfile 이 정하므로, 이 판정이
+    읽는 글에 안 적혀 있다. `make` 레인과 같은 이유로 거절한다.
+    """
+    recipes = 0
+    listed = False
+    for token in tokens[1:]:
+        if token.startswith("-"):
+            if token not in _JUST_FLAGS:
+                return False
+            listed = listed or token in _JUST_LIST_FLAGS
+            continue
+        if not _just_verify_recipe(token):
+            return False
+        recipes += 1
+    return recipes > 0 or listed
+
+
 def _safe_segment(segment: str, roots: tuple[str, ...] = (), caller: str = "") -> bool:
     try:
         tokens = shlex.split(segment)
@@ -434,7 +534,21 @@ def _safe_segment(segment: str, roots: tuple[str, ...] = (), caller: str = "") -
     if (inner := strip_runner(tokens)) is not None:
         return _safe_segment(shlex.join(inner), roots, caller)
     if program in {"npm", "pnpm", "yarn"}:
+        if len(tokens) >= 2 and tokens[1] in _PKG_VERIFY:
+            return True
+        return len(tokens) >= 3 and tokens[1] == "run" and _pkg_verify_script(tokens[2])
+    if program == "bun":
+        if len(tokens) >= 3 and tokens[1] == "run":
+            return _pkg_verify_script(tokens[2])
+        return len(tokens) >= 2 and tokens[1] in {"test", "lint"}
+    if program == "deno":
+        if tokens[1:2] == ["fmt"]:
+            return "--check" in tokens[2:]
         return len(tokens) >= 2 and tokens[1] in {"test", "lint", "check"}
+    if program == "dotnet":
+        if tokens[1:2] == ["format"]:
+            return "--verify-no-changes" in tokens[2:]
+        return len(tokens) >= 2 and tokens[1] == "test"
     if program == "cargo":
         return len(tokens) >= 2 and (
             tokens[1] in {"test", "check", "clippy"} or (tokens[1] == "fmt" and "--check" in tokens[2:])
@@ -481,6 +595,8 @@ def _safe_segment(segment: str, roots: tuple[str, ...] = (), caller: str = "") -
         return len(tokens) >= 2 and all(
             not t.startswith("-") and t in {"test", "check", "lint", "verify"} for t in tokens[1:]
         )
+    if program == "just":
+        return _safe_just(tokens)
     if re.fullmatch(r"python(?:\d+(?:\.\d+)*)?", program):
         if tokens[1:2] in (["--version"], ["-V"], ["-VV"]):
             return True
